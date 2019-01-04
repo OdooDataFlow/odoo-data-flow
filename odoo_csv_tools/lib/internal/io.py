@@ -45,7 +45,7 @@ def write_csv(filename, header, data, encoding="utf-8"):
 
 def write_file(filename=None, header=None, data=None, fail=False, model="auto",
                launchfile="import_auto.sh", worker=1, batch_size=10, init=False, encoding="utf-8",
-               conf_file=False, groupby='', sep=";", python_exe='', path='', context=None, ignore=""):
+               conf_file=False, groupby='', sep=";", python_exe='python', path='', context=None, ignore=""):
     def get_model():
         if model == "auto":
             return filename.split(os.sep)[-1][:-4]
@@ -58,13 +58,65 @@ def write_file(filename=None, header=None, data=None, fail=False, model="auto",
     if not launchfile:
         return
 
+    if not path.endswith(os.sep):
+        path = os.path.join(path, "")
+
+    py_script = 'odoo_import_thread.py'
+    os_cmd = os.path.join(path, py_script)
+    if ' ' in os_cmd:
+        os_cmd =''.join(('"', os_cmd, '"'))
+
     mode = init and 'w' or 'a'
     with open(launchfile, mode) as myfile:
-        myfile.write("%s %sodoo_import_thread.py -c %s --file=%s --model=%s --encoding=%s --worker=%s --size=%s --groupby=%s --ignore=%s --sep=\"%s\" %s\n" %
-                    (python_exe, path, conf_file, filename, get_model(), encoding, worker, batch_size, groupby, ignore, sep, context))
+        myfile.write("%s %s -c %s --file=%s --model=%s --encoding=%s --worker=%s --size=%s --groupby=%s --ignore=%s --sep=\"%s\" %s\n" %
+                    (python_exe, os_cmd, conf_file, filename, get_model(), encoding, worker, batch_size, groupby, ignore, sep, context))
         if fail:
-            myfile.write("%s %sodoo_import_thread.py -c %s --fail --file=%s --model=%s --encoding=%s --ignore=%s --sep=\"%s\" %s\n" %
-                         (python_exe, path, conf_file, filename, get_model(), encoding, ignore, sep, context))
+            myfile.write("%s %s -c %s --fail --file=%s --model=%s --encoding=%s --ignore=%s --sep=\"%s\" %s\n" %
+                         (python_exe, os_cmd, conf_file, filename, get_model(), encoding, ignore, sep, context))
+
+
+################################################
+# Method to merge file together based on a key #
+################################################
+
+def write_file_dict(filename, header, data):
+    data_rows = []
+    for _, val in data.iteritems():
+        r = [val.get(h, '') for h in header]
+        data_rows.append(r)
+    write_csv(filename, header, data_rows)
+
+
+
+def read_file_dict(file_name, id_name):
+    file_ref = open(file_name, 'r')
+    reader = UnicodeReader(file_ref, delimiter=';')
+
+    head = reader.next()
+    res = {}
+    for line in reader:
+        if any(line):
+            line_dict = dict(zip(head, line))
+            res[line_dict[id_name]] = line_dict
+    return res, head
+
+def merge_file(master, child, field):
+    res = {}
+    for key, val in master.iteritems():
+        data = dict(child.get(val[field], {}))
+        new_dict = dict(val)
+        new_dict.update(data)
+        res[key] = new_dict
+    return res
+
+
+def merge_header(*args):
+    old_header = [item for sublist in args for item in sublist]
+    header = []
+    for h in old_header:
+        if h and h not in header:
+            header.append(h)
+    return header
 
 class ListWriter(object):
     def __init__(self):
