@@ -211,7 +211,10 @@ def import_data(config_file, model, header=None, data=None, file_csv=None, conte
                                  batch_size, context)
     st = time()
 
-    id_index = header.index('id')
+    try:
+        id_index = header.index('id')
+    except:
+        id_index = list(header).index('id')  # Support python3 dict_keys
     data, split_index = split_sort(split, header, data)
 
     i = 0
