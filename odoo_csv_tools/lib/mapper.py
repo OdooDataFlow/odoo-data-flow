@@ -84,8 +84,17 @@ def concat_field_value_m2m(separator, *args):
 def map_val(field, mapping, default=''):
     return val(field, postprocess=lambda x : mapping.get(x, default))
 
-def num(field, default='0.0'):
-    return val(field, default, postprocess=lambda x: x.replace(',', '.'))
+def num(field, default=0.0):
+    def num_func(line):
+        snum = line[field]
+        if ',' in snum:
+            snum = snum.replace(',', '.')
+        if snum:
+            num_val = float(snum)
+        else:
+            num_val = default
+        return num_val
+    return num_func
 
 def m2o_map(PREFIX, mapper, default='', skip=False):
     def m2o_fun(line):

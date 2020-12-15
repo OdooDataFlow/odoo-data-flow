@@ -17,6 +17,7 @@ along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 import sys
 import csv
+import xlrd
 
 from time import time
 
@@ -111,6 +112,15 @@ def filter_header_ignore(ignore, header):
             new_header.append(val)
     return new_header
 
+def read_excel(fpath, skip=0):
+    book = xlrd.open_workbook(fpath)
+    sheet = book.sheet_by_index(0)
+    header = sheet.row_values(0)
+    list_values = []
+    read_from = skip or 1
+    read_to = sheet.nrows
+    row_values = [sheet.row_values(i) for i in range(read_from, read_to)]
+    return header, row_values
 
 def read_file(file_to_read, delimiter=';', encoding='utf-8', skip=0):
     def get_real_header(header):
@@ -136,13 +146,23 @@ def read_file(file_to_read, delimiter=';', encoding='utf-8', skip=0):
             reader.next()
 
     log('open %s' % file_to_read)
-    file_ref = open_read(file_to_read, encoding=encoding)
-    reader = UnicodeReader(file_ref, delimiter=delimiter, encoding=encoding)
-    header = next(reader)
-    header = get_real_header(header)
+
+    for part in file_to_read.split('.')[::-1]:
+        if part in ["fail", "bis"]:
+            continue
+        mime = part
+        break
+    # Prefer excel
+    if mime == "xlsx":
+        header, data = read_excel(file_to_read, skip)
+    else:
+        file_ref = open_read(file_to_read, encoding=encoding)
+        reader = UnicodeReader(file_ref, delimiter=delimiter, encoding=encoding)
+        header = next(reader)
+        header = get_real_header(header)
+        skip_line(reader)
+        data = [l for l in reader]
     check_id_column(header)
-    skip_line(reader)
-    data = [l for l in reader]
     return header, data
 
 

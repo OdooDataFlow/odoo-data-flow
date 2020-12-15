@@ -8,6 +8,7 @@ from __future__ import absolute_import
 import csv
 import os
 import sys
+import xlsxwriter
 from . csv_reader import UnicodeWriter, UnicodeReader
 
 """
@@ -43,6 +44,20 @@ def write_csv(filename, header, data, encoding="utf-8"):
         c.writerow(d)
     file_result.close()
 
+def write_excel(filename, header, data):
+    """
+    Write a list of dictionaries to provied path
+    """
+    columns = list(header)
+    with xlsxwriter.Workbook(filename) as workbook:
+        worksheet = workbook.add_worksheet()
+        worksheet.write_row(0, 0, columns)
+        row_index = 1
+        for values in data:
+            worksheet.write_row(row_index, 0, values)
+            row_index += 1
+    return
+
 def write_file(filename=None, header=None, data=None, fail=False, model="auto",
                launchfile="import_auto.sh", worker=1, batch_size=10, init=False, encoding="utf-8",
                conf_file=False, groupby='', sep=";", python_exe='', path='', context=None, ignore=""):
@@ -54,7 +69,11 @@ def write_file(filename=None, header=None, data=None, fail=False, model="auto",
 
     context = '--context="%s"' % str(context) if context else ''
     conf_file = conf_file or "%s%s%s" % ('conf', os.sep, 'connection.conf')
-    write_csv(filename, header, data, encoding=encoding)
+    mime = filename.split('.')[-1]
+    if mime == 'xlsx':
+        write_excel(filename, header, data)
+    else:
+        write_csv(filename, header, data, encoding=encoding)
     if not launchfile:
         return
 
