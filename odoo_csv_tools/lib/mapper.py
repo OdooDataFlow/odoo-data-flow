@@ -7,6 +7,8 @@ from . internal.exceptions import SkippingException
 import base64
 import os
 import requests
+from datetime import datetime
+
 
 def str_to_mapper(field):
     if is_string(field):
@@ -50,6 +52,15 @@ def val_label(field, default='', postprocess=lambda x: x, skip=False):
     def val_label_fun(line):
         return "%s : %s" % (field, val_m(line))
     return val_label_fun
+
+def val_excel_date(field, format="%Y-%m-%d"):
+    def val_excel_date_fun(line):
+        excel_date = line[field]
+        if not isinstance(excel_date, int):
+            excel_date = int(float(excel_date))
+        dt = datetime.fromordinal(datetime(1900, 1, 1).toordinal() + excel_date - 2)
+        return dt.strftime(format)
+    return val_excel_date_fun
 
 def concat_mapper(separtor, *mapper):
     def concat_fun(line):
@@ -103,8 +114,12 @@ def m2o_map(PREFIX, mapper, default='', skip=False):
         return to_m2o(PREFIX, mapper(line), default=default)
     return m2o_fun
 
-def m2o(PREFIX, field, default='', skip=False):
+def m2o(PREFIX, field, default='', skip=False, mapping_list=None):
     def m2o_fun(line):
+        if mapping_list is not None and line[field]:
+            value = mapping_list.get(line[field])
+            if value:
+                return value
         if skip and not line[field]:
             raise SkippingException("Missing Value for %s" % field)
         return to_m2o(PREFIX, line[field], default=default)
