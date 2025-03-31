@@ -1,6 +1,6 @@
 Odoo CSV Import Export Library
 ==============================
-This library provides tools to easily and quickly import data into Odoo or export data from Odoo using CSV file. 
+This library provides tools to easily and quickly import data into Odoo or export data from Odoo using CSV file.
 It also provide a framework to manipulate data from CSV.
 
 - [Odoo CSV Import Export Library](#odoo-csv-import-export-library)
@@ -45,6 +45,7 @@ It also provide a framework to manipulate data from CSV.
       - [mapper.m2m(PREFIX, *fields)](#mapperm2mprefix-fields)
       - [mapper.m2m_id_list(PREFIX, *args, **kwargs)](#mapperm2midlistprefix-args-kwargs)
       - [mapper.m2m_value_list(*args, **kwargs)](#mapperm2mvaluelistargs-kwargs)
+      - [mapper.m2m_template_attribute_value(*args, **kwargs)](#mapperm2m_template_attribute_valueprefix-template_id_field-args)
     - [Advanced Transformations](#advanced-transformations)
       - [User Defined Mappers](#user-defined-mappers)
       - [Managing the Client CSV file](#managing-the-client-csv-file)
@@ -182,7 +183,7 @@ The section `[connection]` is mandatory. Then the following parameters must be s
         </td>
         <td>
         Protocol used for RPC calls. It can be one of the following values: <b>xmlrpc</b>, <b>xmlrpcs</b>, <b>jsonrpc</b>, <b>jsonrpcs</b>.<br>
-        For a remote database, it's strongly advised to used an encrypted protocol (xmlrcps or jsonrpcs). 
+        For a remote database, it's strongly advised to used an encrypted protocol (xmlrcps or jsonrpcs).
         </td>
     </tr>
     <tr>
@@ -216,7 +217,7 @@ Define the CSV `FILENAME` to import. The CSV format is mandatory. In order to be
 - One file must contain data of only one model.
 - The first line is the column names. All columns must have the technical name of the fields.
 - All lines must have an `id` column fullfilled with an XML_ID that identifies the record.
-- Some field formats must be respected: 
+- Some field formats must be respected:
   - Boolean values must be 0 or 1.
   - Binary data must be encoded in base64.
   - Datetime fields format depends on the language (often %Y-%m-%d %H:%M:%S).
@@ -273,7 +274,7 @@ Here is how a import looks like whith `--worker=2`.
 
 <p align=center><img src=pics/run_time_3.png></p>
 
-The whole file is now handled by two workers in parallel. The total run time is then divided by two. 
+The whole file is now handled by two workers in parallel. The total run time is then divided by two.
 
 As a rule of thumb, you can set the number of workers up to 80% of the number Odoo workers. So that other users can still work while the import runs.
 
@@ -461,7 +462,7 @@ When the file to import doesn't respect the [expected format](#file-FILENAME) of
 
 ### Basic Concepts
 
-Let's start with a simple use case to introduce the main concepts of the tranformations. Once you're familiar with, a more complete use case is provided [here](#a-real-life-example). 
+Let's start with a simple use case to introduce the main concepts of the tranformations. Once you're familiar with, a more complete use case is provided [here](#a-real-life-example).
 
 #### A Simple Partner Import
 A customer wants to import some partners. He provides the following CSV file, say `client_file.csv`:
@@ -487,7 +488,7 @@ Another important point to consider is what happens when we load the data severa
 
 - assign an XML_ID to each partner of the file.
 
-The presence of an XML_ID ensures that a record is created if it doesn't exist, or updated if it already exists. This behaviour is included in the method `load` of each Odoo model. 
+The presence of an XML_ID ensures that a record is created if it doesn't exist, or updated if it already exists. This behaviour is included in the method `load` of each Odoo model.
 
 Let's build the transformation script, say `res_partner.py`. We start with importing the needed objects from the library.
 
@@ -509,7 +510,7 @@ processor = Processor('client_file.csv', delimiter=';')
 Now we create a mapping dictionary where the keys are the fields of the target model (`res.partner`) we want to import -**at least the required fields without default value**- and how we get them from the client file.
 
 ```
-res_partner_mapping = {    
+res_partner_mapping = {
     'id': mapper.m2o_map('my_import_res_partner', mapper.concat('_', 'Firstname', 'Lastname', 'Birthdate')),
     'name: mapper.concat(' ','Firstname','Lastname'),
     'birthdate': mapper.val('Birthdate', postprocess=lambda x: datetime.strptime(x, "%d/%m/%y").strftime("%Y-%m-%d 00:00:00")),
@@ -533,7 +534,7 @@ my_import_res_partner.David_Smith_28/02/1985;David Smith;28-02-1985 00:00:00
 ```
 > **Note:** The order of the columns is not related to the client file or the keys in the transform mapping dictionary.
 
-Notice some options are set when invoking the transformation: `'context': "{'tracking_disable': True}", 'worker': 2, 'batch_size': 20}`. 
+Notice some options are set when invoking the transformation: `'context': "{'tracking_disable': True}", 'worker': 2, 'batch_size': 20}`.
 They don't play any role in the transformation by itself. Instead it will be used by the import shell script later. Hopefully, we can automatically create the shell script by adding this line:
 
 ```
@@ -558,7 +559,7 @@ from datetime import datetime   # used to change the format of datetime fields
 
 processor = Processor('client_file.csv', delimiter=';')
 
-res_partner_mapping = {    
+res_partner_mapping = {
     'id': mapper.m2o_map('my_import_res_partner', mapper.concat('_', 'Firstname', 'Lastname', 'Birthdate')),
     'name: mapper.concat(' ','Firstname','Lastname'),
     'birthdate': mapper.val('Birthdate', postprocess=lambda x: datetime.strptime(x, "%d/%m/%y").strftime("%Y-%m-%d 00:00:00")),
@@ -575,7 +576,7 @@ python res_partner.py
 ```
 
 You should have created:
--  the import file `res.partner.csv` in the same folder as the client file `res_partner.csv`, 
+-  the import file `res.partner.csv` in the same folder as the client file `res_partner.csv`,
 -  the shell script `res_partner.sh` in your current folder.
 
 #### Dealing with Relationships
@@ -616,7 +617,7 @@ It worths noting the option`'set'` of `processor.process` while invoking the com
 
 And here is the mapping to extract the persons. It's exactly the same as before except we've added the field `parent_id`.
 ```
-res_partner_mapping = {    
+res_partner_mapping = {
     'id': mapper.m2o_map('my_import_res_partner', mapper.concat('_', 'Firstname', 'Lastname', 'Birthdate')),
     'name': mapper.concat(' ','Firstname','Lastname'),
     'birthdate': mapper.val('Birthdate', postprocess=lambda x: datetime.strptime(x, "%d/%m/%y").strftime("%Y-%m-%d 00:00:00")),
@@ -677,7 +678,7 @@ res_partner_company_mapping =  {
 
 processor.process(res_partner_company_mapping, 'res.partner.company.csv', {}, 'set')
 
-res_partner_mapping = {    
+res_partner_mapping = {
     'id': mapper.m2o_map('my_import_res_partner', mapper.concat('_', 'Firstname', 'Lastname', 'Birthdate')),
     'name': mapper.concat(' ','Firstname','Lastname'),
     'birthdate': mapper.val('Birthdate', postprocess=lambda x: datetime.strptime(x, "%d/%m/%y").strftime("%Y-%m-%d 00:00:00")),
@@ -692,7 +693,7 @@ processor.write_to_file("res_partner.sh", python_exe='', path='')
 
 ##### One2many Relationships
 
-Usually we don't import `One2many` fields. Instead, we import the inverse `Many2one` relation in the linked model. 
+Usually we don't import `One2many` fields. Instead, we import the inverse `Many2one` relation in the linked model.
 
 ##### Many2many Relationships
 
@@ -708,7 +709,7 @@ By looking into Odoo, we see that the model `res.partner` contains a field `cate
 
 1- Create all the categories by extracting them from the client file and assign them and XML_ID.
 
-2- Build a comma separated list of XML_IDs of categories for each partner. 
+2- Build a comma separated list of XML_IDs of categories for each partner.
 
 Let's start the transformation script. As usual, we start with the needed imports and the creation of a `Processor` on the client file.
 ```
@@ -740,9 +741,9 @@ res_partner_category.Bad Payer;Bad Payer
 ```
 
 Now we can complete the person mapping. It's exactly the same as before except we have added the field `category_id`.
- 
+
 ```
-res_partner_mapping = {    
+res_partner_mapping = {
     'id': mapper.m2o_map('my_import_res_partner', mapper.concat('_', 'Firstname', 'Lastname', 'Birthdate')),
     'name': mapper.concat(' ','Firstname','Lastname'),
     'birthdate': mapper.val('Birthdate', postprocess=lambda x: datetime.strptime(x, "%d/%m/%y").strftime("%Y-%m-%d 00:00:00")),
@@ -792,7 +793,7 @@ partner_category_mapping = {
 
 processor.process(partner_category_mapping, 'res.partner.category.csv', {}, m2m=True)
 
-res_partner_mapping = {    
+res_partner_mapping = {
     'id': mapper.m2o_map('my_import_res_partner', mapper.concat('_', 'Firstname', 'Lastname', 'Birthdate')),
     'name': mapper.concat(' ','Firstname','Lastname'),
     'birthdate': mapper.val('Birthdate', postprocess=lambda x: datetime.strptime(x, "%d/%m/%y").strftime("%Y-%m-%d 00:00:00")),
@@ -818,7 +819,7 @@ processor = Processor('client_file.csv', delimiter=';')
 res_partner_company_mapping =  {
 }
 
-res_partner_mapping = {    
+res_partner_mapping = {
 }
 
 processor.process(res_partner_company_mapping, 'res.partner.company.csv', {}, 'set')
@@ -838,7 +839,7 @@ processor = Processor('client_file.csv', delimiter=';')
 res_partner_company_mapping =  {
 }
 
-res_partner_mapping = {    
+res_partner_mapping = {
 }
 
 processor.process(res_partner_mapping, 'res.partner.csv', {})
@@ -857,7 +858,7 @@ processor.write_to_file("res_partner_company.sh", python_exe='', path='')
 
 #For the 2nd load script
 processor = Processor('client_file.csv', delimiter=';')
-res_partner_mapping = {    
+res_partner_mapping = {
 }
 processor.process(res_partner_mapping, 'res.partner.csv', {})
 processor.write_to_file("res_partner.sh", python_exe='', path='')
@@ -1239,6 +1240,51 @@ my_field/id
 [val1, val3]
 [val4]
 ```
+
+#### mapper.m2m_template_attribute_value(PREFIX, template_id_field, *args)
+
+Generates a mapping function for `product.template.attribute.value` XMLIDs, including the product template identifier.
+
+This function is specifically designed to create a mapper that constructs comma-separated strings of XML IDs for product attribute values, incorporating the identifier of the associated product template. This is useful when you need to establish relationships based on attribute values within a specific product template context.
+
+<table>
+    <tr><td><b>Client File</b></td><td><b>Mapper</b></td><td><b>Import File</b></td></tr>
+    <tr>
+        <td>
+            <b>product_template_ref;color;size</b><br>
+            template_1;red;medium<br>
+            template_1;blue;large<br>
+            template_2;green;small
+        </td>
+        <td>
+            {<br>
+            'my_field/id': mapper.<b>m2m_template_attribute_value('PRODUCT_ATTRIBUTE_VALUE', 'product_template_ref', 'color', 'size')</b>,<br>
+            }<br>
+        </td>
+        <td>
+            <b>my_field/id</b><br>
+            PRODUCT_ATTRIBUTE_VALUE_template_1_color_red,PRODUCT_ATTRIBUTE_VALUE_template_1_size_medium<br>
+            PRODUCT_ATTRIBUTE_VALUE_template_1_color_blue,PRODUCT_ATTRIBUTE_VALUE_template_1_size_large<br>
+            PRODUCT_ATTRIBUTE_VALUE_template_2_color_green,PRODUCT_ATTRIBUTE_VALUE_template_2_size_small
+        </td>
+    </tr>
+</table>
+
+Args:
+
+* `PREFIX (str)`: The prefix to use for the generated XML IDs (e.g., 'PRODUCT_ATTRIBUTE_VALUE'). This prefix should be consistent with how your XML IDs are structured.
+* `template_id_field (str)`: The name of the field/column in the CSV data that contains the identifier (e.g., XML ID, database ID, or other unique key) of the related product template. This identifier will be included in the generated XML IDs.
+* `*args (str)`: A variable number of field/column names from the CSV data that represent attribute values. These values will be used to construct the XML IDs.
+
+Returns:
+
+* `function`: A mapper function that takes a CSV row (as a dictionary) as input and returns a comma-separated string of generated XML IDs. If the `template_id_field` is missing in the CSV row, it returns an empty string.
+
+Important Notes:
+
+* The generated XML IDs are constructed by concatenating the `PREFIX`, the value from `template_id_field`, and the values from the provided attribute columns.
+* The function handles cases where the `template_id_field` might be missing in the CSV data, returning an empty string to avoid errors.
+* Ensure that the `PREFIX` and the column names in `args` are consistent with your actual data structure and XML ID conventions.
 
 ### Advanced Transformations
 
