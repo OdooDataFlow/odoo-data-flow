@@ -163,7 +163,7 @@ def split_sort(split, header, data):
     return data, split_index
 
 
-def do_not_split(split, previous_split_value, split_index, line, o2m=False, id_index=0):
+def do_not_split(split, previous_groupby_value, split_index, line, o2m=False, id_index=0):
     # Do not split if you want to keep the one2many line with it's parent
     # The column id should be empty
     if o2m and not line[id_index]:
@@ -173,14 +173,14 @@ def do_not_split(split, previous_split_value, split_index, line, o2m=False, id_i
         return False
 
     split_value = line[split_index]
-    if split_value != previous_split_value:  # Different Value no need to not split
+    if split_value != previous_groupby_value:  # Different Value no need to not split
         return False
 
     return True
 
 
 def import_data(config_file, model, header=None, data=None, file_csv=None, context=None, fail_file=False,
-                encoding='utf-8', separator=";", ignore=False, split=False, check=True, max_connection=1,
+                encoding='utf-8', separator=";", ignore=False, groupby=False, check=True, max_connection=1,
                 batch_size=10, skip=0, o2m=False):
     """
         header and data mandatory in file_csv is not provided
@@ -215,23 +215,23 @@ def import_data(config_file, model, header=None, data=None, file_csv=None, conte
         id_index = header.index('id')
     except:
         id_index = list(header).index('id')  # Support python3 dict_keys
-    data, split_index = split_sort(split, header, data)
+    data, split_index = split_sort(groupby, header, data)
 
     i = 0
-    previous_split_value = False
+    previous_groupby_value = False
     while i < len(data):
         lines = []
         j = 0
         while i < len(data) and (
-                j < batch_size or do_not_split(split, previous_split_value, split_index, data[i], o2m=o2m,
+                j < batch_size or do_not_split(groupby, previous_groupby_value, split_index, data[i], o2m=o2m,
                                                id_index=id_index)):
             line = data[i][:len(header)]
             lines.append(filter_line_ignore(ignore, header, line))
-            previous_split_value = line[split_index]
+            previous_groupby_value = line[split_index]
             j += 1
             i += 1
-        batch_number = split and "[%s] - [%s]" % (
-        rpc_thread.thread_number(), previous_split_value) or "[%s]" % rpc_thread.thread_number()
+        batch_number = groupby and "[%s] - [%s]" % (
+        rpc_thread.thread_number(), previous_groupby_value) or "[%s]" % rpc_thread.thread_number()
         rpc_thread.launch_batch(lines, batch_number, check, o2m=o2m)
 
     rpc_thread.wait()
