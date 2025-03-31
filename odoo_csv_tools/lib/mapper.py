@@ -189,6 +189,68 @@ def m2o_att_name(PREFIX, att_list):
 def m2m_attribute_value(PREFIX, *args):
     return m2m_map(PREFIX, concat_field_value_m2m('_', *args))
 
+"""
+Specific to attribute mapper for V13+ product.template.attribute.value
+"""
+
+def m2m_template_attribute_value(PREFIX, template_id_field, *args):
+    """
+    Generates a mapping function for product.template.attribute.value XMLIDs,
+    including the product template identifier.
+
+    This function is specifically designed to create a mapper that constructs
+    comma-separated strings of XML IDs for product attribute values, incorporating
+    the identifier of the associated product template. This is useful when you need
+    to establish relationships based on attribute values within a specific product template context.
+
+    Args:
+        PREFIX (str): The prefix to use for the generated XML IDs
+                      (e.g., 'PRODUCT_ATTRIBUTE_VALUE'). This prefix should
+                      be consistent with how your XML IDs are structured.
+        template_id_field (str): The name of the field/column in the CSV data
+                                 that contains the identifier (e.g., XML ID,
+                                 database ID, or other unique key) of the
+                                 related product template. This identifier
+                                 will be included in the generated XML IDs.
+        *args (str): A variable number of field/column names from the CSV data
+                     that represent attribute values. These values will be
+                     used to construct the XML IDs.
+
+    Returns:
+        function: A mapper function that takes a CSV row (as a dictionary) as
+                  input and returns a comma-separated string of generated XML IDs.
+                  If the 'template_id_field' is missing in the CSV row, it returns an empty string.
+
+    Example:
+        Assuming you have a CSV with columns 'product_template_ref', 'color', and 'size',
+        and your XML IDs for product attribute values are like
+        'PRODUCT_ATTRIBUTE_VALUE_product_template_ref_color_red',
+        you would use:
+
+        mapper.m2m_template_attribute_value('PRODUCT_ATTRIBUTE_VALUE', 'product_template_ref', 'color', 'size')
+
+    Important Notes:
+        - The generated XML IDs are constructed by concatenating the 'PREFIX',
+          the value from 'template_id_field', and the values from the provided
+          attribute columns.
+        - The function handles cases where the 'template_id_field' might be
+          missing in the CSV data, returning an empty string to avoid errors.
+        - Ensure that the 'PREFIX' and the column names in 'args' are consistent
+          with your actual data structure and XML ID conventions.
+    """
+
+    def m2m_fun(line):
+        template_id = line.get(template_id_field)
+        if not template_id:
+            return ""  # Handle cases where template ID is missing
+
+        def mapper(line):
+            return ','.join([f"{template_id}_{f}_{line[f]}" for f in args if line[f]])
+
+        return to_m2m(PREFIX, mapper(line))
+
+    return m2m_fun
+
 
 """
     Mapper that require rpc Connection (conf_lib)
