@@ -1,7 +1,7 @@
-import internal
-import conf_lib
-import workflow
-import checker
-import mapper
-import transform
-import xml_transform
+from . import internal
+from . import conf_lib
+from . import workflow
+from . import checker
+from . import mapper
+from . import transform
+from . import xml_transform
