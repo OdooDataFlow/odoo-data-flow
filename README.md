@@ -1,6 +1,6 @@
 Odoo CSV Import Export Library
 ==============================
-This library provides tools to easily and quickly import data into Odoo or export data from Odoo using CSV file. 
+This library provides tools to easily and quickly import data into Odoo or export data from Odoo using CSV file.
 It also provide a framework to manipulate data from CSV.
 
 - [Odoo CSV Import Export Library](#odoo-csv-import-export-library)
@@ -51,6 +51,7 @@ It also provide a framework to manipulate data from CSV.
         - [Adding a column](#adding-a-column)
         - [Removing Lines](#removing-lines)
       - [Updating Records With Database IDs](#updating-records-with-database-ids)
+      - [XML Processing](#XML-Processing)
   - [A Real Life Example](#a-real-life-example)
   - [Performances Considerations](#performances-considerations)
     - [Importing Related or Computed Fields](#importing-related-or-computed-fields)
@@ -182,7 +183,7 @@ The section `[connection]` is mandatory. Then the following parameters must be s
         </td>
         <td>
         Protocol used for RPC calls. It can be one of the following values: <b>xmlrpc</b>, <b>xmlrpcs</b>, <b>jsonrpc</b>, <b>jsonrpcs</b>.<br>
-        For a remote database, it's strongly advised to used an encrypted protocol (xmlrcps or jsonrpcs). 
+        For a remote database, it's strongly advised to used an encrypted protocol (xmlrcps or jsonrpcs).
         </td>
     </tr>
     <tr>
@@ -216,7 +217,7 @@ Define the CSV `FILENAME` to import. The CSV format is mandatory. In order to be
 - One file must contain data of only one model.
 - The first line is the column names. All columns must have the technical name of the fields.
 - All lines must have an `id` column fullfilled with an XML_ID that identifies the record.
-- Some field formats must be respected: 
+- Some field formats must be respected:
   - Boolean values must be 0 or 1.
   - Binary data must be encoded in base64.
   - Datetime fields format depends on the language (often %Y-%m-%d %H:%M:%S).
@@ -273,7 +274,7 @@ Here is how a import looks like whith `--worker=2`.
 
 <p align=center><img src=pics/run_time_3.png></p>
 
-The whole file is now handled by two workers in parallel. The total run time is then divided by two. 
+The whole file is now handled by two workers in parallel. The total run time is then divided by two.
 
 As a rule of thumb, you can set the number of workers up to 80% of the number Odoo workers. So that other users can still work while the import runs.
 
@@ -461,7 +462,7 @@ When the file to import doesn't respect the [expected format](#file-FILENAME) of
 
 ### Basic Concepts
 
-Let's start with a simple use case to introduce the main concepts of the tranformations. Once you're familiar with, a more complete use case is provided [here](#a-real-life-example). 
+Let's start with a simple use case to introduce the main concepts of the tranformations. Once you're familiar with, a more complete use case is provided [here](#a-real-life-example).
 
 #### A Simple Partner Import
 A customer wants to import some partners. He provides the following CSV file, say `client_file.csv`:
@@ -487,7 +488,7 @@ Another important point to consider is what happens when we load the data severa
 
 - assign an XML_ID to each partner of the file.
 
-The presence of an XML_ID ensures that a record is created if it doesn't exist, or updated if it already exists. This behaviour is included in the method `load` of each Odoo model. 
+The presence of an XML_ID ensures that a record is created if it doesn't exist, or updated if it already exists. This behaviour is included in the method `load` of each Odoo model.
 
 Let's build the transformation script, say `res_partner.py`. We start with importing the needed objects from the library.
 
@@ -509,7 +510,7 @@ processor = Processor('client_file.csv', delimiter=';')
 Now we create a mapping dictionary where the keys are the fields of the target model (`res.partner`) we want to import -**at least the required fields without default value**- and how we get them from the client file.
 
 ```
-res_partner_mapping = {    
+res_partner_mapping = {
     'id': mapper.m2o_map('my_import_res_partner', mapper.concat('_', 'Firstname', 'Lastname', 'Birthdate')),
     'name: mapper.concat(' ','Firstname','Lastname'),
     'birthdate': mapper.val('Birthdate', postprocess=lambda x: datetime.strptime(x, "%d/%m/%y").strftime("%Y-%m-%d 00:00:00")),
@@ -533,7 +534,7 @@ my_import_res_partner.David_Smith_28/02/1985;David Smith;28-02-1985 00:00:00
 ```
 > **Note:** The order of the columns is not related to the client file or the keys in the transform mapping dictionary.
 
-Notice some options are set when invoking the transformation: `'context': "{'tracking_disable': True}", 'worker': 2, 'batch_size': 20}`. 
+Notice some options are set when invoking the transformation: `'context': "{'tracking_disable': True}", 'worker': 2, 'batch_size': 20}`.
 They don't play any role in the transformation by itself. Instead it will be used by the import shell script later. Hopefully, we can automatically create the shell script by adding this line:
 
 ```
@@ -558,7 +559,7 @@ from datetime import datetime   # used to change the format of datetime fields
 
 processor = Processor('client_file.csv', delimiter=';')
 
-res_partner_mapping = {    
+res_partner_mapping = {
     'id': mapper.m2o_map('my_import_res_partner', mapper.concat('_', 'Firstname', 'Lastname', 'Birthdate')),
     'name: mapper.concat(' ','Firstname','Lastname'),
     'birthdate': mapper.val('Birthdate', postprocess=lambda x: datetime.strptime(x, "%d/%m/%y").strftime("%Y-%m-%d 00:00:00")),
@@ -575,7 +576,7 @@ python res_partner.py
 ```
 
 You should have created:
--  the import file `res.partner.csv` in the same folder as the client file `res_partner.csv`, 
+-  the import file `res.partner.csv` in the same folder as the client file `res_partner.csv`,
 -  the shell script `res_partner.sh` in your current folder.
 
 #### Dealing with Relationships
@@ -616,7 +617,7 @@ It worths noting the option`'set'` of `processor.process` while invoking the com
 
 And here is the mapping to extract the persons. It's exactly the same as before except we've added the field `parent_id`.
 ```
-res_partner_mapping = {    
+res_partner_mapping = {
     'id': mapper.m2o_map('my_import_res_partner', mapper.concat('_', 'Firstname', 'Lastname', 'Birthdate')),
     'name': mapper.concat(' ','Firstname','Lastname'),
     'birthdate': mapper.val('Birthdate', postprocess=lambda x: datetime.strptime(x, "%d/%m/%y").strftime("%Y-%m-%d 00:00:00")),
@@ -677,7 +678,7 @@ res_partner_company_mapping =  {
 
 processor.process(res_partner_company_mapping, 'res.partner.company.csv', {}, 'set')
 
-res_partner_mapping = {    
+res_partner_mapping = {
     'id': mapper.m2o_map('my_import_res_partner', mapper.concat('_', 'Firstname', 'Lastname', 'Birthdate')),
     'name': mapper.concat(' ','Firstname','Lastname'),
     'birthdate': mapper.val('Birthdate', postprocess=lambda x: datetime.strptime(x, "%d/%m/%y").strftime("%Y-%m-%d 00:00:00")),
@@ -692,7 +693,7 @@ processor.write_to_file("res_partner.sh", python_exe='', path='')
 
 ##### One2many Relationships
 
-Usually we don't import `One2many` fields. Instead, we import the inverse `Many2one` relation in the linked model. 
+Usually we don't import `One2many` fields. Instead, we import the inverse `Many2one` relation in the linked model.
 
 ##### Many2many Relationships
 
@@ -708,7 +709,7 @@ By looking into Odoo, we see that the model `res.partner` contains a field `cate
 
 1- Create all the categories by extracting them from the client file and assign them and XML_ID.
 
-2- Build a comma separated list of XML_IDs of categories for each partner. 
+2- Build a comma separated list of XML_IDs of categories for each partner.
 
 Let's start the transformation script. As usual, we start with the needed imports and the creation of a `Processor` on the client file.
 ```
@@ -740,9 +741,9 @@ res_partner_category.Bad Payer;Bad Payer
 ```
 
 Now we can complete the person mapping. It's exactly the same as before except we have added the field `category_id`.
- 
+
 ```
-res_partner_mapping = {    
+res_partner_mapping = {
     'id': mapper.m2o_map('my_import_res_partner', mapper.concat('_', 'Firstname', 'Lastname', 'Birthdate')),
     'name': mapper.concat(' ','Firstname','Lastname'),
     'birthdate': mapper.val('Birthdate', postprocess=lambda x: datetime.strptime(x, "%d/%m/%y").strftime("%Y-%m-%d 00:00:00")),
@@ -792,7 +793,7 @@ partner_category_mapping = {
 
 processor.process(partner_category_mapping, 'res.partner.category.csv', {}, m2m=True)
 
-res_partner_mapping = {    
+res_partner_mapping = {
     'id': mapper.m2o_map('my_import_res_partner', mapper.concat('_', 'Firstname', 'Lastname', 'Birthdate')),
     'name': mapper.concat(' ','Firstname','Lastname'),
     'birthdate': mapper.val('Birthdate', postprocess=lambda x: datetime.strptime(x, "%d/%m/%y").strftime("%Y-%m-%d 00:00:00")),
@@ -818,7 +819,7 @@ processor = Processor('client_file.csv', delimiter=';')
 res_partner_company_mapping =  {
 }
 
-res_partner_mapping = {    
+res_partner_mapping = {
 }
 
 processor.process(res_partner_company_mapping, 'res.partner.company.csv', {}, 'set')
@@ -838,7 +839,7 @@ processor = Processor('client_file.csv', delimiter=';')
 res_partner_company_mapping =  {
 }
 
-res_partner_mapping = {    
+res_partner_mapping = {
 }
 
 processor.process(res_partner_mapping, 'res.partner.csv', {})
@@ -857,7 +858,7 @@ processor.write_to_file("res_partner_company.sh", python_exe='', path='')
 
 #For the 2nd load script
 processor = Processor('client_file.csv', delimiter=';')
-res_partner_mapping = {    
+res_partner_mapping = {
 }
 processor.process(res_partner_mapping, 'res.partner.csv', {})
 processor.write_to_file("res_partner.sh", python_exe='', path='')
@@ -1303,6 +1304,129 @@ my_mapping = {
     ...
 }
 ```
+
+#### XML Processing
+
+The `XMLProcessor` class allows you to transform data from XML files into a format suitable for Odoo import, providing an alternative to the `Processor` class for XML-based data sources.
+
+```python
+# -*- coding: utf-8 -*-
+from odoo_csv_tools.lib import mapper
+from odoo_csv_tools.lib.transform import Processor
+from lxml import etree
+
+processor = XMLProcessor(filename, root_node_path)
+```
+
+The XMLProcessor is initialized with the XML file to process and an XPath expression to identify the data records.
+
+`XMLProcessor.__init__(filename, root_node_path, conf_file=False)`
+Constructor for the XMLProcessor class.
+
+*Args:*
+
+`filename` (str): The path to the XML file to be processed.
+
+`root_node_path` (str): An XPath expression specifying the root node(s) within the XML file to iterate over. Each node found by this XPath will be treated as a data record.
+
+`conf_file` (str, optional): The path to a configuration file. Inherited from the Processor class but may not be used in the same way by XMLProcessor. Defaults to False.
+
+`XMLProcessor.process(mapping, filename_out, import_args, t='list', null_values=['NULL', False], verbose=True, m2m=False)`
+Transforms data from the XML file based on the provided mapping.
+
+*Args:*
+
+`mapping` (dict): A dictionary that defines how data from the XML file should be mapped to fields in the output format (e.g., CSV). The keys of the dictionary are the target field names, and the values are XPath expressions to extract the corresponding data from the XML.
+
+`filename_out` (str): The name of the output file where the transformed data will be written.
+
+`import_args` (dict): A dictionary containing arguments that will be passed to the odoo_import_thread.py script (e.g., `{'model': 'res.partner', 'context': "{'tracking_disable': True}"}`).
+
+`t (str, optional)`: This argument is kept for compatibility but is not used in XMLProcessor. Defaults to 'list'.
+
+`null_values` (list, optional): This argument is kept for compatibility but is not used in XMLProcessor. Defaults to `['NULL', False]`.
+
+`verbose` (bool, optional): This argument is kept for compatibility but is not used in XMLProcessor. Defaults to True.
+
+`m2m (bool, optional)`: This argument is kept for compatibility but is not used in XMLProcessor. Defaults to False.
+
+*Returns:*
+
+`tuple`: A tuple containing the header (list of field names) and the transformed data (list of lists).
+
+> **Important Notes:**
+The t, null_values, verbose, and m2m arguments are present for compatibility with the Processor class but are not actually used by the XMLProcessor.
+The mapping dictionary values should be XPath expressions that select the desired data from the XML nodes.
+
+`XMLProcessor.split(split_fun)`
+Raises a NotImplementedError because the split functionality is not supported for XMLProcessor.
+
+*Args:*
+
+`split_fun`: This argument is not used.
+
+*Raises:*
+
+`NotImplementedError`: Indicates that the split method is not available for XML processing.
+
+##### Example of XML to CSV Transformation
+
+Let's say you have the following XML data:
+
+```XML
+<?xml version="1.0"?>
+<data>
+    <country name="Liechtenstein">
+        <rank>1</rank>
+        <year>2008</year>
+        <gdppc>141100</gdppc>
+        <neighbor name="Austria" direction="E"/>
+        <neighbor name="Switzerland" direction="W"/>
+    </country>
+    <country name="Singapore">
+        <rank>4</rank>
+        <year>2011</year>
+        <gdppc>59900</gdppc>
+        <neighbor name="Malaysia" direction="N"/>
+    </country>
+    <country name="Panama">
+        <rank>68</rank>
+        <year>2011</year>
+        <gdppc>13600</gdppc>
+        <neighbor name="Costa Rica" direction="W"/>
+        <neighbor name="Colombia" direction="E"/>
+    </country>
+</data>
+```
+
+To transform this into a CSV file with columns "name", "gdp", "year", and "neighbor", you would use the following Python script and mapping:
+
+```Python
+from odoo_csv_tools.lib import mapper
+from odoo_csv_tools.lib.transform import XMLProcessor
+
+processor = XMLProcessor('countries.xml', '/data/country')
+
+mapping = {
+    'name': '/data/country/@name',
+    'gdp': '/data/country/gdppc/text()',
+    'year': '/data/country/year/text()',
+    'neighbor': '/data/country/neighbor/@name'
+}
+
+processor.process(mapping, 'countries.csv', {})
+```
+
+This would generate a CSV file like this:
+
+```CSV
+"name";"gdp";"year";"neighbor"
+"Liechtenstein";"141100";"2008";"Austria"
+"Singapore";"59900";"2011";"Malaysia"
+"Panama";"13600";"2011";"Costa Rica"
+```
+
+
 ## A Real Life Example
 A complete import project (transformation and load) is available in the repo [odoo_import_example](https://github.com/tfrancoi/odoo_import_example). It demonstrates use cases such as:
 - importing partners with multiple categories
