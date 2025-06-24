@@ -9,10 +9,10 @@ import sys
 from time import time
 from typing import Any, Optional
 
-from ..logging_config import log
 from .lib import conf_lib
 from .lib.internal.rpc_thread import RpcThread
 from .lib.internal.tools import batch
+from .logging_config import log
 
 # Set a high field size limit for CSV to handle potentially large fields
 # like base64 encoded binary data.
@@ -46,7 +46,9 @@ class RPCThreadExport(RpcThread):
         def launch_batch_fun(ids_to_export: list[int], num: int):
             start_time = time()
             try:
-                log.debug(f"Exporting batch {num} with {len(ids_to_export)} records...")
+                log.debug(
+                    f"Exporting batch {num} with {len(ids_to_export)} records..."
+                )
                 # The actual RPC call to Odoo
                 datas = self.model.export_data(
                     ids_to_export, self.header, context=self.context
@@ -132,7 +134,9 @@ def export_data(
         log.info(f"Writing exported data to file: {output}")
         try:
             with open(output, "w", newline="", encoding=encoding) as f:
-                writer = csv.writer(f, separator=separator, quoting=csv.QUOTE_ALL)
+                writer = csv.writer(
+                    f, separator=separator, quoting=csv.QUOTE_ALL
+                )
                 writer.writerow(header)
                 writer.writerows(all_exported_data)
             log.info("File writing complete.")
