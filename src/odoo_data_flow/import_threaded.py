@@ -10,10 +10,10 @@ from collections.abc import Generator
 from time import time
 from typing import Any, Optional
 
-from ..logging_config import log
 from .lib import conf_lib
 from .lib.internal.rpc_thread import RpcThread
 from .lib.internal.tools import batch
+from .logging_config import log
 
 if sys.version_info.major >= 3:
     csv.field_size_limit(sys.maxsize)
@@ -59,7 +59,9 @@ class RPCThreadImport(RpcThread):
                     for msg in res["messages"]:
                         record_index = msg.get("record", -1)
                         failed_line = (
-                            lines[record_index] if record_index < len(lines) else "N/A"
+                            lines[record_index]
+                            if record_index < len(lines)
+                            else "N/A"
                         )
                         log.error(
                             f"Odoo message for batch {num}: "
@@ -80,7 +82,9 @@ class RPCThreadImport(RpcThread):
                     success = True
 
             except Exception as e:
-                log.error(f"RPC call for batch {num} failed: {e}", exc_info=True)
+                log.error(
+                    f"RPC call for batch {num} failed: {e}", exc_info=True
+                )
                 success = False
 
             if not success:
@@ -160,7 +164,9 @@ def _create_batches(
         split_index = header.index(split_by_col)
         id_index = header.index("id")
     except ValueError as e:
-        log.error(f"Grouping column '{e}' not found in header. Cannot use --groupby.")
+        log.error(
+            f"Grouping column '{e}' not found in header. Cannot use --groupby."
+        )
         return
 
     # Sort data by the grouping column
@@ -249,13 +255,19 @@ def import_data(
     fail_file_handle = None
     if fail_file:
         try:
-            fail_file_handle = open(fail_file, "w", newline="", encoding=encoding)
+            fail_file_handle = open(
+                fail_file, "w", newline="", encoding=encoding
+            )
             fail_file_writer = csv.writer(
                 fail_file_handle, separator=separator, quoting=csv.QUOTE_ALL
             )
-            fail_file_writer.writerow(header)  # Write header to fail file immediately
+            fail_file_writer.writerow(
+                header
+            )  # Write header to fail file immediately
         except OSError as e:
-            log.error(f"Could not open fail file for writing: {fail_file}. Error: {e}")
+            log.error(
+                f"Could not open fail file for writing: {fail_file}. Error: {e}"
+            )
             return  # Cannot proceed without a fail file
 
     rpc_thread = RPCThreadImport(
