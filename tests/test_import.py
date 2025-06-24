@@ -1,64 +1,84 @@
+"""This test script generates data for partner categories and partners
+to be used in the main test suite.
 """
-Created on 14 sept. 2016
 
-@author: mythrys
-"""
 import random
-import sys
 
-from const import EXEC
+from odoo_data_flow.lib import mapper, transform
 
-from odoo_csv_tools.lib import mapper
-from odoo_csv_tools.lib import transform
+# --- Configuration ---
+PARTNER_PREFIX = "partner_generated"
+TAG_PREFIX = "partner_tag"
+PARTNER_OUTPUT = "data/res.partner.generated.csv"
+TAG_OUTPUT = "data/res.partner.category.csv"
 
-if sys.version_info < (3, 0, 0):
-    from builtins import range
+# --- Test Data Generation ---
+# Create 100 unique tags
+tags = [f"Tag {i}" for i in range(100)]
 
-if len(sys.argv) == 2:
-    EXEC = sys.argv[1]
+# Create a dataset for 200 partners, each assigned 5 random tags
+header = ["id", "tags"]
+data = [
+    [str(i), ",".join(random.choice(tags) for _ in range(5))]
+    for i in range(200)
+]
 
-PARTNER_PREFIX = 'partner_generated'
-TAG_PREFIX = 'partner_tag'
-output = 'data/res.partner.generated.csv'
-tag_output = 'data/res.partner.category.csv'
-script = '0_partner_generated.sh'
+# --- Mapping Definitions ---
 
-tags = ["Tag %s" % i for i in range(0, 100)]
-
-header = ['id', 'tags']
-data = [[str(i), ','.join(tags[random.randint(0, 99)] for i in range(0, 5))] for i in range(0, 200)]
-
-mapping = {
-    'id': mapper.m2o(PARTNER_PREFIX, 'id'),
-    'name': mapper.val('id', postprocess=lambda x: "Partner %s" % x),
-    'phone': mapper.val('id', postprocess=lambda x: "0032%s" % (int(x) * 11)),
-    'website': mapper.val('id', postprocess=lambda x: "http://website-%s.com" % x),
-    'street': mapper.val('id', postprocess=lambda x: "Street %s" % x),
-    'city': mapper.val('id', postprocess=lambda x: "City %s" % x),
-    'zip': mapper.val('id', postprocess=lambda x: ("%s" % x).zfill(6)),
-    'country_id/id': mapper.const('base.be'),
-    'company_type': mapper.const('company'),
-    'customer': mapper.val('id', postprocess=lambda x: str(int(x) % 2)),
-    'supplier': mapper.val('id', postprocess=lambda x: str((int(x) + 1) % 2)),
-    'lang': mapper.const('English'),
-    'category_id/id': mapper.m2m(TAG_PREFIX, 'tags')
-}
-
+# Mapping to create the partner category records.
+# This will be processed in a special m2m mode to create one record per unique tag.
 tag_mapping = {
-    'id': mapper.m2m_id_list(TAG_PREFIX, 'tags'),
-    'name': mapper.m2m_value_list('tags'),
-    'parent_id/id': mapper.const('base.res_partner_category_0'),
+    # CORRECTED: Use m2m_map to correctly prepend the prefix to each tag name
+    # to create a unique external ID. e.g., "partner_tag_Tag 1"
+    "id": mapper.m2m_map(TAG_PREFIX, "tags", sep=","),
+    # CORRECTED: Use m2m with a separator to extract the individual tag names.
+    "name": mapper.m2m("tags", sep=","),
+    "parent_id/id": mapper.const("base.res_partner_category_0"),
 }
 
+# Mapping to create the partner records, linking them to the tags created above.
+partner_mapping = {
+    "id": mapper.concat(PARTNER_PREFIX, "_", "id"),
+    "name": mapper.val("id", postprocess=lambda x: f"Partner {x}"),
+    "phone": mapper.val("id", postprocess=lambda x: f"0032{int(x) * 11}"),
+    "website": mapper.val(
+        "id", postprocess=lambda x: f"http://website-{x}.com"
+    ),
+    "street": mapper.val("id", postprocess=lambda x: f"Street {x}"),
+    "city": mapper.val("id", postprocess=lambda x: f"City {x}"),
+    "zip": mapper.val("id", postprocess=lambda x: str(x).zfill(6)),
+    "country_id/id": mapper.const("base.be"),
+    "company_type": mapper.const("company"),
+    "customer_rank": mapper.val("id", postprocess=lambda x: int(x) % 2),
+    "supplier_rank": mapper.val("id", postprocess=lambda x: (int(x) + 1) % 2),
+    "lang": mapper.const("en_US"),
+    # CORRECTED: Use m2m_map to ensure each tag in the list is correctly
+    # prefixed, matching the external IDs created by the tag_mapping.
+    "category_id/id": mapper.m2m_map(TAG_PREFIX, "tags", sep=","),
+}
+
+# --- Processing ---
+
+# Initialize the processor with the in-memory data
 processor = transform.Processor(header=header, data=data)
-processor.process(tag_mapping, tag_output, {
-    'worker': 1,
-    'batch_size': 10,
-    'model': 'res.partner.category',
-}, m2m=True)
-processor.process(mapping, output, {
-    'worker': 4,
-    'batch_size': 100,
-    'model': 'res.partner',
-})
-processor.write_to_file(script, python_exe=EXEC, path='../', encoding="utf-8-sig")
+
+# Process the tags first, using the special m2m=True mode.
+# This will find all unique tags from the 'tags' column and create a clean
+# CSV file with one row for each unique tag.
+print(f"Generating partner category data at: {TAG_OUTPUT}")
+processor.process(
+    tag_mapping,
+    TAG_OUTPUT,
+    params={"model": "res.partner.category"},
+    m2m=True,
+)
+
+# Next, process the main partner records.
+print(f"Generating partner data at: {PARTNER_OUTPUT}")
+processor.process(
+    partner_mapping,
+    PARTNER_OUTPUT,
+    params={"model": "res.partner"},
+)
+
+print("Test data generation complete.")
