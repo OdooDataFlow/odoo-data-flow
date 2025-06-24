@@ -1,4 +1,6 @@
-"""This module contains a legacy workflow helper for processing imported
+"""Invoice helper for odoo version 9.
+
+This module contains a legacy workflow helper for processing imported
 invoices in Odoo v9. It is preserved for reference but will need to be
 updated to work with modern Odoo versions.
 """
@@ -10,11 +12,13 @@ from .internal.rpc_thread import RpcThread
 
 
 class InvoiceWorkflowV9:
-    """A class to automate the lifecycle of imported invoices in Odoo v9,
+    """Automate odoo 9 Invoice Workflow.
+
+    A class to automate the lifecycle of imported invoices in Odoo v9,
     such as validating, paying, and setting taxes.
     """
 
-    def __init__(
+    def __init__(  # noqa: doc301
         self,
         connection,
         field,
@@ -22,11 +26,11 @@ class InvoiceWorkflowV9:
         paid_date_field,
         payment_journal,
         max_connection=4,
-    ):
+    ):  # noqa: doc301
         """Initializes the workflow processor.
 
         @param connection: An active odoo-client-lib connection object.
-        @param field: The field that contains the legacy status from source data.
+        @param field: The field that contains the legacy status from source data
         @param status_map: A dict mapping Odoo states to lists of legacy states.
                            e.g., {'open': ['status1'], 'paid': ['status2']}
         @param paid_date_field: The field containing the payment date.
@@ -36,9 +40,7 @@ class InvoiceWorkflowV9:
         self.connection = connection
         self.invoice_obj = connection.get_model("account.invoice")
         self.payment_obj = connection.get_model("account.payment")
-        self.account_invoice_tax = self.connection.get_model(
-            "account.invoice.tax"
-        )
+        self.account_invoice_tax = self.connection.get_model("account.invoice.tax")
         self.field = field
         self.status_map = status_map
         self.paid_date = paid_date_field
@@ -79,9 +81,9 @@ class InvoiceWorkflowV9:
 
     def validate_invoice(self):
         """Finds and validates invoices that should be open or paid."""
-        statuses_to_validate = self.status_map.get(
-            "open", []
-        ) + self.status_map.get("paid", [])
+        statuses_to_validate = self.status_map.get("open", []) + self.status_map.get(
+            "paid", []
+        )
         invoice_to_validate = self.invoice_obj.search(
             [
                 (self.field, "in", statuses_to_validate),
@@ -164,15 +166,14 @@ class InvoiceWorkflowV9:
                 "amount",
                 "payment_type",
             ]
-            data = self.payment_obj.default_get(
-                fields_to_get, context=wizard_context
-            )
+            data = self.payment_obj.default_get(fields_to_get, context=wizard_context)
             data.update(data_update)
             wizard_id = self.payment_obj.create(data, context=wizard_context)
             try:
                 self.payment_obj.post([wizard_id], context=wizard_context)
             except Fault:
-                # Odoo may raise a fault for various reasons (e.g., already paid),
+                # Odoo may raise a fault for various reasons
+                # (e.g., already paid),
                 # which can be ignored in a batch process.
                 pass
 

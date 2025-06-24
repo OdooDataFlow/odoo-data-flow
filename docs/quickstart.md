@@ -22,10 +22,10 @@ First, create the recommended directory structure for a data flow project.
 └── transform.py
 ```
 
--   `conf/`: Holds configuration files, like Odoo connection details.
--   `origin/`: Contains the original, raw data files from the source system.
--   `data/`: Will store the transformed, clean CSV files ready for import.
--   `transform.py`: Our main Python script for the transformation logic.
+- `conf/`: Holds configuration files, like Odoo connection details.
+- `origin/`: Contains the original, raw data files from the source system.
+- `data/`: Will store the transformed, clean CSV files ready for import.
+- `transform.py`: Our main Python script for the transformation logic.
 
 ## Step 2: Connection Configuration (`connection.conf`)
 
@@ -114,6 +114,7 @@ python transform.py
 Let's look at what was created.
 
 **File: `data/res_partner.csv` (Transformed & Clean Data)**
+
 ```csv
 id,name,email,is_company
 example_client_C001,"John Doe",john.doe@test.com,False

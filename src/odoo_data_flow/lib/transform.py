@@ -6,21 +6,26 @@ from collections import OrderedDict
 
 from ..logging_config import log
 from . import mapper
-from .internal.exceptions import SkippingException
+from .internal.exceptions import SkippingError
 from .internal.io import write_file
 
 
 class MapperRepr:
-    """A wrapper to provide a useful string representation for mapper functions."""
+    """Mapper representation.
+
+    A wrapper to provide a useful string representation for mapper functions.
+    """
 
     def __init__(self, repr_string, func):
         self._repr_string = repr_string
         self.func = func
 
     def __call__(self, *args, **kwargs):
+        """Call the wrapped function."""
         return self.func(*args, **kwargs)
 
     def __repr__(self):
+        """Return the string representation."""
         return self._repr_string
 
 
@@ -51,7 +56,8 @@ class Processor:
             self.data = data
         else:
             raise ValueError(
-                "Processor must be initialized with either a 'filename' or both 'header' and 'data'."
+                "Processor must be initialized with either a 'filename' or both"
+                " 'header' and 'data'."
             )
 
         # Apply any pre-processing hooks
@@ -65,7 +71,8 @@ class Processor:
             # and that the old xml_transform.py will be removed.
             # This part will need implementation if XML support is kept.
             raise NotImplementedError(
-                "XML file processing needs to be integrated into the standard Processor."
+                "XML file processing needs to be integrated into the standard "
+                "Processor."
             )
 
         log.info(f"Reading CSV file: {filename}")
@@ -110,9 +117,7 @@ class Processor:
     def get_o2o_mapping(self):
         """Generates a direct 1-to-1 mapping dictionary."""
         return {
-            str(column): MapperRepr(
-                f"mapper.val('{column}')", mapper.val(column)
-            )
+            str(column): MapperRepr(f"mapper.val('{column}')", mapper.val(column))
             for column in self.header
             if column
         }
@@ -121,20 +126,23 @@ class Processor:
         self,
         mapping,
         filename_out,
-        params={},
+        params=None,
         t="list",
-        null_values=["NULL", False],
+        null_values=None,
         m2m=False,
     ):
-        """Processes the data using a mapping and prepares it for writing."""
+        """Main processor.
+
+        Processes the data using a mapping and prepares it for writing.
+        """
+        if null_values is None:
+            null_values = ["NULL", False]
+        if params is None:
+            params = {}
         if m2m:
-            head, data = self._process_mapping_m2m(
-                mapping, null_values=null_values
-            )
+            head, data = self._process_mapping_m2m(mapping, null_values=null_values)
         else:
-            head, data = self._process_mapping(
-                mapping, t=t, null_values=null_values
-            )
+            head, data = self._process_mapping(mapping, t=t, null_values=null_values)
 
         self._add_data(head, data, filename_out, params)
         return head, data
@@ -147,7 +155,10 @@ class Processor:
         python_exe="python",
         path="",
     ):
-        """Generates the .sh script for the import."""
+        """Write bash script.
+
+        Generates the .sh script for the import.
+        """
         init = not append
         for _, info in self.file_to_write.items():
             info_copy = info.copy()
@@ -173,18 +184,19 @@ class Processor:
         separator=";",
         encoding="utf-8",
     ):
-        """Joins data from a secondary file into the processor's main data."""
-        child_header, child_data = self._read_file(
-            filename, separator, encoding
-        )
+        """File joiner.
+
+        Joins data from a secondary file into the processor's main data.
+        """
+        child_header, child_data = self._read_file(filename, separator, encoding)
 
         try:
             child_key_pos = child_header.index(child_key)
             master_key_pos = self.header.index(master_key)
         except ValueError as e:
             log.error(
-                f"Join key error: {e}. Check if '{master_key}' and '{child_key}'"
-                f" exist in their respective files."
+                f"Join key error: {e}. Check if '{master_key}' and "
+                f"'{child_key}' exist in their respective files."
             )
             return
 
@@ -200,9 +212,7 @@ class Processor:
 
     def _add_data(self, head, data, filename_out, params):
         params = params.copy()
-        params["filename"] = (
-            os.path.abspath(filename_out) if filename_out else False
-        )
+        params["filename"] = os.path.abspath(filename_out) if filename_out else False
         params["header"] = head
         params["data"] = data
         self.file_to_write[filename_out] = params
@@ -215,17 +225,14 @@ class Processor:
         for i, line in enumerate(self.data):
             # Clean up null values
             cleaned_line = [
-                s.strip() if s and s.strip() not in null_values else ""
-                for s in line
+                s.strip() if s and s.strip() not in null_values else "" for s in line
             ]
             line_dict = dict(zip(self.header, cleaned_line))
 
             try:
                 # Pass the state dictionary to each mapper call
-                line_out = [
-                    mapping[k](line_dict, state) for k in mapping.keys()
-                ]
-            except SkippingException as e:
+                line_out = [mapping[k](line_dict, state) for k in mapping.keys()]
+            except SkippingError as e:
                 log.debug(f"Skipping line {i}: {e.message}")
                 continue
 
@@ -236,7 +243,10 @@ class Processor:
         return list(mapping.keys()), lines_out
 
     def _process_mapping_m2m(self, mapping, null_values):
-        """Handles special m2m mapping by expanding list values into unique rows."""
+        """m2m process mapping.
+
+        Handles special m2m mapping by expanding list values into unique rows.
+        """
         head, data = self._process_mapping(mapping, "list", null_values)
         lines_out = set()
 
@@ -260,41 +270,3 @@ class Processor:
                 lines_out.add(tuple(new_line))
 
         return head, lines_out
-
-
-class ProductProcessorV9(Processor):
-    """Legacy processor for Odoo v9 product imports.
-    Note: The `process_attribute_mapping` method is highly specialized
-    and a multi-step process using the standard Processor is now preferred.
-    """
-
-    def process_attribute_mapping(
-        self,
-        mapping,
-        line_mapping,
-        attributes_list,
-        ATTRIBUTE_PREFIX,
-        path,
-        import_args,
-        id_gen_fun=None,
-        null_values=["NULL"],
-    ):
-        # ... (original logic would be here, refactored for syntax) ...
-        log.warning(
-            "Using legacy ProductProcessorV9. "
-            "Consider refactoring to the standard Processor."
-        )
-
-
-class ProductProcessorV10(Processor):
-    """Processor with helpers for Odoo v10+ product imports."""
-
-    def process_attribute_data(
-        self, attributes_list, ATTRIBUTE_PREFIX, filename_out, import_args
-    ):
-        attr_header = ["id", "name", "create_variant"]
-        attr_data = [
-            [mapper.to_m2o(ATTRIBUTE_PREFIX, att), att, "Dynamically"]
-            for att in attributes_list
-        ]
-        self._add_data(attr_header, attr_data, filename_out, import_args)

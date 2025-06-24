@@ -52,9 +52,10 @@ flowchart TD
 ```
 
 This separation provides several key advantages:
--   **Debugging**: If there's a problem, you can easily tell if it's a data transformation issue or an Odoo connection issue.
--   **Reusability**: You can run the time-consuming transformation once and then use the resulting clean data to load into multiple Odoo instances (e.g., testing, staging, and production).
--   **Simplicity**: Each script has a single, clear responsibility.
+
+- **Debugging**: If there's a problem, you can easily tell if it's a data transformation issue or an Odoo connection issue.
+- **Reusability**: You can run the time-consuming transformation once and then use the resulting clean data to load into multiple Odoo instances (e.g., testing, staging, and production).
+- **Simplicity**: Each script has a single, clear responsibility.
 
 ## The Import Strategy: One File, One Model
 
@@ -66,7 +67,7 @@ This deliberate design ensures clarity and respects Odoo's internal logic. Data 
 
 In addition to transforming and loading data, the library provides a powerful **workflow** system for running automated, post-import actions on your records directly in Odoo.
 
-This is an advanced feature designed for complex use cases, such as validating a large batch of imported invoices, registering payments, or triggering other specific business logic that needs to happen *after* the initial data has been loaded.
+This is an advanced feature designed for complex use cases, such as validating a large batch of imported invoices, registering payments, or triggering other specific business logic that needs to happen _after_ the initial data has been loaded.
 
 This is handled by the `odoo-data-flow workflow` command, which allows you to run predefined processes on your data.
 
@@ -102,7 +103,7 @@ The `Processor` is the engine of the library. You initialize it with your source
 
 ### 2. The `mapper` Functions
 
-Mappers are the individual building blocks for your transformations. They are simple, reusable functions that define *how* to create the value for a single column in your destination file. The library provides a rich set of mappers for concatenation, direct value mapping, static values, and handling complex relationships.
+Mappers are the individual building blocks for your transformations. They are simple, reusable functions that define _how_ to create the value for a single column in your destination file. The library provides a rich set of mappers for concatenation, direct value mapping, static values, and handling complex relationships.
 
 > For a complete list of all available mappers and their options, see the [Data Transformations Guide](guides/04_data_transformations.md).
 
@@ -161,4 +162,5 @@ graph TD
         ExportB --> ExportD["Output File<br>(e.g., exported_partners.csv)"];
     end
 ```
+
 > For detailed instructions, see the [Exporting Data Guide](guides/03_exporting_data.md).

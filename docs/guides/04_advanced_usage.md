@@ -6,8 +6,8 @@ This guide covers more complex scenarios and advanced features of the library th
 
 While CSV is common, you may have source data in XML format. The `Processor` can handle XML files with a couple of extra configuration arguments.
 
-* **`xml_root_tag` (str)**: The name of the root tag in your XML document that contains the collection of records.
-* **`xml_record_tag` (str)**: The name of the tag that represents a single record.
+- **`xml_root_tag` (str)**: The name of the root tag in your XML document that contains the collection of records.
+- **`xml_record_tag` (str)**: The name of the tag that represents a single record.
 
 ### Example: Importing Partners from an XML File
 
@@ -55,6 +55,7 @@ This method is robust because it relies on Odoo's standard multi-company behavio
 This method is useful when your source file contains data for multiple companies mixed together. You can explicitly tell Odoo which company a record belongs to by mapping a value to the `company_id/id` field.
 
 **Example: A source file with mixed-company products**
+
 ```csv
 SKU,ProductName,CompanyCode
 P100,Product A,COMPANY_US
@@ -75,6 +76,7 @@ product_mapping = {
     'company_id/id': mapper.m2o_map('main_', 'CompanyCode'),
 }
 ```
+
 **Warning:** While powerful, this method requires that you have stable and correct external IDs for your `res.company` records. The procedural approach is often simpler and less error-prone.
 
 ---
@@ -93,17 +95,20 @@ The process involves two steps:
 **Step 1: Import the base product data in English**
 
 **Source File (`product_template.csv`):**
+
 ```csv
 id;name;price
 my_module.product_wallet;Wallet;10.0
 my_module.product_bicyle;Bicycle;400.0
 ```
+
 You would import this file normally. The `id` column provides the stable external ID for each product.
 
 **Step 2: Import the French translations**
 
 **Source File (`product_template_FR.csv`):**
 This file only needs to contain the external ID and the fields that are being translated.
+
 ```csv
 id;name
 my_module.product_wallet;Portefeuille
@@ -114,6 +119,7 @@ my_module.product_bicyle;Bicyclette
 While you can use a `transform.py` script to generate the load script, for a simple translation update, you can also run the command directly.
 
 **Command-line Example:**
+
 ```bash
 odoo-data-flow import \
     --config conf/connection.conf \
@@ -121,6 +127,7 @@ odoo-data-flow import \
     --model product.template \
     --context "{'lang': 'fr_FR'}"
 ```
+
 This does not overwrite the English name; instead, it correctly creates or updates the French translation for the `name` field on the specified products.
 
 ---
@@ -136,6 +143,7 @@ For a significant performance boost when importing large, pre-validated accounti
 ### Example: Importing an Invoice
 
 **Source File: `invoices.csv`**
+
 ```csv
 Journal,Reference,Date,Account,Label,Debit,Credit
 INV,INV2023/12/001,2023-12-31,,,
@@ -145,6 +153,7 @@ INV,INV2023/12/001,2023-12-31,,,
 ```
 
 **Transformation Script**
+
 ```python
 from odoo_data_flow.lib.transform import Processor
 from odoo_data_flow.lib import mapper
@@ -162,6 +171,7 @@ params = {
 processor = Processor('origin/invoices.csv')
 # ... rest of process
 ```
+
 ---
 
 ## Importing One-to-Many Relationships (`--o2m` flag)
@@ -173,6 +183,7 @@ The `--o2m` flag enables a special import mode for handling source files where c
 This mode is designed for files structured like this, where a master record has lines for two different one-to-many fields (`child1_ids` and `child2_ids`):
 
 **Source File (`master_with_children.csv`)**
+
 ```csv
 MasterID,MasterName,Child1_SKU,Child2_Ref
 M01,Master Record 1,field_value1_of_child1,field_value1_of_child2
@@ -199,8 +210,9 @@ The generated `load.sh` script will then include the `--o2m` flag in the `odoo-d
 ### Important Limitations
 
 This method is convenient but has significant consequences because **it is impossible to set XML_IDs on the child records**. As a result:
-* You **cannot run the import again to update** the child records. Any re-import will create new child records.
-* The child records **cannot be referenced** by their external ID in any other import file.
+
+- You **cannot run the import again to update** the child records. Any re-import will create new child records.
+- The child records **cannot be referenced** by their external ID in any other import file.
 
 This method is best suited for simple, one-off imports of transactional data where the child lines do not need to be updated or referenced later.
 
@@ -225,6 +237,7 @@ params = {
     'check': True # Enable import validation
 }
 ```
+
 The generated `load.sh` script will then include the `--check` flag in the `odoo-data-flow import` command.
 
 ---
@@ -237,7 +250,7 @@ When you import `product.template` records along with their attributes and value
 
 By setting `create_product_product: True` in the context of your `product.template` import, you trigger the Odoo mechanism that generates all possible product variants based on the attribute lines you have imported for that template.
 
-This is typically done as the final step *after* you have already imported the product attributes, attribute values, and linked them to the templates via attribute lines.
+This is typically done as the final step _after_ you have already imported the product attributes, attribute values, and linked them to the templates via attribute lines.
 
 ### Example: Triggering Variant Creation
 
@@ -277,13 +290,14 @@ Sometimes, the data you need for a single import is spread across multiple sourc
 
 You first initialize a `Processor` with your primary file. Then, you call `.join_file()` to merge data from a secondary file based on a common key.
 
--   **`filename` (str)**: The path to the secondary file to merge in.
--   **`key1` (str)**: The name of the key column in the **primary** file.
--   **`key2` (str)**: The name of the key column in the **secondary** file.
+- **`filename` (str)**: The path to the secondary file to merge in.
+- **`key1` (str)**: The name of the key column in the **primary** file.
+- **`key2` (str)**: The name of the key column in the **secondary** file.
 
 ### Example: Merging Customer Details into an Order File
 
 **Transformation Script (`transform_merge.py`)**
+
 ```python
 from odoo_data_flow.lib.transform import Processor
 from odoo_data_flow.lib import mapper
@@ -352,3 +366,4 @@ for index, chunk_processor in split_processors.items():
         target_file=output_filename,
         params={'model': 'product.product'}
     )
+```

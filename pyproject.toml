@@ -115,3 +115,5 @@ convention = "google"
 style = 'google'
 exclude = '\.git|\.nox|noxfile.py'
 arg-type-hints-in-docstring = false
+baseline = "pydoclint-baseline.txt"
+auto-generate-baseline = "True"

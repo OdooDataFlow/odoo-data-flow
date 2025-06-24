@@ -1,9 +1,12 @@
-"""This module defines custom exceptions used throughout the odoo-data-flow library."""
+"""Excpention handler.
+
+This module defines custom exceptions used throughout the library.
+"""
 
 from typing import Any
 
 
-class SkippingException(Exception):
+class SkippingError(Exception):
     """An exception raised to signal that the current row should be skipped.
 
     This is used within mappers to control the data processing flow and
@@ -11,10 +14,10 @@ class SkippingException(Exception):
     process to fail.
     """
 
-    def __init__(self, message: str, *args: Any):
+    def __init__(self, message: str, *args: Any):  # noqa: d301
         """Initializes the exception with a descriptive message.
 
-        Args:
+        *args:
             message: The reason why the row is being skipped.
         """
         self.message = message

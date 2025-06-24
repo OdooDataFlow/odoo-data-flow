@@ -26,15 +26,14 @@ A powerful Python library for defining robust, repeatable, and high-performance 
 
 ## Key Features
 
--   **Declarative Transformations:** Use simple Python scripts and a rich set of `mapper` functions to transform any source CSV or XML data into an Odoo-ready format.
--   **Two-Phase Workflow:** Cleanly separates data **transformation** from data **loading**, making complex migrations easier to manage, reuse, and debug.
--   **High-Performance CLI:** Import and export data with a clean, modern command-line interface, featuring high performance parallel processing (`--worker`), batching (`--size`), and robust error handling.
--   **Automatic Scripting:** Automatically generate shell scripts for the loading phase, ensuring a repeatable and reliable process every time.
--   **Robust Error Handling and Recovery:** Verify the number of records processed in a batch against the number successfully imported, helping to quickly identify issues.
--   **Direct Server-to-Server Migration:** Perform a complete export, transform, and import from one Odoo instance to another in a single, in-memory step with the `migrate` command.
--   **Post-Import Workflows:** Run automated actions on your data *after* it has been imported (e.g., validating invoices, registering payments) using the powerful `workflow` command.
--   **export data from Odoo** into CSV format. While specific details on export parameters are not extensively documented in the provided text, this capability complements the import functionality, offering a complete solution for Odoo data management.
-
+- **Declarative Transformations:** Use simple Python scripts and a rich set of `mapper` functions to transform any source CSV or XML data into an Odoo-ready format.
+- **Two-Phase Workflow:** Cleanly separates data **transformation** from data **loading**, making complex migrations easier to manage, reuse, and debug.
+- **High-Performance CLI:** Import and export data with a clean, modern command-line interface, featuring high performance parallel processing (`--worker`), batching (`--size`), and robust error handling.
+- **Automatic Scripting:** Automatically generate shell scripts for the loading phase, ensuring a repeatable and reliable process every time.
+- **Robust Error Handling and Recovery:** Verify the number of records processed in a batch against the number successfully imported, helping to quickly identify issues.
+- **Direct Server-to-Server Migration:** Perform a complete export, transform, and import from one Odoo instance to another in a single, in-memory step with the `migrate` command.
+- **Post-Import Workflows:** Run automated actions on your data _after_ it has been imported (e.g., validating invoices, registering payments) using the powerful `workflow` command.
+- **export data from Odoo** into CSV format. While specific details on export parameters are not extensively documented in the provided text, this capability complements the import functionality, offering a complete solution for Odoo data management.
 
 ## Installation
 
@@ -51,7 +50,7 @@ The core workflow involves two simple steps:
 **1. Transform your source data with a Python script.**
 Create a `transform.py` file to define the mapping from your source file to Odoo's format.
 
-```python
+````python
 # transform.py
 from odoo_data_flow.lib.transform import Processor
 from odoo_data_flow.lib import mapper
@@ -67,18 +66,18 @@ processor.process(my_mapping, 'data/products_clean.csv', {'model': 'product.prod
 processor.write_to_file("load.sh")
 ```console
 $ python transform.py
-```
+````
 
 **2. Load the clean data into Odoo using the CLI.**
 The `transform.py` script generates a `load.sh` file containing the correct CLI command.
 
-```bash
+````bash
 # Contents of the generated load.sh
 odoo-data-flow import --config conf/connection.conf --file data/products_clean.csv --model product.product
 ...
 ```console
 $ bash load.sh
-```
+````
 
 ## Documentation
 

@@ -1,5 +1,7 @@
 """Command-line interface for odoo-data-flow."""
 
+import ast
+
 import click
 
 from .converter import run_path_to_image, run_url_to_image
@@ -21,7 +23,7 @@ Command-line interface for odoo-data-flow.
 @click.option(
     "-v", "--verbose", is_flag=True, help="Enable verbose, debug-level logging."
 )
-def cli():
+def cli(verbose):
     """Odoo Data Flow: A tool for importing, exporting, and processing data."""
     setup_logging(verbose)
 
@@ -35,9 +37,7 @@ def workflow_group():
 
 # --- Invoice v9 Workflow Sub-command ---
 @workflow_group.command(name="invoice-v9")
-@click.option(
-    "-c", "--config", required=True, help="Path to the connection.conf file."
-)
+@click.option("-c", "--config", required=True, help="Path to the connection.conf file.")
 @click.option(
     "--action",
     "actions",
@@ -47,7 +47,7 @@ def workflow_group():
         case_sensitive=False,
     ),
     default=["all"],
-    help="Workflow action to run. Can be specified multiple times. Defaults to 'all'.",
+    help="Workflow action to run. Can be specified multiple times.Defaults to 'all'.",
 )
 @click.option(
     "--field",
@@ -58,7 +58,8 @@ def workflow_group():
     "--status-map",
     "status_map_str",
     required=True,
-    help="Dictionary string mapping Odoo states to legacy states. e.g., \"{'open': ['OP']}\"",
+    help="Dictionary string mapping Odoo states to legacy states. "
+    "e.g., \"{'open': ['OP']}\"",
 )
 @click.option(
     "--paid-date-field",
@@ -99,18 +100,14 @@ def invoice_v9_cmd(**kwargs):
     type=int,
     help="Number of lines to import per connection.",
 )
-@click.option(
-    "--skip", default=0, type=int, help="Number of initial lines to skip."
-)
+@click.option("--skip", default=0, type=int, help="Number of initial lines to skip.")
 @click.option(
     "--fail",
     is_flag=True,
     default=False,
     help="Run in fail mode, retrying records from the .fail file.",
 )
-@click.option(
-    "-s", "--sep", "separator", default=";", help="CSV separator character."
-)
+@click.option("-s", "--sep", "separator", default=";", help="CSV separator character.")
 @click.option(
     "--groupby",
     "split",
@@ -156,9 +153,7 @@ def import_cmd(**kwargs):
 @click.option(
     "--fields", required=True, help="Comma-separated list of fields to export."
 )
-@click.option(
-    "--domain", default="[]", help="Odoo domain filter as a list string."
-)
+@click.option("--domain", default="[]", help="Odoo domain filter as a list string.")
 @click.option(
     "--worker", default=1, type=int, help="Number of simultaneous connections."
 )
@@ -169,9 +164,7 @@ def import_cmd(**kwargs):
     type=int,
     help="Number of records to process per batch.",
 )
-@click.option(
-    "-s", "--sep", "separator", default=";", help="CSV separator character."
-)
+@click.option("-s", "--sep", "separator", default=";", help="CSV separator character.")
 @click.option(
     "--context",
     default="{'tracking_disable': True}",
@@ -197,9 +190,7 @@ def export_cmd(**kwargs):
     default=None,
     help="Image path prefix. Defaults to the current working directory.",
 )
-@click.option(
-    "--out", default="out.csv", help="Name of the resulting output file."
-)
+@click.option("--out", default="out.csv", help="Name of the resulting output file.")
 def path_to_image_cmd(**kwargs):
     """Converts columns with local file paths into base64 strings."""
     run_path_to_image(**kwargs)
@@ -214,9 +205,7 @@ def path_to_image_cmd(**kwargs):
     required=True,
     help="Comma-separated list of fields with URLs to convert to base64.",
 )
-@click.option(
-    "--out", default="out.csv", help="Name of the resulting output file."
-)
+@click.option("--out", default="out.csv", help="Name of the resulting output file.")
 def url_to_image_cmd(**kwargs):
     """Downloads content from URLs in columns and converts to base64."""
     run_url_to_image(**kwargs)
@@ -236,7 +225,10 @@ if __name__ == "__main__":
 @click.group()
 @click.version_option()
 def cli():
-    """Odoo Data Flow: A tool for importing, exporting and processing data with Odoo."""
+    """Odoo Data Flow.
+
+    A tool for importing, exporting and processing data with Odoo.
+    """
     pass  # The group function itself doesn't do anything.
 
 
@@ -249,9 +241,7 @@ def workflow_group():
 
 # --- Invoice v9 Workflow Sub-command ---
 @workflow_group.command(name="invoice-v9")
-@click.option(
-    "-c", "--config", required=True, help="Path to the connection.conf file."
-)
+@click.option("-c", "--config", required=True, help="Path to the connection.conf file.")
 @click.option(
     "--action",
     "actions",
@@ -272,7 +262,8 @@ def workflow_group():
     "--status-map",
     "status_map_str",
     required=True,
-    help="Dictionary string mapping Odoo states to legacy states. e.g., \"{'open': ['OP']}\"",
+    help="Dictionary string mapping Odoo states to legacy states. "
+    "e.g., \"{'open': ['OP']}\"",
 )
 @click.option(
     "--paid-date-field",
@@ -288,11 +279,6 @@ def workflow_group():
 @click.option(
     "--max-connection", default=4, type=int, help="Number of parallel threads."
 )
-def invoice_v9_cmd(**kwargs):
-    """Runs the legacy Odoo v9 invoice processing workflow."""
-    run_invoice_v9_workflow(**kwargs)
-
-
 # --- Import Command ---
 # We define the 'import' command and all its options.
 # Each @click.option corresponds to a parameter in our run_import function.
@@ -315,18 +301,14 @@ def invoice_v9_cmd(**kwargs):
     type=int,
     help="Number of lines to import per connection.",
 )
-@click.option(
-    "--skip", default=0, type=int, help="Number of initial lines to skip."
-)
+@click.option("--skip", default=0, type=int, help="Number of initial lines to skip.")
 @click.option(
     "--fail",
     is_flag=True,
     default=False,
     help="Run in fail mode, retrying records from the .fail file.",
 )
-@click.option(
-    "-s", "--sep", "separator", default=";", help="CSV separator character."
-)
+@click.option("-s", "--sep", "separator", default=";", help="CSV separator character.")
 @click.option(
     "--groupby",
     "split",
@@ -375,9 +357,7 @@ def import_cmd(**kwargs):
 @click.option(
     "--fields", required=True, help="Comma-separated list of fields to export."
 )
-@click.option(
-    "--domain", default="[]", help="Odoo domain filter as a list string."
-)
+@click.option("--domain", default="[]", help="Odoo domain filter as a list string.")
 @click.option(
     "--worker", default=1, type=int, help="Number of simultaneous connections."
 )
@@ -388,9 +368,7 @@ def import_cmd(**kwargs):
     type=int,
     help="Number of records to process per batch.",
 )
-@click.option(
-    "-s", "--sep", "separator", default=";", help="CSV separator character."
-)
+@click.option("-s", "--sep", "separator", default=";", help="CSV separator character.")
 @click.option(
     "--context",
     default="{'tracking_disable': True}",
@@ -416,9 +394,7 @@ def export_cmd(**kwargs):
     default=None,
     help="Image path prefix. Defaults to the current working directory.",
 )
-@click.option(
-    "--out", default="out.csv", help="Name of the resulting output file."
-)
+@click.option("--out", default="out.csv", help="Name of the resulting output file.")
 def path_to_image_cmd(**kwargs):
     """Converts columns with local file paths into base64 strings."""
     run_path_to_image(**kwargs)
@@ -433,9 +409,7 @@ def path_to_image_cmd(**kwargs):
     required=True,
     help="Comma-separated list of fields with URLs to convert to base64.",
 )
-@click.option(
-    "--out", default="out.csv", help="Name of the resulting output file."
-)
+@click.option("--out", default="out.csv", help="Name of the resulting output file.")
 def url_to_image_cmd(**kwargs):
     """Downloads content from URLs in columns and converts to base64."""
     run_url_to_image(**kwargs)
@@ -494,10 +468,11 @@ def migrate_cmd(**kwargs):
     # We need to handle the mapping string here before passing it on
     if kwargs.get("mapping"):
         try:
-            kwargs["mapping"] = eval(kwargs["mapping"])
-        except Exception as e:
+            kwargs["mapping"] = ast.literal_eval(kwargs["mapping"])
+        except Exception:
             print(
-                f"Error: Invalid mapping provided. Must be a valid Python dictionary string. {e}"
+                "Error: Invalid mapping provided. "
+                "Must be a valid Python dictionary string. {e}"
             )
             return
     run_migration(**kwargs)

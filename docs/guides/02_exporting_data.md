@@ -10,15 +10,15 @@ The export process is handled by the `export` sub-command of the main `odoo-data
 
 The command is configured using a set of options. Here are the most essential ones:
 
-| Option               | Description                                                                                                                                                                 |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--config`           | **Required**. Path to your `connection.conf` file containing the Odoo credentials.                                                                                          |
-| `--model`            | **Required**. The technical name of the Odoo model you want to export records from (e.g., `res.partner`).                                                                      |
-| `--fields`           | **Required**. A comma-separated list of the technical field names you want to include in the export file.                                                                     |
-| `--file`             | **Required**. The path and filename for the output CSV file (e.g., `data/exported_partners.csv`).                                                                            |
-| `--domain`           | A filter to select which records to export, written as a string. Defaults to `[]` (export all records).                                                                       |
-| `--worker`           | The number of parallel processes to use for the export. Defaults to `1`.                                                                                                    |
-| `--size`             | The number of records to fetch in a single batch. Defaults to `10`.                                                                                                          |
+| Option     | Description                                                                                               |
+| ---------- | --------------------------------------------------------------------------------------------------------- |
+| `--config` | **Required**. Path to your `connection.conf` file containing the Odoo credentials.                        |
+| `--model`  | **Required**. The technical name of the Odoo model you want to export records from (e.g., `res.partner`). |
+| `--fields` | **Required**. A comma-separated list of the technical field names you want to include in the export file. |
+| `--file`   | **Required**. The path and filename for the output CSV file (e.g., `data/exported_partners.csv`).         |
+| `--domain` | A filter to select which records to export, written as a string. Defaults to `[]` (export all records).   |
+| `--worker` | The number of parallel processes to use for the export. Defaults to `1`.                                  |
+| `--size`   | The number of records to fetch in a single batch. Defaults to `10`.                                       |
 
 ### Understanding the `--domain` Filter
 
@@ -40,8 +40,8 @@ To export all companies from the United States, you would combine two criteria:
 
 The `--fields` option is a simple comma-separated list of the field names you want in your output file. You can also access fields on related records using dot notation.
 
--   Simple fields: `name,email,phone`
--   Relational fields: `name,parent_id/name,parent_id/city` (This would get the contact's name, their parent company's name, and their parent company's city).
+- Simple fields: `name,email,phone`
+- Relational fields: `name,parent_id/name,parent_id/city` (This would get the contact's name, their parent company's name, and their parent company's city).
 
 ## Full Export Example
 
@@ -61,6 +61,7 @@ odoo-data-flow export \
 ### Result
 
 This command will:
+
 1.  Connect to the Odoo instance defined in `conf/connection.conf`.
 2.  Search the `res.partner` model for records that are not companies and have their country set to Belgium.
 3.  For each matching record, it will retrieve the `name`, `email`, `city`, and the `name` of the related country.

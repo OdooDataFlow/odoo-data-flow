@@ -1,11 +1,13 @@
-"""This module contains the low-level, multi-threaded logic for exporting
+"""Export thread.
+
+This module contains the low-level, multi-threaded logic for exporting
 data from an Odoo instance.
 """
 
 import csv
 import sys
 from time import time
-from typing import Any, Dict, List
+from typing import Any, Optional
 
 from ..logging_config import log
 from .lib import conf_lib
@@ -19,7 +21,9 @@ if sys.version_info.major >= 3:
 
 
 class RPCThreadExport(RpcThread):
-    """A specialized RpcThread for handling the export of data batches from Odoo.
+    """Export Thread handler.
+
+    A specialized RpcThread for handling the export of data batches from Odoo.
     It collects results from multiple threads in a thread-safe manner.
     """
 
@@ -27,31 +31,30 @@ class RPCThreadExport(RpcThread):
         self,
         max_connection: int,
         model: Any,
-        header: List[str],
-        context: Dict = None,
+        header: list[str],
+        context: Optional[dict] = None,
     ):
         super().__init__(max_connection)
         self.model = model
         self.header = header
         self.context = context or {}
-        self.results: Dict[int, List[List[Any]]] = {}
+        self.results: dict[int, list[list[Any]]] = {}
 
-    def launch_batch(self, data_ids: List[int], batch_number: int):
+    def launch_batch(self, data_ids: list[int], batch_number: int):
         """Submits a batch of IDs to be exported by a worker thread."""
 
-        def launch_batch_fun(ids_to_export: List[int], num: int):
+        def launch_batch_fun(ids_to_export: list[int], num: int):
             start_time = time()
             try:
-                log.debug(
-                    f"Exporting batch {num} with {len(ids_to_export)} records..."
-                )
+                log.debug(f"Exporting batch {num} with {len(ids_to_export)} records...")
                 # The actual RPC call to Odoo
                 datas = self.model.export_data(
                     ids_to_export, self.header, context=self.context
                 ).get("datas", [])
                 self.results[num] = datas
                 log.debug(
-                    f"Batch {num} finished in {time() - start_time:.2f}s. Fetched {len(datas)} records."
+                    f"Batch {num} finished in {time() - start_time:.2f}s. "
+                    "Fetched {len(datas)} records."
                 )
             except Exception as e:
                 log.error(f"Export for batch {num} failed: {e}", exc_info=True)
@@ -59,8 +62,10 @@ class RPCThreadExport(RpcThread):
 
         self.spawn_thread(launch_batch_fun, [data_ids, batch_number])
 
-    def get_data(self) -> List[List[Any]]:
-        """Waits for all threads to complete and returns the collected data
+    def get_data(self) -> list[list[Any]]:
+        """Get data.
+
+        Waits for all threads to complete and returns the collected data
         in the correct order.
         """
         super().wait()  # Wait for all futures to complete
@@ -75,16 +80,18 @@ class RPCThreadExport(RpcThread):
 def export_data(
     config_file: str,
     model: str,
-    domain: List,
-    header: List[str],
-    context: Dict = None,
-    output: str = None,
+    domain: list,
+    header: list[str],
+    context: Optional[dict] = None,
+    output: Optional[str] = None,
     max_connection: int = 1,
     batch_size: int = 100,
     separator: str = ";",
     encoding: str = "utf-8",
 ):
-    """The main function for exporting data. It can either write to a file or
+    """Export Data.
+
+    The main function for exporting data. It can either write to a file or
     return the data in-memory for migrations.
     """
     try:
@@ -92,7 +99,8 @@ def export_data(
         model_obj = connection.get_model(model)
     except Exception as e:
         log.error(
-            f"Failed to connect to Odoo or get model '{model}'. Please check your configuration. Error: {e}"
+            f"Failed to connect to Odoo or get model '{model}'. "
+            f"Please check your configuration. Error: {e}"
         )
         return None, None if not output else (None, None)
 
@@ -115,7 +123,8 @@ def export_data(
     all_exported_data = rpc_thread.get_data()
 
     log.info(
-        f"Exported {len(all_exported_data)} records in total. Total time: {time() - start_time:.2f}s."
+        f"Exported {len(all_exported_data)} records in total. Total time: "
+        f"{time() - start_time:.2f}s."
     )
 
     if output:
@@ -123,9 +132,7 @@ def export_data(
         log.info(f"Writing exported data to file: {output}")
         try:
             with open(output, "w", newline="", encoding=encoding) as f:
-                writer = csv.writer(
-                    f, separator=separator, quoting=csv.QUOTE_ALL
-                )
+                writer = csv.writer(f, separator=separator, quoting=csv.QUOTE_ALL)
                 writer.writerow(header)
                 writer.writerows(all_exported_data)
             log.info("File writing complete.")

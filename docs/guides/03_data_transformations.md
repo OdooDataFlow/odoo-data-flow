@@ -38,15 +38,19 @@ processor.check(checker.id_validity_checker('SKU', r'^[A-Z]{2}-\d{4}$'))
 The following checkers are available in the `odoo_data_flow.lib.checker` module.
 
 #### `checker.line_length_checker(expected_length)`
+
 Verifies that every row in your data file has exactly the `expected_length` number of columns. This is useful for catching malformed CSV rows.
 
 #### `checker.cell_len_checker(max_cell_len)`
+
 Verifies that no single cell (field) in your entire dataset exceeds the `max_cell_len` number of characters.
 
 #### `checker.line_number_checker(expected_line_count)`
+
 Verifies that the file contains exactly `expected_line_count` number of data rows (not including the header).
 
 #### `checker.id_validity_checker(id_field, pattern)`
+
 Verifies that the value in the specified `id_field` column for every row matches the given regex `pattern`. This is extremely useful for ensuring key fields like SKUs or external IDs follow a consistent format.
 
 ---
@@ -57,24 +61,25 @@ Verifies that the value in the specified `id_field` column for every row matches
 
 Retrieves the value from a single source column, identified by `field`. This is the most fundamental mapper.
 
--   **`field` (str)**: The name of the column in the source file.
--   **`postprocess` (function, optional)**: A function to modify the value after it has been read.
+- **`field` (str)**: The name of the column in the source file.
+- **`postprocess` (function, optional)**: A function to modify the value after it has been read.
 
 ### `mapper.const(value)`
 
 Fills a column with a fixed, constant `value` for every row.
 
--   **`value`**: The static value to use (e.g., string, bool, integer).
+- **`value`**: The static value to use (e.g., string, bool, integer).
 
 #### How it works
 
 **Input Data (`source.csv`)**
 | AnyColumn |
 | --------- |
-| a         |
-| b         |
+| a |
+| b |
 
 **Transformation Code**
+
 ```python
 'sale_type': mapper.const('service')
 ```
@@ -82,8 +87,8 @@ Fills a column with a fixed, constant `value` for every row.
 **Output Data**
 | sale_type |
 | --------- |
-| service   |
-| service   |
+| service |
+| service |
 
 ---
 
@@ -93,8 +98,8 @@ Fills a column with a fixed, constant `value` for every row.
 
 Joins values from one or more source columns together, separated by a given `separator`.
 
--   **`separator` (str)**: The string to place between each value.
--   **`*fields` (str)**: A variable number of source column names (`field`) or static strings to join.
+- **`separator` (str)**: The string to place between each value.
+- **`*fields` (str)**: A variable number of source column names (`field`) or static strings to join.
 
 ---
 
@@ -108,8 +113,8 @@ Checks the value of the source column `field`. If it's considered "truthy" (not 
 
 Checks if the value in the source column `field` exists within the `true_values` list and returns a boolean.
 
--   **`field` (str)**: The column to check.
--   **`true_values` (list)**: A list of strings that should be considered `True`.
+- **`field` (str)**: The column to check.
+- **`true_values` (list)**: A list of strings that should be considered `True`.
 
 #### How it works
 
@@ -117,9 +122,10 @@ Checks if the value in the source column `field` exists within the `true_values`
 | Status |
 | ------ |
 | Active |
-| Done   |
+| Done |
 
 **Transformation Code**
+
 ```python
 'is_active': mapper.bool_val('Status', ['Active', 'In Progress']),
 ```
@@ -127,8 +133,8 @@ Checks if the value in the source column `field` exists within the `true_values`
 **Output Data**
 | is_active |
 | --------- |
-| True      |
-| False     |
+| True |
+| False |
 
 ---
 
@@ -138,19 +144,20 @@ Checks if the value in the source column `field` exists within the `true_values`
 
 Takes the numeric value of the source column `field`. It automatically transforms a comma decimal separator (`,`) into a dot (`.`). Use it for `Integer` or `Float` fields in Odoo.
 
--   **`field` (str)**: The column containing the numeric string.
--   **`default` (str, optional)**: A default value to use if the source value is empty. Defaults to `'0.0'`.
+- **`field` (str)**: The column containing the numeric string.
+- **`default` (str, optional)**: A default value to use if the source value is empty. Defaults to `'0.0'`.
 
 #### How it works
 
 **Input Data (`source.csv`)**
 | my_column |
 | --------- |
-| 01        |
-| 2,3       |
-|           |
+| 01 |
+| 2,3 |
+| |
 
 **Transformation Code**
+
 ```python
 'my_field': mapper.num('my_column'),
 'my_field_with_default': mapper.num('my_column', default='-1.0')
@@ -159,9 +166,9 @@ Takes the numeric value of the source column `field`. It automatically transform
 **Output Data**
 | my_field | my_field_with_default |
 | -------- | --------------------- |
-| 1        | 1                     |
-| 2.3      | 2.3                   |
-| 0.0      | -1.0                  |
+| 1 | 1 |
+| 2.3 | 2.3 |
+| 0.0 | -1.0 |
 
 ---
 
@@ -175,11 +182,11 @@ A specialized `concat` for creating external IDs for **Many2one** relationship f
 
 Finds a single record in Odoo and returns its database ID. **Note:** This can be slow as it performs a search for each row.
 
--   **`model` (str)**: The Odoo model to search in.
--   **`search_field` (str)**: The field to search on.
--   **`value` (mapper)**: A mapper that provides the value to search for.
--   **`raise_if_not_found` (bool, optional)**: If `True`, the process will stop if no record is found. Defaults to `False`.
--   **`skip` (bool, optional)**: If `True` and the record is not found, the entire source row will be skipped. Defaults to `False`.
+- **`model` (str)**: The Odoo model to search in.
+- **`search_field` (str)**: The field to search on.
+- **`value` (mapper)**: A mapper that provides the value to search for.
+- **`raise_if_not_found` (bool, optional)**: If `True`, the process will stop if no record is found. Defaults to `False`.
+- **`skip` (bool, optional)**: If `True` and the record is not found, the entire source row will be skipped. Defaults to `False`.
 
 ### Many-to-Many Mappers
 
@@ -188,6 +195,7 @@ These mappers create a comma-separated list of external IDs or database ID comma
 #### `mapper.m2m(*args, **kwargs)`
 
 Has two modes:
+
 1.  **Multiple Columns**: Joins non-empty values from multiple source columns. `mapper.m2m('Tag1', 'Tag2')`
 2.  **Single Column with Separator**: Splits a single column by a separator. `mapper.m2m('Tags', sep=';')`
 
@@ -215,14 +223,15 @@ A highly specialized mapper for product template attributes. It takes a list of 
 
 Looks up a `key` in a `map_dict` and returns the corresponding value. This is extremely useful for translating values from a source system to Odoo values.
 
--   **`map_dict` (dict)**: The Python dictionary to use as a translation table.
--   **`key` (mapper)**: A mapper that provides the key to look up in the dictionary (often `mapper.val`).
--   **`default` (optional)**: A default value to return if the key is not found.
--   **`m2m` (bool, optional)**: If set to `True`, the `key` is expected to be a list of values. The mapper will look up each value in the list and return a comma-separated string of the results.
+- **`map_dict` (dict)**: The Python dictionary to use as a translation table.
+- **`key` (mapper)**: A mapper that provides the key to look up in the dictionary (often `mapper.val`).
+- **`default` (optional)**: A default value to return if the key is not found.
+- **`m2m` (bool, optional)**: If set to `True`, the `key` is expected to be a list of values. The mapper will look up each value in the list and return a comma-separated string of the results.
 
 #### Example: Advanced Country Mapping
 
 **Transformation Code**
+
 ```python
 # The mapping dictionary translates source codes to Odoo external IDs.
 country_map = {
@@ -236,55 +245,58 @@ country_map = {
 ```
 
 ---
+
 ## Binary Mappers
 
 ### `mapper.binary(field)`
 
 Reads a local file path from the source column `field` and converts the file content into a base64-encoded string.
 
--   **`field` (str)**: The name of the column that contains the relative path to the image file.
+- **`field` (str)**: The name of the column that contains the relative path to the image file.
 
 #### How it works
 
 **Input Data (`images.csv`)**
-| ImagePath             |
+| ImagePath |
 | --------------------- |
-| images/product_a.png  |
+| images/product_a.png |
 
 **Transformation Code**
+
 ```python
 # Reads the file at the path and encodes it for Odoo
 'image_1920': mapper.binary('ImagePath')
 ```
 
 **Output Data**
-| image_1920                         |
+| image_1920 |
 | ---------------------------------- |
-| iVBORw0KGgoAAAANSUhEUg... (etc.)   |
+| iVBORw0KGgoAAAANSUhEUg... (etc.) |
 
 ### `mapper.binary_url_map(field)`
 
 Reads a URL from the source column `field`, downloads the content from that URL, and converts it into a base64-encoded string.
 
--   **`field` (str)**: The name of the column that contains the full URL to the image or file.
+- **`field` (str)**: The name of the column that contains the full URL to the image or file.
 
 #### How it works
 
 **Input Data (`image_urls.csv`)**
-| ImageURL                               |
+| ImageURL |
 | -------------------------------------- |
-| https://www.example.com/logo.png       |
+| https://www.example.com/logo.png |
 
 **Transformation Code**
+
 ```python
 # Downloads the image from the URL and encodes it
 'image_1920': mapper.binary_url_map('ImageURL')
 ```
 
 **Output Data**
-| image_1920                         |
+| image_1920 |
 | ---------------------------------- |
-| iVBORw0KGgoAAAANSUhEUg... (etc.)   |
+| iVBORw0KGgoAAAANSUhEUg... (etc.) |
 
 ---
 
@@ -295,6 +307,7 @@ Reads a URL from the source column `field`, downloads the content from that URL,
 For complex manipulations before the mapping starts, you can pass a `preprocessor` function to the `Processor`. This function receives the CSV header and data and must return them after modification.
 
 #### Adding Columns
+
 ```python
 def myPreprocessor(header, data):
     header.append('NEW_COLUMN')
@@ -304,6 +317,7 @@ def myPreprocessor(header, data):
 ```
 
 #### Removing Lines
+
 ```python
 def myPreprocessor(header, data):
     data_new = []
@@ -338,13 +352,14 @@ This special mapper takes a full mapping dictionary to create related records (e
 #### Example: Importing Sales Orders and their Lines
 
 **Input Data (`orders.csv`)**
-| OrderID | Warehouse | SKU    | Qty |
+| OrderID | Warehouse | SKU | Qty |
 | ------- | --------- | ------ | --- |
-| SO001   | MAIN      |        |     |
-|         |           | PROD_A | 2   |
-|         |           | PROD_B | 5   |
+| SO001 | MAIN | | |
+| | | PROD_A | 2 |
+| | | PROD_B | 5 |
 
 **Transformation Code**
+
 ```python
 from odoo_data_flow.lib import mapper
 
@@ -376,3 +391,4 @@ sales_order_mapping = {
     'warehouse_id/id': mapper.m2o_map('wh_', 'Warehouse', postprocess=remember_value('current_warehouse_id')),
     'order_line': mapper.cond('SKU', mapper.record(order_line_mapping))
 }
+```

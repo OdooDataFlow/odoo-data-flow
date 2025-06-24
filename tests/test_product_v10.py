@@ -1,4 +1,6 @@
-"""This test script generates a complete set of data files for importing
+"""Test Odoo version 10 product import.
+
+This test script generates a complete set of data files for importing
 products with variants, including categories, attributes, and attribute lines.
 This is based on the v10 product structure.
 """
@@ -94,9 +96,7 @@ processor.process_attribute_data(
 # STEP 5: Generate data for Attribute Values
 print("Generating data for product attribute values...")
 attribute_value_mapping = {
-    "id": mapper.m2m_template_attribute_value(
-        ATTRIBUTE_VALUE_PREFIX, *attribute_list
-    ),
+    "id": mapper.m2m_template_attribute_value(ATTRIBUTE_VALUE_PREFIX, *attribute_list),
     "name": mapper.m2m_value_list(*attribute_list),
     "attribute_id/id": mapper.m2m_map(
         ATTRIBUTE_PREFIX, *[mapper.field(f) for f in attribute_list]

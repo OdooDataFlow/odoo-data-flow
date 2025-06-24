@@ -1,5 +1,7 @@
 """This module contains the core logic for exporting data from Odoo."""
 
+import ast
+
 from . import export_threaded
 from .logging_config import log
 
@@ -16,24 +18,24 @@ def run_export(
     context="{'tracking_disable' : True}",
     encoding="utf-8",
 ):
-    """Orchestrates the data export process, writing the output to a CSV file.
+    """Export runner.
+
+    Orchestrates the data export process, writing the output to a CSV file.
     This function is designed to be called from the main CLI.
     """
     log.info("Starting data export process...")
 
     # Safely evaluate the domain and context strings
     try:
-        parsed_domain = eval(domain)
+        parsed_domain = ast.literal_eval(domain)
         if not isinstance(parsed_domain, list):
             raise TypeError("Domain must be a list of tuples.")
     except Exception as e:
-        log.error(
-            f"Invalid domain provided. Must be a valid Python list string. {e}"
-        )
+        log.error(f"Invalid domain provided. Must be a valid Python list string. {e}")
         return
 
     try:
-        parsed_context = eval(context)
+        parsed_context = ast.literal_eval(context)
         if not isinstance(parsed_context, dict):
             raise TypeError("Context must be a dictionary.")
     except Exception as e:
@@ -76,21 +78,24 @@ def run_export_for_migration(
     context="{'tracking_disable' : True}",
     encoding="utf-8",
 ):
-    """Orchestrates the data export process, returning the data in memory.
+    """Migration exporter.
+
+    Orchestrates the data export process, returning the data in memory.
     This function is designed to be called by the migration tool.
     """
     log.info(f"Starting in-memory export from model '{model}' for migration...")
 
     try:
-        parsed_domain = eval(domain)
+        parsed_domain = ast.literal_eval(domain)
     except Exception:
         log.warning(
-            "Invalid domain string for migration export, defaulting to empty domain '[]'."
+            "Invalid domain string for migration export,"
+            "defaulting to empty domain '[]'."
         )
         parsed_domain = []
 
     try:
-        parsed_context = eval(context)
+        parsed_context = ast.literal_eval(context)
     except Exception:
         parsed_context = {}
 
