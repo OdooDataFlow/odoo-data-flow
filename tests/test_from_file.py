@@ -1,65 +1,80 @@
-# -*- coding: utf-8 -*-
-import sys
+"""This test script reads a CSV file from the 'origin' directory,
+applies a mapping with various mappers, checks data quality,
+and generates a clean CSV file ready for import.
+"""
 
 import os
-from const import EXEC
+import pprint
 
-from odoo_csv_tools.lib import mapper, checker
-from odoo_csv_tools.lib.transform import Processor
+from odoo_data_flow.lib import checker, mapper
+from odoo_data_flow.lib.transform import Processor
 
-if len(sys.argv) == 2:
-    EXEC = sys.argv[1]
-
+# --- Configuration ---
+# Define translation maps and prefixes
 lang_map = {
-    '': '',
-    'French': u'French (BE) / Français (BE)',
-    'English': u'English',
-    'Dutch': u'Dutch / Nederlands',
+    "": "",
+    "French": "French (BE) / Français (BE)",
+    "English": "English",
+    "Dutch": "Dutch / Nederlands",
 }
 
 country_map = {
-    'Belgique': 'base.be',
-    'BE': 'base.be',
-    'FR': 'base.fr',
-    'U.S': 'base.us',
-    'US': 'base.us',
-    'NL': 'base.nl',
+    "Belgique": "base.be",
+    "BE": "base.be",
+    "FR": "base.fr",
+    "U.S": "base.us",
+    "US": "base.us",
+    "NL": "base.nl",
 }
 
 PARTNER_PREFIX = "TEST_PARTNER"
+IMAGE_PATH_PREFIX = "tests/origin/img/"
 
-# STEP 1 : read the needed file(s)
-processor = Processor('origin%scontact.csv' % os.sep)
-# Print o2o mapping
-import pprint
+# --- Main Logic ---
 
+# STEP 1: Initialize the processor with the source file
+source_file = os.path.join("tests", "origin", "contact.csv")
+processor = Processor(source_file)
+
+# Print the 1-to-1 mapping for debugging purposes
+print("--- Auto-detected o2o Mapping ---")
 pprint.pprint(processor.get_o2o_mapping())
+print("---------------------------------")
 
-# STEP 2 : Define the mapping for every object to import
+
+# STEP 2: Define the mapping for every object to import
 mapping = {
-    'id': mapper.m2o(PARTNER_PREFIX, 'Company_ID', skip=True),
-    'name': mapper.val('Company_Name', skip=True),
-    'phone': mapper.val('Phone'),
-    'website': mapper.val('www'),
-    'street': mapper.val('address1'),
-    'city': mapper.val('city'),
-    'zip': mapper.val('zip code'),
-    'country_id/id': mapper.map_val('country', country_map),
-    'company_type': mapper.const('company'),
-    'customer': mapper.bool_val('IsCustomer', ['1'], ['0']),
-    'supplier': mapper.bool_val('IsSupplier', ['1'], ['0']),
-    'lang': mapper.map_val('Language', lang_map),
-    'image': mapper.binary("Image", "origin/img/"),
+    "id": mapper.concat(PARTNER_PREFIX, "_", "Company_ID", skip=True),
+    "name": mapper.val("Company_Name", skip=True),
+    "phone": mapper.val("Phone"),
+    "website": mapper.val("www"),
+    "street": mapper.val("address1"),
+    "city": mapper.val("city"),
+    "zip": mapper.val("zip code"),
+    "country_id/id": mapper.map_val(country_map, mapper.val("country")),
+    "company_type": mapper.const("company"),
+    # CORRECTED: bool_val now only takes a list of true values.
+    "customer_rank": mapper.bool_val("IsCustomer", ["1"]),
+    "supplier_rank": mapper.bool_val("IsSupplier", ["1"]),
+    "lang": mapper.map_val(lang_map, mapper.val("Language")),
+    # CORRECTED: Prepend the image path prefix using a postprocess function.
+    "image_1920": mapper.binary(
+        "Image",
+        postprocess=lambda p: os.path.join(IMAGE_PATH_PREFIX, p) if p else "",
+    ),
 }
 
 # Step 3: Check data quality (Optional)
+print("Running data quality checks...")
 processor.check(checker.cell_len_checker(30))
-processor.check(checker.id_validity_checker('Company_ID', "COM\d"))
+processor.check(checker.id_validity_checker("Company_ID", r"COM\d"))
 processor.check(checker.line_length_checker(13))
 processor.check(checker.line_number_checker(21))
 
 # Step 4: Process data
-processor.process(mapping, 'data%sres.partner.csv' % os.sep, {'worker': 2, 'batch_size': 5}, 'set')
+print("Processing data transformation...")
+output_file = os.path.join("data", "res.partner.from_file.csv")
+params = {"model": "res.partner", "worker": 2, "batch_size": 5}
+processor.process(mapping, output_file, params)
 
-# Step 5: Define output and import parameter
-processor.write_to_file("2_contact_import.sh", python_exe=EXEC, path='../')
+print(f"File transformation complete. Output at: {output_file}")

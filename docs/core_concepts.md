@@ -1,0 +1,164 @@
+# Core Concepts
+
+The `odoo-data-flow` library is built on a few key concepts that enable robust and manageable data migrations. Understanding these will help you get the most out of the tool for both importing and exporting data.
+
+## The Two-Phase Import Workflow
+
+For importing data, the library promotes a two-phase workflow to separate data manipulation from the actual loading process.
+
+1.  **Transform Phase**: This phase focuses purely on data manipulation. A Python script reads your raw source files, applies cleaning and transformation rules using **mappers**, and produces clean, structured CSV files that are perfectly formatted for Odoo.
+
+```mermaid
+---
+config:
+  theme: redux
+---
+flowchart TD
+    A(["Odoo-Data-Flow"]) -- Processor
+    Mapper --- B["Transform Python Script"]
+    B --- C["Client CSV File"]
+    B --> D["Transformed CSV Files for import"]
+    A@{ shape: proc}
+    C@{ shape: doc}
+    D@{ shape: docs}
+    style A fill:#BBDEFB
+    style B fill:#C8E6C9
+    style C fill:#FFF9C4
+    style D fill:#FFF9C4
+```
+
+2.  **Load Phase**: This phase focuses purely on data import. A generated shell script takes the clean CSV files and uses the efficient `odoo-data-flow import` command to load them into Odoo.
+
+```mermaid
+---
+config:
+  theme: redux
+---
+flowchart TD
+    A["Odoo-Data-Flow"] -- Import --- B["odoo-client lib"]
+    B --- C["Transformed CSV Files"]
+    B --> D["odoo"]
+    n1["Configuration File"] --> B
+    A@{ shape: doc}
+    B@{ shape: proc}
+    C@{ shape: docs}
+    D@{ shape: cyl}
+    n1@{ shape: doc}
+    style A fill:#BBDEFB
+    style B fill:#FFE0B2
+    style C fill:#FFF9C4
+    style D fill:#AA00FF
+    style n1 fill:#C8E6C9
+```
+
+This separation provides several key advantages:
+-   **Debugging**: If there's a problem, you can easily tell if it's a data transformation issue or an Odoo connection issue.
+-   **Reusability**: You can run the time-consuming transformation once and then use the resulting clean data to load into multiple Odoo instances (e.g., testing, staging, and production).
+-   **Simplicity**: Each script has a single, clear responsibility.
+
+## The Import Strategy: One File, One Model
+
+It is important to understand that the `odoo-data-flow import` command is designed to load **one data file into one specific Odoo model** at a time. This means that a complete data migration (e.g., for partners, products, and sales orders) will require you to run the transform and load process several times with different data files and different target models.
+
+This deliberate design ensures clarity and respects Odoo's internal logic. Data is not inserted directly into the database; instead, it is loaded by calling Odoo's standard `load` method. This ensures that all the business logic, validations, and automations associated with each model are triggered correctly, just as they would be in the Odoo user interface.
+
+## Post-Import Processing (Workflows)
+
+In addition to transforming and loading data, the library provides a powerful **workflow** system for running automated, post-import actions on your records directly in Odoo.
+
+This is an advanced feature designed for complex use cases, such as validating a large batch of imported invoices, registering payments, or triggering other specific business logic that needs to happen *after* the initial data has been loaded.
+
+This is handled by the `odoo-data-flow workflow` command, which allows you to run predefined processes on your data.
+
+### Overall Data Flow Including Workflows
+
+This diagram shows how the workflow phase fits in after the main transform and load phases.
+
+```mermaid
+graph TD
+    subgraph "1. Transform Phase"
+        A["Raw Source Data"] --> B{Processor};
+    end
+
+    subgraph "2. Load Phase"
+        B --> C["Clean Data"];
+        C --> D{odoo-data-flow import};
+        D --> E([Odoo Database]);
+    end
+
+    subgraph "3. Workflow Phase"
+        E --> F{odoo-data-flow workflow};
+        F -- "Validate, Pay, etc." --> E;
+    end
+```
+
+## Core Components of the Transform Phase
+
+The transformation is driven by three main components in your Python script:
+
+### 1. The `Processor`
+
+The `Processor` is the engine of the library. You initialize it with your source file path and its settings (like the separator). Its main job is to apply your mapping rules and generate the clean data and the load script.
+
+### 2. The `mapper` Functions
+
+Mappers are the individual building blocks for your transformations. They are simple, reusable functions that define *how* to create the value for a single column in your destination file. The library provides a rich set of mappers for concatenation, direct value mapping, static values, and handling complex relationships.
+
+> For a complete list of all available mappers and their options, see the [Data Transformations Guide](guides/04_data_transformations.md).
+
+### 3. The Mapping Dictionary
+
+This standard Python `dict` ties everything together. The keys are the column names for your **destination** CSV file, and the values are the `mapper` functions that will generate the data for that column.
+
+## Understanding the Load Phase and Error Handling
+
+A key strength of this library is its robust error handling, which ensures that a few bad records won't cause an entire import to fail. This is managed through a clever two-pass system orchestrated by the generated `load.sh` script.
+
+### The Two-Pass Load Sequence
+
+The generated `load.sh` script contains two commands designed to maximize both speed and accuracy.
+
+```bash
+# First pass: Fast, parallel import. Writes recoverable errors to a .fail file.
+odoo-data-flow import --config conf/connection.conf --file data/res_partner.csv --model res.partner
+# Second pass: Slower, precise import of the failed records.
+odoo-data-flow import --config conf/connection.conf --fail --file data/res_partner.csv --model res.partner
+```
+
+1.  **First Pass (Normal Mode)**: The command runs in its default, high-speed mode. If a record is rejected for any reason, it is written to a `res_partner.csv.fail` file, and the process continues.
+
+2.  **Second Pass (`--fail` Mode)**: The command is invoked again with the `--fail` flag. In this mode, it automatically targets the `.fail` file and retries each failed record individually with a single worker. Records that still fail are written to a final `.fail.bis` file, which contains only the items needing manual review.
+
+### Error Handling Flow Diagram
+
+This diagram visualizes how records flow through the two-pass system.
+
+```mermaid
+graph TD
+    A["data.csv<br>(100 records)"] --> B{First Pass<br>odoo-data-flow import};
+    B -- 95 successful records --> C([Odoo Database]);
+    B -- 5 failed records --> D["data.csv.fail<br>(5 records)"];
+
+    D --> E{Second Pass<br>odoo-data-flow import --fail};
+    E -- 3 recovered records --> C;
+    E -- 2 true errors --> F["fa:fa-user-edit data.csv.fail.bis<br>(2 records to fix)"];
+
+    style C fill:#d5f5e3
+    style F fill:#f5b7b1
+```
+
+## The Export Concept
+
+The library can also be used to export data from Odoo, which is useful for backups, analysis, or migrating data between systems. The export process is a direct command-line call.
+
+### Export Flow Diagram
+
+```mermaid
+graph TD
+    subgraph "Export Process"
+        ExportA["Odoo Instance"] --> ExportB{odoo-data-flow export};
+        ExportC["Configuration<br>(CLI Options)"] --> ExportB;
+        ExportB --> ExportD["Output File<br>(e.g., exported_partners.csv)"];
+    end
+```
+> For detailed instructions, see the [Exporting Data Guide](guides/03_exporting_data.md).

@@ -1,0 +1,16 @@
+{
+  "_checkout": "2025.06.25",
+  "_output_dir": "/home/data/git/odoodataflow/odoo-data-flow",
+  "_repo_dir": "/home/bosd/.cookiecutters/cookiecutter-uv-hypermodern-python",
+  "_template": "gh:bosd/cookiecutter-uv-hypermodern-python",
+  "author": "bosd",
+  "copyright_year": "2025",
+  "development_status": "Development Status :: 3 - Alpha",
+  "email": "c5e2fd43-d292-4c90-9d1f-74ff3436329a@anonaddy.me",
+  "friendly_name": "Odoo Data Flow",
+  "github_user": "bosd",
+  "license": "GPL-3.0",
+  "package_name": "odoo-data-flow",
+  "project_name": "odoo-data-flow",
+  "version": "0.0.0"
+}

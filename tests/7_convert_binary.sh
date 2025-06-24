@@ -1,4 +1,21 @@
 #!/usr/bin/env bash
-$1 ../odoo_convert_path_to_image.py --path=./origin/img/ -f Image origin/contact.csv
-$1 ../odoo_convert_url_to_image.py -f Image origin/contact_url.csv
+#
+# Tests the binary conversion commands.
 
+# Exit immediately if a command exits with a non-zero status.
+set -e
+
+echo "--- Testing binary conversion from local file paths ---"
+odoo-data-flow path-to-image \
+    tests/origin/contact.csv \
+    --path "tests/origin/img/" \
+    --fields "Image" \
+    --out "data/contacts_from_path.csv"
+
+echo "--- Testing binary conversion from URLs ---"
+odoo-data-flow url-to-image \
+    tests/origin/contact_url.csv \
+    --fields "Image" \
+    --out "data/contacts_from_url.csv"
+
+echo "Binary conversion tests complete."
