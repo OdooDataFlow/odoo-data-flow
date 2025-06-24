@@ -5,13 +5,14 @@ establishing a connection to the Odoo server using odoo-client-lib.
 """
 
 import configparser
+from typing import Any
 
-from odoo_client_lib import OdooClient
+import odoolib
 
 from ..logging_config import log
 
 
-def get_connection_from_config(config_file: str) -> OdooClient:
+def get_connection_from_config(config_file: str) -> Any:
     """Get connection from config.
 
     Reads an Odoo connection configuration file and returns an
@@ -21,7 +22,8 @@ def get_connection_from_config(config_file: str) -> OdooClient:
         config_file (str): The path to the connection.conf file.
 
     Returns:
-        OdooClient: An initialized and connected Odoo client object,
+        Any: An initialized and connected Odoo client object,
+             returned by odoolib.get_connection)
                     or raises an exception on failure.
     """
     config = configparser.ConfigParser()
@@ -39,10 +41,12 @@ def get_connection_from_config(config_file: str) -> OdooClient:
             # The OdooClient expects the user ID as 'user_id'
             conn_details["user_id"] = int(conn_details.pop("uid"))
 
-        log.info(f"Connecting to Odoo server at {conn_details.get('hostname')}...")
+        log.info(
+            f"Connecting to Odoo server at {conn_details.get('hostname')}..."
+        )
 
         # Use odoo-client-lib to establish the connection
-        connection = OdooClient(**conn_details)
+        connection = odoolib.get_connection(**conn_details)
 
         log.info("Connection successful.")
         return connection
