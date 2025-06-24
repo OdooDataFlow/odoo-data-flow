@@ -6,25 +6,24 @@ This guide expands on the import workflow, providing a detailed look at the `Pro
 
 For a successful import into Odoo, the clean CSV file you generate (the `target_file` in your script) must follow some important rules.
 
--   **Encoding**: The file must be in `UTF-8` encoding.
--   **One Model per File**: Each CSV file should only contain data for a single Odoo model (e.g., all `res.partner` records).
--   **Header Row**: The first line of the file must be the header row. All column names must be the technical field names from the Odoo model (e.g., `name`, `parent_id`, `list_price`).
--   **External ID**: All rows must have an `id` column containing a unique External ID (also known as an XML ID). This is essential for Odoo to identify records, allowing it to both create new records and update existing ones on re-import.
--   **Field Separator**: The character separating columns can be defined with the `--sep` command-line option. The default is a semicolon (`;`). **Crucially, if a field's value contains the separator character, the entire field value must be enclosed in double quotes (`"`).**
--   **Skipping Lines**: If your source file contains introductory lines before the header, you can use the `--skip` option to ignore them during the import process.
-
+- **Encoding**: The file must be in `UTF-8` encoding.
+- **One Model per File**: Each CSV file should only contain data for a single Odoo model (e.g., all `res.partner` records).
+- **Header Row**: The first line of the file must be the header row. All column names must be the technical field names from the Odoo model (e.g., `name`, `parent_id`, `list_price`).
+- **External ID**: All rows must have an `id` column containing a unique External ID (also known as an XML ID). This is essential for Odoo to identify records, allowing it to both create new records and update existing ones on re-import.
+- **Field Separator**: The character separating columns can be defined with the `--sep` command-line option. The default is a semicolon (`;`). **Crucially, if a field's value contains the separator character, the entire field value must be enclosed in double quotes (`"`).**
+- **Skipping Lines**: If your source file contains introductory lines before the header, you can use the `--skip` option to ignore them during the import process.
 
 ### Field Formatting Rules
 
 Odoo's `load` method expects data for certain field types to be in a specific format.
 
--   **Boolean**: Must be `1` for True and `0` for False. The `mapper.bool_val` can help with this.
--   **Binary**: Must be a base64 encoded string. The `mapper.binary` and `mapper.binary_url_map` functions handle this automatically.
--   **Date & Datetime**: The format depends on the user's language settings in Odoo, but the standard, safe formats are `YYYY-MM-DD` for dates and `YYYY-MM-DD HH:MM:SS` for datetimes.
--   **Float**: The decimal separator must be a dot (`.`). The `mapper.num` function handles converting comma separators automatically.
--   **Selection**: Must contain the internal value for the selection, not the human-readable label (e.g., `'draft'` instead of `'Draft'`).
--   **Many2one**: The column header must be suffixed with `/id` (e.g., `partner_id/id`), and the value should be the external ID of the related record.
--   **Many2many**: The column header must be suffixed with `/id`, and the value should be a comma-separated list of external IDs for the related records.
+- **Boolean**: Must be `1` for True and `0` for False. The `mapper.bool_val` can help with this.
+- **Binary**: Must be a base64 encoded string. The `mapper.binary` and `mapper.binary_url_map` functions handle this automatically.
+- **Date & Datetime**: The format depends on the user's language settings in Odoo, but the standard, safe formats are `YYYY-MM-DD` for dates and `YYYY-MM-DD HH:MM:SS` for datetimes.
+- **Float**: The decimal separator must be a dot (`.`). The `mapper.num` function handles converting comma separators automatically.
+- **Selection**: Must contain the internal value for the selection, not the human-readable label (e.g., `'draft'` instead of `'Draft'`).
+- **Many2one**: The column header must be suffixed with `/id` (e.g., `partner_id/id`), and the value should be the external ID of the related record.
+- **Many2many**: The column header must be suffixed with `/id`, and the value should be a comma-separated list of external IDs for the related records.
 
 ### Automatic Model Detection
 
@@ -52,11 +51,11 @@ processor = Processor(
 
 The constructor takes the following arguments:
 
--   **`source_file` (str)**: The path to the CSV or XML file you want to transform.
--   **`separator` (str, optional)**: The column separator for CSV files. Defaults to `;`.
--   **`quotechar` (str, optional)**: The field quote character for CSV files. Defaults to `"`.
--   **`preprocessor` (function, optional)**: A function to modify the raw data *before* mapping begins. See the [Data Transformations Guide](./03_data_transformations.md#pre-processing-data) for details.
--   **`xml_root_tag` / `xml_record_tag` (str, optional)**: Required arguments for processing XML files. See the [Advanced Usage Guide](./04_advanced_usage.md#processing-xml-files).
+- **`source_file` (str)**: The path to the CSV or XML file you want to transform.
+- **`separator` (str, optional)**: The column separator for CSV files. Defaults to `;`.
+- **`quotechar` (str, optional)**: The field quote character for CSV files. Defaults to `"`.
+- **`preprocessor` (function, optional)**: A function to modify the raw data _before_ mapping begins. See the [Data Transformations Guide](./03_data_transformations.md#pre-processing-data) for details.
+- **`xml_root_tag` / `xml_record_tag` (str, optional)**: Required arguments for processing XML files. See the [Advanced Usage Guide](./04_advanced_usage.md#processing-xml-files).
 
 ## The `process()` Method
 
@@ -72,23 +71,22 @@ processor.process(
 
 The method takes these key arguments:
 
--   **`mapping` (dict)**: **Required**. The mapping dictionary that defines the transformation rules for each column.
--   **`target_file` (str)**: **Required**. The path where the clean, transformed CSV file will be saved.
--   **`params` (dict, optional)**: A crucial dictionary that holds the configuration for the `odoo-data-flow import` command. These parameters will be used when generating the `load.sh` script.
+- **`mapping` (dict)**: **Required**. The mapping dictionary that defines the transformation rules for each column.
+- **`target_file` (str)**: **Required**. The path where the clean, transformed CSV file will be saved.
+- **`params` (dict, optional)**: A crucial dictionary that holds the configuration for the `odoo-data-flow import` command. These parameters will be used when generating the `load.sh` script.
 
 ### Configuring the Import Client with `params`
 
 The `params` dictionary allows you to control the behavior of the import client without ever leaving your Python script. The keys in this dictionary map directly to the command-line options of the `odoo-data-flow import` command.
 
-| `params` Key   | `odoo-data-flow import` Option | Description                                                                  |
-| -------------- | -------------------------------- | ---------------------------------------------------------------------------- |
-| `model`        | `--model`                        | **Required**. The technical name of the Odoo model (e.g., `sale.order`). |
-| `context`      | `--context`                      | An Odoo context dictionary string. Essential for disabling mail threads, etc. (e.g., `"{'tracking_disable': True}"`) |
-| `worker`       | `--worker`                       | The number of parallel processes to use for the import. |
-| `size`         | `--size`                         | The number of records to process in a single Odoo transaction. |
-| `ignore`       | `--ignore`                       | A comma-separated string of fields to ignore during the import. Crucial for performance with related fields. |
-| `skip`         | `--skip`                         | The number of initial lines to skip in the source file before reading the header. |
-
+| `params` Key | `odoo-data-flow import` Option | Description                                                                                                          |
+| ------------ | ------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `model`      | `--model`                      | **Required**. The technical name of the Odoo model (e.g., `sale.order`).                                             |
+| `context`    | `--context`                    | An Odoo context dictionary string. Essential for disabling mail threads, etc. (e.g., `"{'tracking_disable': True}"`) |
+| `worker`     | `--worker`                     | The number of parallel processes to use for the import.                                                              |
+| `size`       | `--size`                       | The number of records to process in a single Odoo transaction.                                                       |
+| `ignore`     | `--ignore`                     | A comma-separated string of fields to ignore during the import. Crucial for performance with related fields.         |
+| `skip`       | `--skip`                       | The number of initial lines to skip in the source file before reading the header.                                    |
 
 ## Generating the Script with `write_to_file()`
 
@@ -138,3 +136,4 @@ processor.process(
 processor.write_to_file("load_sales_orders.sh")
 
 print("Transformation complete.")
+```

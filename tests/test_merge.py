@@ -1,4 +1,5 @@
 """This test script checks the file joining functionality of the Processor.
+
 It merges two source CSV files based on a common key.
 """
 

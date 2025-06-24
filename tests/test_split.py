@@ -1,4 +1,6 @@
-"""This test script generates a large dataset and then splits it into multiple
+"""Test Split.
+
+This test script generates a large dataset and then splits it into multiple
 files to test the processor's split functionality.
 """
 
@@ -19,9 +21,9 @@ tags = [f"Tag {i}" for i in range(100)]
 # Create a larger dataset for 10,000 partners
 header = ["id", "tags"]
 data = [
-    [str(i), ",".join(random.choice(tags) for _ in range(5))]
+    [str(i), ",".join(random.choice(tags) for _ in range(5))]  # noqa nosec B311
     for i in range(10000)
-]
+]  # nosec B311
 
 # --- Mapping Definitions (consistent with test_import.py) ---
 
@@ -37,9 +39,7 @@ partner_mapping = {
     "id": mapper.concat(PARTNER_PREFIX, "_", "id"),
     "name": mapper.val("id", postprocess=lambda x: f"Partner {x}"),
     "phone": mapper.val("id", postprocess=lambda x: f"0032{int(x) * 11}"),
-    "website": mapper.val(
-        "id", postprocess=lambda x: f"http://website-{x}.com"
-    ),
+    "website": mapper.val("id", postprocess=lambda x: f"http://website-{x}.com"),
     "street": mapper.val("id", postprocess=lambda x: f"Street {x}"),
     "city": mapper.val("id", postprocess=lambda x: f"City {x}"),
     "zip": mapper.val("id", postprocess=lambda x: str(x).zfill(6)),

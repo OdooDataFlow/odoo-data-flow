@@ -1,9 +1,11 @@
-"""This module provides a robust, thread-safe mechanism for executing
+"""RPC Threads.
+
+This module provides a robust, thread-safe mechanism for executing
 RPC calls to Odoo in parallel.
 """
 
 import concurrent.futures
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Optional
 
 from ...logging_config import log
 
@@ -15,7 +17,7 @@ class RpcThread:
     the number of simultaneous connections to the server.
     """
 
-    def __init__(self, max_connection: int):
+    def __init__(self, max_connection: int):  # noqa: d301
         """Initializes the thread pool.
 
         Args:
@@ -27,10 +29,13 @@ class RpcThread:
         self.executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=max_connection
         )
-        self.futures: List[concurrent.futures.Future] = []
+        self.futures: list[concurrent.futures.Future] = []
 
     def spawn_thread(
-        self, fun: Callable, args: List[Any], kwargs: Dict[str, Any] = None
+        self,
+        fun: Callable,
+        args: list[Any],
+        kwargs: Optional[dict[str, Any]] = None,
     ):
         """Submits a function to be executed by a worker thread in the pool.
 
@@ -62,9 +67,7 @@ class RpcThread:
                 future.result()
             except Exception as e:
                 # Log the exception from the failed thread.
-                log.error(
-                    f"A task in a worker thread failed: {e}", exc_info=True
-                )
+                log.error(f"A task in a worker thread failed: {e}", exc_info=True)
 
         # Shutdown the executor gracefully.
         self.executor.shutdown(wait=True)

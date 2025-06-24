@@ -1,5 +1,7 @@
 """This module contains the core logic for importing data into Odoo."""
 
+import ast
+
 from . import import_threaded
 from .logging_config import log
 
@@ -27,7 +29,7 @@ def run_import(
     fail_file = file_csv + ".fail"
 
     try:
-        parsed_context = eval(context)
+        parsed_context = ast.literal_eval(context)
         if not isinstance(parsed_context, dict):
             raise TypeError("Context must be a dictionary.")
     except Exception as e:
@@ -72,9 +74,7 @@ def run_import(
     log.info("Import process finished.")
 
 
-def run_import_for_migration(
-    config, model, header, data, worker=1, batch_size=10
-):
+def run_import_for_migration(config, model, header, data, worker=1, batch_size=10):
     """Orchestrates the data import process from in-memory data."""
     log.info("Starting data import from in-memory data...")
 

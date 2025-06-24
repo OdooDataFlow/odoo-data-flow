@@ -36,18 +36,22 @@ This module contains all the built-in `mapper` functions for data transformation
 These modules contain the high-level functions that are called by the CLI commands.
 
 ### Importer (`importer`)
+
 ```{eval-rst}
 .. automodule:: odoo_data_flow.importer
    :members: run_import
 ```
 
 ### Exporter (`exporter`)
+
 ```{eval-rst}
 .. automodule:: odoo_data_flow.exporter
    :members: run_export
 ```
 
 ### Migrator (`migrator`)
+
 ```{eval-rst}
 .. automodule:: odoo_data_flow.migrator
    :members: run_migration
+```

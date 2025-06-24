@@ -1,17 +1,19 @@
-"""This module contains low-level helper functions for file I/O,
+"""IO helpers.
+
+This module contains low-level helper functions for file I/O,
 including writing CSV data and generating shell scripts.
 """
 
 import csv
 import os
 import shlex
-from typing import Any, Dict, List
+from typing import Any, Optional
 
 from ...logging_config import log
 
 
 def write_csv(
-    filename: str, header: List[str], data: List[List[Any]], encoding="utf-8"
+    filename: str, header: list[str], data: list[list[Any]], encoding="utf-8"
 ):
     """Writes data to a CSV file with a semicolon separator.
 
@@ -31,9 +33,9 @@ def write_csv(
 
 
 def write_file(
-    filename: str = None,
-    header: List[str] = None,
-    data: List[List[Any]] = None,
+    filename: Optional[str] = None,
+    header: Optional[list[str]] = None,
+    data: Optional[list[list[Any]]] = None,
     fail: bool = False,
     model: str = "auto",
     launchfile: str = "import_auto.sh",
@@ -43,11 +45,13 @@ def write_file(
     encoding: str = "utf-8",
     groupby: str = "",
     sep: str = ";",
-    context: Dict = None,
+    context: Optional[dict] = None,
     ignore: str = "",
     **kwargs,  # to catch other unused params
 ):
-    """Writes data to a CSV file and generates a corresponding shell script
+    """Filewriter.
+
+    Writes data to a CSV file and generates a corresponding shell script
     to import that file using the odoo-data-flow CLI.
     """
     # Step 1: Write the actual data file
@@ -65,7 +69,8 @@ def write_file(
         model_name = model
 
     # Step 4: Build the base command with its arguments
-    # We use shlex.quote to ensure all arguments are safely escaped for the shell.
+    # We use shlex.quote to ensure all arguments
+    # are safely escaped for the shell.
     command_parts = [
         "odoo-data-flow",
         "import",
@@ -103,7 +108,7 @@ def write_file(
             # If fail mode is enabled,
             # write the second command with the --fail flag
             if fail:
-                fail_command_parts = command_parts + ["--fail"]
+                fail_command_parts = [*command_parts, "--fail"]
                 f.write(" ".join(fail_command_parts) + "\n")
     except OSError as e:
         log.error(f"Failed to write to launch file {launchfile}: {e}")

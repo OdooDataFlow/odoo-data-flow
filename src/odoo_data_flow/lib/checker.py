@@ -6,28 +6,32 @@ before the transformation process begins.
 """
 
 import re
-from typing import Callable, List
+from typing import Callable, Optional
 
 from ..logging_config import log
 
 # Type aliases for clarity
-Header = List[str]
-Data = List[List[str]]
+Header = list[str]
+Data = list[list[str]]
 CheckFunc = Callable[[Header, Data], bool]
 
 
 def id_validity_checker(
-    id_field: str, pattern: str, null_values: List[str] = ["NULL"]
+    id_field: str, pattern: str, null_values: Optional[list[str]] = None
 ) -> CheckFunc:
-    """Returns a checker that validates a specific column against a regex pattern."""
+    """ID Validity checker.
+
+    Returns a checker that validates a specific column
+    against a regex pattern.
+    """
+    if null_values is None:
+        null_values = ["NULL"]
 
     def check_id_validity(header: Header, data: Data) -> bool:
         try:
             regex = re.compile(pattern)
         except re.error as e:
-            log.error(
-                f"Invalid regex pattern provided to id_validity_checker: {e}"
-            )
+            log.error(f"Invalid regex pattern provided to id_validity_checker: {e}")
             return False
 
         is_valid = True
@@ -52,17 +56,19 @@ def id_validity_checker(
 
 
 def line_length_checker(expected_length: int) -> CheckFunc:
-    """Returns a checker that verifies each row has an exact number of columns."""
+    """Line Length Checker.
+
+    Returns a checker that verifies each row has an exact number of columns.
+    """
 
     def check_line_length(header: Header, data: Data) -> bool:
         is_valid = True
-        for i, line in enumerate(
-            data, start=2
-        ):  # Start from 2 to account for header
+        for i, line in enumerate(data, start=2):  # Start from 2 to account for header
             if len(line) != expected_length:
                 log.warning(
                     f"Check Failed (Line Length) on line {i}: "
-                    f"Expected {expected_length} columns, but found {len(line)}."
+                    f"Expected {expected_length} columns, but found "
+                    f"{len(line)}."
                 )
                 is_valid = False
         return is_valid
@@ -87,18 +93,18 @@ def line_number_checker(expected_line_count: int) -> CheckFunc:
 
 
 def cell_len_checker(max_cell_len: int) -> CheckFunc:
-    """Returns a checker that verifies no cell exceeds a maximum character length."""
+    """Cell Length Checker.
+
+    Returns a checker that verifies no cell exceeds a maximum character length.
+    """
 
     def check_max_cell_len(header: Header, data: Data) -> bool:
         is_valid = True
-        for i, line in enumerate(
-            data, start=2
-        ):  # Start from 2 to account for header
+        for i, line in enumerate(data, start=2):
+            # Start from 2 to account for header
             for j, cell in enumerate(line):
                 if len(cell) > max_cell_len:
-                    column_name = (
-                        header[j] if j < len(header) else f"column {j + 1}"
-                    )
+                    column_name = header[j] if j < len(header) else f"column {j + 1}"
                     log.warning(
                         f"Check Failed (Cell Length) on line {i}, column "
                         f"'{column_name}': Cell length is {len(cell)}, "

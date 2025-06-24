@@ -14,7 +14,9 @@ def runner() -> CliRunner:
 
 
 def test_main_succeeds_without_command(runner: CliRunner) -> None:
-    """It exits with a status code of 0 when no command is provided
+    """Test main Succeeds.
+
+    It exits with a status code of 0 when no command is provided
     and should show the main help message.
     """
     # CORRECTED: The entry point function from our __main__.py is now 'cli'.

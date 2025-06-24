@@ -1,4 +1,6 @@
-"""This module contains functions for converting data, such as image paths
+"""CSV Data converter.
+
+This module contains functions for converting data, such as image paths
 or URLs to base64 strings, for use in Odoo imports.
 """
 
@@ -21,7 +23,9 @@ def to_base64(filepath):
 
 
 def run_path_to_image(file, fields, out="out.csv", path=None):
-    """Takes a CSV file and converts columns containing local file paths
+    """Path to image.
+
+    Takes a CSV file and converts columns containing local file paths
     into base64 encoded strings.
     """
     log.info("Starting path-to-image conversion...")
@@ -34,17 +38,13 @@ def run_path_to_image(file, fields, out="out.csv", path=None):
     for f in fields.split(","):
         field_name = f.strip()
         if field_name not in mapping:
-            log.warning(
-                f"Field '{field_name}' not found in source file. Skipping."
-            )
+            log.warning(f"Field '{field_name}' not found in source file. Skipping.")
             continue
 
         log.info(f"Setting up conversion for column: '{field_name}'")
         mapping[field_name] = mapper.val(
             field_name,
-            postprocess=lambda x: to_base64(os.path.join(base_path, x))
-            if x
-            else "",
+            postprocess=lambda x: to_base64(os.path.join(base_path, x)) if x else "",
         )
 
     processor.process(mapping, out, {}, "list")
@@ -53,7 +53,9 @@ def run_path_to_image(file, fields, out="out.csv", path=None):
 
 
 def run_url_to_image(file, fields, out="out.csv"):
-    """Takes a CSV file and converts columns containing URLs
+    """URL to image.
+
+    Takes a CSV file and converts columns containing URLs
     into base64 encoded strings by downloading the content.
     """
     log.info("Starting url-to-image conversion...")
@@ -64,15 +66,12 @@ def run_url_to_image(file, fields, out="out.csv"):
     for f in fields.split(","):
         field_name = f.strip()
         if field_name not in mapping:
-            log.warning(
-                f"Field '{field_name}' not found in source file. Skipping."
-            )
+            log.warning(f"Field '{field_name}' not found in source file. Skipping.")
             continue
 
-        log.info(
-            f"Setting up URL download and conversion for column: '{field_name}'"
-        )
-        # Use the binary_url_map mapper to download and encode the content from the URL
+        log.info(f"Setting up URL download and conversion for column: '{field_name}'")
+        # Use the binary_url_map mapper to download
+        # and encode the content from the URL
         mapping[field_name] = mapper.binary_url_map(field_name)
 
     processor.process(mapping, out, {}, "list")

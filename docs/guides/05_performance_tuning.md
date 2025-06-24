@@ -10,9 +10,9 @@ The primary way to control performance is by adjusting the parameters passed to 
 
 The most significant performance gain comes from parallel processing. The import client can run multiple "worker" processes simultaneously, each handling a chunk of the data.
 
--   **CLI Option**: `--worker`
--   **`params` Key**: `'worker'`
--   **Default**: `1`
+- **CLI Option**: `--worker`
+- **`params` Key**: `'worker'`
+- **Default**: `1`
 
 By increasing the number of workers, you can leverage multiple CPU cores on the machine running the import script and on the Odoo server itself.
 
@@ -35,26 +35,28 @@ processor.process(
     params=import_params
 )
 ```
+
 This will add the `--worker=4` flag to the command in your generated `load.sh` script.
 
 ### Trade-offs and Considerations
 
--   **CPU Cores**: A good rule of thumb is to set the number of workers to be equal to, or slightly less than, the number of available CPU cores on your Odoo server.
--   **Database Deadlocks**: The biggest risk with multiple workers is the potential for database deadlocks. This can happen if two workers try to write records that depend on each other at the same time. The library's two-pass error handling system is designed to mitigate this.
+- **CPU Cores**: A good rule of thumb is to set the number of workers to be equal to, or slightly less than, the number of available CPU cores on your Odoo server.
+- **Database Deadlocks**: The biggest risk with multiple workers is the potential for database deadlocks. This can happen if two workers try to write records that depend on each other at the same time. The library's two-pass error handling system is designed to mitigate this.
 
 ## Solving Concurrent Updates with `--groupby`
 
 The `--groupby` option is a powerful feature designed to solve the "race condition" problem that occurs during high-performance, multi-worker imports.
 
--   **CLI Option**: `--groupby`
--   **`params` Key**: `'split'` (Note: the internal key is `split`)
--   **Default**: `None`
+- **CLI Option**: `--groupby`
+- **`params` Key**: `'split'` (Note: the internal key is `split`)
+- **Default**: `None`
 
 #### The Problem: A Race Condition
 
-Imagine you are using multiple workers to import contacts that all link to the *same* parent company.
--   **Worker 1** takes a contact and tries to update "Company A".
--   At the exact same time, **Worker 2** takes another contact and *also* tries to update "Company A".
+Imagine you are using multiple workers to import contacts that all link to the _same_ parent company.
+
+- **Worker 1** takes a contact and tries to update "Company A".
+- At the exact same time, **Worker 2** takes another contact and _also_ tries to update "Company A".
 
 The database locks the company record for Worker 1, so when Worker 2 tries to access it, it fails with a "concurrent update" error.
 
@@ -92,6 +94,7 @@ graph TD
 ### Example
 
 To safely import contacts in parallel, grouped by their parent company:
+
 ```python
 # In your transform.py script
 
@@ -102,6 +105,7 @@ import_params = {
     'split': 'parent_id/id', # The internal key is 'split'
 }
 ```
+
 This will add `--groupby=parent_id/id` to your generated `load.sh` script.
 
 ## Understanding Batch Size (`--size`)
@@ -122,6 +126,7 @@ When you use Odoo's standard import wizard, it's like putting all of your items 
 The `odoo-data-flow` library allows you to break up your import into smaller, more manageable chunks. When you use `--size 100`, you are telling the tool to use **multiple, smaller baskets**, each containing only 100 items.
 
 This solves both problems:
+
 1.  Each small basket is processed very quickly, avoiding server timeouts.
 2.  If one small basket has a bad record, only that basket of 100 records is rejected. All the other baskets are still successfully imported.
 
@@ -164,18 +169,17 @@ flowchart TD
 
 #### Trade-offs and Considerations
 
--   **Larger Batch Size**: Can be faster as it reduces the overhead of creating database transactions, but consumes more memory. If one record in a large batch fails, Odoo may reject the entire batch.
--   **Smaller Batch Size**: More resilient to individual record errors and consumes less memory, but can be slower due to increased network overhead.
--   **WAN Performance:** For slow networks, sending smaller chunks of data is often more stable than sending one massive payload.
-
+- **Larger Batch Size**: Can be faster as it reduces the overhead of creating database transactions, but consumes more memory. If one record in a large batch fails, Odoo may reject the entire batch.
+- **Smaller Batch Size**: More resilient to individual record errors and consumes less memory, but can be slower due to increased network overhead.
+- **WAN Performance:** For slow networks, sending smaller chunks of data is often more stable than sending one massive payload.
 
 ## Mapper Performance
 
 The choice of mappers can impact performance.
 
--   **Fast Mappers**: Most mappers, like `val`, `const`, `concat`, and `num`, are extremely fast as they operate only on the data in the current row.
+- **Fast Mappers**: Most mappers, like `val`, `const`, `concat`, and `num`, are extremely fast as they operate only on the data in the current row.
 
--   **Slow Mappers**: The `mapper.relation` function should be used with caution. For **every single row**, it performs a live search request to the Odoo database, which can be very slow for large datasets.
+- **Slow Mappers**: The `mapper.relation` function should be used with caution. For **every single row**, it performs a live search request to the Odoo database, which can be very slow for large datasets.
 
 **Recommendation**: If you need to map values based on data in Odoo, it is much more performant to first export the mapping from Odoo into a Python dictionary and then use the much faster `mapper.map_val` to do the translation in memory.
 
@@ -199,14 +203,14 @@ my_mapping = {
 }
 ```
 
-This triggers a cascade of updates. Each time a new child contact is imported for the same parent, Odoo re-writes the *entire* list of children on the parent record. The number of database writes grows with every new record, slowing the import to a crawl.
+This triggers a cascade of updates. Each time a new child contact is imported for the same parent, Odoo re-writes the _entire_ list of children on the parent record. The number of database writes grows with every new record, slowing the import to a crawl.
 
 ### The Solution: Use the `--ignore` Option
 
 The correct way to handle this is to prevent the import client from writing to the problematic field. You can do this by adding the `ignore` key to your `params` dictionary.
 
--   **CLI Option**: `--ignore`
--   **`params` Key**: `'ignore'`
+- **CLI Option**: `--ignore`
+- **`params` Key**: `'ignore'`
 
 ```python
 # In your transform.py script

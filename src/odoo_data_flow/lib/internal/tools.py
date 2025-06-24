@@ -1,13 +1,16 @@
-"""This module provides low-level utility functions for data formatting and iteration,
+"""Internal dooo-flow Tools.
+
+This module provides low-level utility functions for data formatting
+and iteration,
 primarily used by the mapper and processor modules.
 """
 
 from collections.abc import Iterable
 from itertools import islice
-from typing import Any, List
+from typing import Any
 
 
-def batch(iterable: Iterable[Any], size: int) -> Iterable[List[Any]]:
+def batch(iterable: Iterable[Any], size: int) -> Iterable[list[Any]]:
     """Splits an iterable into batches of a specified size.
 
     Args:
@@ -28,14 +31,16 @@ def batch(iterable: Iterable[Any], size: int) -> Iterable[List[Any]]:
 
         # Chain the first item back with the rest of the batch iterator
         # and yield the complete batch as a list.
-        yield [first_item] + list(batch_iterator)
+        yield [first_item, *list(batch_iterator)]
 
 
 # --- Data Formatting Tools ---
 
 
 def to_xmlid(name: str) -> str:
-    """Sanitizes a string to make it a valid XML ID, replacing special
+    """Create valid xmlid.
+
+    Sanitizes a string to make it a valid XML ID, replacing special
     characters with underscores.
     """
     if not isinstance(name, str):
@@ -49,7 +54,9 @@ def to_xmlid(name: str) -> str:
 
 
 def to_m2o(prefix: str, value: Any, default: str = "") -> str:
-    """Creates a full external ID for a Many2one relationship by combining
+    """Creates a full external ID for a Many2one relationship.
+
+    Creates a full external ID for a Many2one relationship by combining
     a prefix and a sanitized value.
 
     Args:
@@ -57,13 +64,14 @@ def to_m2o(prefix: str, value: Any, default: str = "") -> str:
         value: The value to be sanitized and appended to the prefix.
         default: The value to return if the input value is empty.
 
-    Returns:
+    Return:
         The formatted external ID (e.g., 'my_module.sanitized_value').
     """
     if not value:
         return default
 
-    # Ensure the prefix ends with a dot, but don't add one if it's already there.
+    # Ensure the prefix ends with a dot,
+    #  but don't add one if it's already there.
     if not prefix.endswith("."):
         prefix += "."
 
@@ -71,21 +79,22 @@ def to_m2o(prefix: str, value: Any, default: str = "") -> str:
 
 
 def to_m2m(prefix: str, value: str) -> str:
-    """Creates a comma-separated list of external IDs for a Many2many relationship.
+    """Creates a comma-separated list of external IDs .
+
+    Creates a comma-separated list of external IDs for a Many2many relationship.
     It takes a string of comma-separated values, sanitizes each one, and
     prepends the prefix.
 
     Args:
         prefix: The XML ID prefix to apply to each value.
-        value: A single string containing one or more values, separated by commas.
+        value: A single string containing one or more values,
+        separated by commas.
 
-    Returns:
+    Return:
         A comma-separated string of formatted external IDs.
     """
     if not value:
         return ""
 
-    ids = [
-        to_m2o(prefix, val.strip()) for val in value.split(",") if val.strip()
-    ]
+    ids = [to_m2o(prefix, val.strip()) for val in value.split(",") if val.strip()]
     return ",".join(ids)

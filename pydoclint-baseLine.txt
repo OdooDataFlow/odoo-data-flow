@@ -1,0 +1,39 @@
+src/odoo_data_flow/lib/conf_lib.py
+    DOC111: Function `get_connection_from_config`: The option `--arg-type-hints-in-docstring` is `False` but there are type hints in the docstring arg list
+    DOC501: Function `get_connection_from_config` has raise statements, but the docstring does not have a "Raises" section
+    DOC503: Function `get_connection_from_config` exceptions in the "Raises" section in the docstring do not match those in the function body. Raised exceptions in the docstring: []. Raised exceptions in the body: ['Exception', 'FileNotFoundError', 'KeyError', 'ValueError'].
+--------------------
+src/odoo_data_flow/lib/internal/exceptions.py
+    DOC301: Class `SkippingError`: __init__() should not have a docstring; please combine it with the docstring of the class
+--------------------
+src/odoo_data_flow/lib/internal/io.py
+    DOC107: Function `write_csv`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
+--------------------
+src/odoo_data_flow/lib/internal/rpc_thread.py
+    DOC301: Class `RpcThread`: __init__() should not have a docstring; please combine it with the docstring of the class
+--------------------
+src/odoo_data_flow/lib/internal/tools.py
+    DOC404: Function `batch` yield type(s) in docstring not consistent with the return annotation. The yield type (the 0th arg in Generator[...]/Iterator[...]): Any; docstring "yields" section types:
+    DOC201: Function `to_m2o` does not have a return section in docstring
+    DOC203: Function `to_m2o` return type(s) in docstring not consistent with the return annotation. Return annotation has 1 type(s); docstring return section has 0 type(s).
+    DOC001: Function/method `to_m2m`: Potential formatting errors in docstring. Error message: Expected a colon in 'separated by commas.'. (Note: DOC001 could trigger other unrelated violations under this function/method too. Please fix the docstring formatting first.)
+    DOC101: Function `to_m2m`: Docstring contains fewer arguments than in function signature.
+    DOC103: Function `to_m2m`: Docstring arguments are different from function arguments. (Or could be other formatting issues: https://jsh9.github.io/pydoclint/violation_codes.html#notes-on-doc103 ). Arguments in the function signature but not in the docstring: [prefix: str, value: str].
+    DOC201: Function `to_m2m` does not have a return section in docstring
+    DOC203: Function `to_m2m` return type(s) in docstring not consistent with the return annotation. Return annotation has 1 type(s); docstring return section has 0 type(s).
+--------------------
+src/odoo_data_flow/lib/workflow/invoice_v9.py
+    DOC301: Class `InvoiceWorkflowV9`: __init__() should not have a docstring; please combine it with the docstring of the class
+--------------------
+src/odoo_data_flow/lib/xml_transform.py
+    DOC001: Function/method `process`: Potential formatting errors in docstring. Error message: Expected a colon in '`XMLProcessor`.'. (Note: DOC001 could trigger other unrelated violations under this function/method too. Please fix the docstring formatting first.)
+    DOC101: Method `XMLProcessor.process`: Docstring contains fewer arguments than in function signature.
+    DOC103: Method `XMLProcessor.process`: Docstring arguments are different from function arguments. (Or could be other formatting issues: https://jsh9.github.io/pydoclint/violation_codes.html#notes-on-doc103 ). Arguments in the function signature but not in the docstring: [filename_out: str, import_args: dict[str, Any], m2m: bool, mapping: dict[str, str], null_values: Union[list[Any], None], t: str, verbose: bool].
+    DOC201: Method `XMLProcessor.process` does not have a return section in docstring
+    DOC203: Method `XMLProcessor.process` return type(s) in docstring not consistent with the return annotation. Return annotation has 1 type(s); docstring return section has 0 type(s).
+--------------------
+src/odoo_data_flow/logging_config.py
+    DOC106: Function `setup_logging`: The option `--arg-type-hints-in-signature` is `True` but there are no argument type hints in the signature
+    DOC107: Function `setup_logging`: The option `--arg-type-hints-in-signature` is `True` but not all args in the signature have type hints
+    DOC111: Function `setup_logging`: The option `--arg-type-hints-in-docstring` is `False` but there are type hints in the docstring arg list
+--------------------

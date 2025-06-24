@@ -1,4 +1,6 @@
-"""This module contains the low-level, multi-threaded logic for importing
+"""Import thread.
+
+This module contains the low-level, multi-threaded logic for importing
 data into an Odoo instance.
 """
 
@@ -6,7 +8,7 @@ import csv
 import sys
 from collections.abc import Generator
 from time import time
-from typing import Any, Dict, List, Tuple
+from typing import Any, Optional
 
 from ..logging_config import log
 from .lib import conf_lib
@@ -18,7 +20,9 @@ if sys.version_info.major >= 3:
 
 
 class RPCThreadImport(RpcThread):
-    """A specialized RpcThread for handling the import of data batches into Odoo.
+    """RPC Import Thread.
+
+    A specialized RpcThread for handling the import of data batches into Odoo.
     It writes failed records to a file.
     """
 
@@ -26,9 +30,9 @@ class RPCThreadImport(RpcThread):
         self,
         max_connection: int,
         model: Any,
-        header: List[str],
+        header: list[str],
         writer: csv.writer,
-        context: Dict = None,
+        context: Optional[dict] = None,
     ):
         super().__init__(max_connection)
         self.model = model
@@ -38,13 +42,13 @@ class RPCThreadImport(RpcThread):
 
     def launch_batch(
         self,
-        data_lines: List[List[Any]],
+        data_lines: list[list[Any]],
         batch_number: Any,
         check: bool = False,
     ):
         """Submits a batch of data lines to be imported by a worker thread."""
 
-        def launch_batch_fun(lines: List[List[Any]], num: Any, do_check: bool):
+        def launch_batch_fun(lines: list[list[Any]], num: Any, do_check: bool):
             start_time = time()
             success = False
             try:
@@ -55,9 +59,7 @@ class RPCThreadImport(RpcThread):
                     for msg in res["messages"]:
                         record_index = msg.get("record", -1)
                         failed_line = (
-                            lines[record_index]
-                            if record_index < len(lines)
-                            else "N/A"
+                            lines[record_index] if record_index < len(lines) else "N/A"
                         )
                         log.error(
                             f"Odoo message for batch {num}: "
@@ -69,7 +71,8 @@ class RPCThreadImport(RpcThread):
                 elif do_check and len(res.get("ids", [])) != len(lines):
                     log.error(
                         f"Record count mismatch for batch {num}. "
-                        f"Expected {len(lines)}, got {len(res.get('ids', []))}. "
+                        f"Expected {len(lines)}, "
+                        f"got {len(res.get('ids', []))}. "
                         f"Probably a duplicate XML ID."
                     )
                     success = False
@@ -77,17 +80,14 @@ class RPCThreadImport(RpcThread):
                     success = True
 
             except Exception as e:
-                log.error(
-                    f"RPC call for batch {num} failed: {e}", exc_info=True
-                )
+                log.error(f"RPC call for batch {num} failed: {e}", exc_info=True)
                 success = False
 
             if not success:
                 self.writer.writerows(lines)
 
             log.info(
-                f"Time for batch {num}: {time() - start_time:.2f}s. "
-                f"Success: {success}"
+                f"Time for batch {num}: {time() - start_time:.2f}s. Success: {success}"
             )
 
         self.spawn_thread(
@@ -96,8 +96,8 @@ class RPCThreadImport(RpcThread):
 
 
 def _filter_ignored_columns(
-    ignore: List[str], header: List[str], data: List[List[Any]]
-) -> Tuple[List[str], List[List[Any]]]:
+    ignore: list[str], header: list[str], data: list[list[Any]]
+) -> tuple[list[str], list[list[Any]]]:
     """Removes ignored columns from header and data."""
     if not ignore:
         return header, data
@@ -111,7 +111,7 @@ def _filter_ignored_columns(
 
 def _read_data_file(
     file_path: str, separator: str, encoding: str, skip: int
-) -> Tuple[List[str], List[List[Any]]]:
+) -> tuple[list[str], list[list[Any]]]:
     """Reads a CSV file and returns its header and data."""
     log.info(f"Reading data from file: {file_path}")
     try:
@@ -139,13 +139,15 @@ def _read_data_file(
 
 
 def _create_batches(
-    data: List[List[Any]],
+    data: list[list[Any]],
     split_by_col: str,
-    header: List[str],
+    header: list[str],
     batch_size: int,
     o2m: bool,
-) -> Generator[Tuple[Any, List], None, None]:
-    """A generator that yields batches of data. If split_by_col is provided, it
+) -> Generator[tuple[Any, list], None, None]:
+    """A generator that yields batches of data.
+
+    If split_by_col is provided, it
     groups records with the same value in that column into the same batch.
     """
     if not split_by_col:
@@ -158,12 +160,11 @@ def _create_batches(
         split_index = header.index(split_by_col)
         id_index = header.index("id")
     except ValueError as e:
-        log.error(
-            f"Grouping column '{e}' not found in header. Cannot use --groupby."
-        )
+        log.error(f"Grouping column '{e}' not found in header. Cannot use --groupby.")
         return
 
-    # Sort data by the grouping column to ensure all related records are contiguous
+    # Sort data by the grouping column
+    # to ensure all related records are contiguous
     data.sort(key=lambda row: row[split_index])
 
     current_batch = []
@@ -200,14 +201,14 @@ def _create_batches(
 def import_data(
     config_file: str,
     model: str,
-    header: List[str] = None,
-    data: List[List[Any]] = None,
-    file_csv: str = None,
-    context: Dict = None,
+    header: Optional[list[str]] = None,
+    data: Optional[list[list[Any]]] = None,
+    file_csv: Optional[str] = None,
+    context: Optional[dict] = None,
     fail_file: str = False,
     encoding: str = "utf-8",
     separator: str = ";",
-    ignore: List[str] = None,
+    ignore: Optional[list[str]] = None,
     split: str = False,
     check: bool = True,
     max_connection: int = 1,
@@ -215,8 +216,9 @@ def import_data(
     skip: int = 0,
     o2m: bool = False,
 ):
-    """Main function to orchestrate the import process. Can be run from a file
-    or from in-memory data.
+    """Main function to orchestrate the import process.
+
+    Can be run from a file or from in-memory data.
     """
     ignore = ignore or []
     context = context or {}
@@ -247,19 +249,13 @@ def import_data(
     fail_file_handle = None
     if fail_file:
         try:
-            fail_file_handle = open(
-                fail_file, "w", newline="", encoding=encoding
-            )
+            fail_file_handle = open(fail_file, "w", newline="", encoding=encoding)
             fail_file_writer = csv.writer(
                 fail_file_handle, separator=separator, quoting=csv.QUOTE_ALL
             )
-            fail_file_writer.writerow(
-                header
-            )  # Write header to fail file immediately
+            fail_file_writer.writerow(header)  # Write header to fail file immediately
         except OSError as e:
-            log.error(
-                f"Could not open fail file for writing: {fail_file}. Error: {e}"
-            )
+            log.error(f"Could not open fail file for writing: {fail_file}. Error: {e}")
             return  # Cannot proceed without a fail file
 
     rpc_thread = RPCThreadImport(

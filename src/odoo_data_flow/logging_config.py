@@ -21,7 +21,8 @@ def setup_logging(verbose=False):
     level = logging.DEBUG if verbose else logging.INFO
     log.setLevel(level)
 
-    # Clear any existing handlers to avoid duplicate logs if this is called multiple times
+    # Clear any existing handlers to avoid duplicate logs if this is called
+    # multiple times
     if log.hasHandlers():
         log.handlers.clear()
 

@@ -1,4 +1,6 @@
-"""This module handles reading the connection configuration file and
+"""Config File Handler.
+
+This module handles reading the connection configuration file and
 establishing a connection to the Odoo server using odoo-client-lib.
 """
 
@@ -10,7 +12,9 @@ from ..logging_config import log
 
 
 def get_connection_from_config(config_file: str) -> OdooClient:
-    """Reads an Odoo connection configuration file and returns an
+    """Get connection from config.
+
+    Reads an Odoo connection configuration file and returns an
     initialized OdooClient object.
 
     Args:
@@ -35,9 +39,7 @@ def get_connection_from_config(config_file: str) -> OdooClient:
             # The OdooClient expects the user ID as 'user_id'
             conn_details["user_id"] = int(conn_details.pop("uid"))
 
-        log.info(
-            f"Connecting to Odoo server at {conn_details.get('hostname')}..."
-        )
+        log.info(f"Connecting to Odoo server at {conn_details.get('hostname')}...")
 
         # Use odoo-client-lib to establish the connection
         connection = OdooClient(**conn_details)

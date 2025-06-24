@@ -1,4 +1,6 @@
-"""This test script reads a CSV file from the 'origin' directory,
+"""Test The mapper from file.
+
+This test script reads a CSV file from the 'origin' directory,
 applies a mapping with various mappers, checks data quality,
 and generates a clean CSV file ready for import.
 """

@@ -8,17 +8,17 @@ Processor for each row of the source data.
 
 import base64
 import os
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable
 
 import requests
 
 from ..logging_config import log
-from .internal.exceptions import SkippingException
+from .internal.exceptions import SkippingError
 from .internal.tools import to_m2o
 
 # Type alias for clarity
-LineDict = Dict[str, Any]
-StateDict = Dict[str, Any]
+LineDict = dict[str, Any]
+StateDict = dict[str, Any]
 MapperFunc = Callable[[LineDict, StateDict], Any]
 
 # --- Helper Functions ---
@@ -36,7 +36,7 @@ def _str_to_mapper(field: Any) -> MapperFunc:
     return field
 
 
-def _list_to_mappers(args: tuple) -> List[MapperFunc]:
+def _list_to_mappers(args: tuple) -> list[MapperFunc]:
     """Converts a list of strings or mappers into a list of mappers."""
     return [_str_to_mapper(f) for f in args]
 
@@ -59,14 +59,12 @@ def val(
     postprocess: Callable = lambda x, s: x,
     skip: bool = False,
 ) -> MapperFunc:
-    """Returns a mapper that gets a value from a specific field in the source row."""
+    """Returns a mapper that gets a value from a specific field in the row."""
 
     def val_fun(line: LineDict, state: StateDict) -> Any:
         value = _get_field_value(line, field)
         if not value and skip:
-            raise SkippingException(
-                f"Missing required value for field '{field}'"
-            )
+            raise SkippingError(f"Missing required value for field '{field}'")
 
         # Pass both value and state to the postprocess function
         return postprocess(value or default, state)
@@ -78,7 +76,10 @@ def val(
 
 
 def concat(separator: str, *fields: Any) -> MapperFunc:
-    """Returns a mapper that joins values from multiple fields or static strings."""
+    """Concatenate mapper.
+
+    Returns a mapper that joins values from multiple fields or static strings.
+    """
     mappers = _list_to_mappers(fields)
 
     def concat_fun(line: LineDict, state: StateDict) -> str:
@@ -93,7 +94,9 @@ def concat(separator: str, *fields: Any) -> MapperFunc:
 
 
 def cond(field: str, true_mapper: Any, false_mapper: Any) -> MapperFunc:
-    """Returns a mapper that applies one of two mappers based on the
+    """Conditional mapper.
+
+    Returns a mapper that applies one of two mappers based on the
     truthiness of a value in a given field.
     """
     true_m = _str_to_mapper(true_mapper)
@@ -108,8 +111,11 @@ def cond(field: str, true_mapper: Any, false_mapper: Any) -> MapperFunc:
     return cond_fun
 
 
-def bool_val(field: str, true_values: List[str]) -> MapperFunc:
-    """Returns a mapper that checks if a field's value is in a list of true values."""
+def bool_val(field: str, true_values: list[str]) -> MapperFunc:
+    """Boolean Value mapper.
+
+    Returns a mapper that checks if a field's value is in a list of true values.
+    """
 
     def bool_val_fun(line: LineDict, state: StateDict) -> str:
         return "1" if _get_field_value(line, field) in true_values else "0"
@@ -121,7 +127,9 @@ def bool_val(field: str, true_values: List[str]) -> MapperFunc:
 
 
 def num(field: str, default: str = "0.0") -> MapperFunc:
-    """Returns a mapper that converts a numeric string to a standard format,
+    """Number mapper.
+
+    Returns a mapper that converts a numeric string to a standard format,
     replacing commas with dots.
     """
 
@@ -138,7 +146,9 @@ def num(field: str, default: str = "0.0") -> MapperFunc:
 def m2o_map(
     prefix: str, *fields: Any, default: str = "", skip: bool = False
 ) -> MapperFunc:
-    """Returns a mapper for creating a Many2one external ID by concatenating
+    """M20 Mapper.
+
+    Returns a mapper for creating a Many2one external ID by concatenating
     a prefix and values from one or more fields.
     """
     concat_mapper = concat("_", *fields)
@@ -146,17 +156,18 @@ def m2o_map(
     def m2o_fun(line: LineDict, state: StateDict) -> str:
         value = concat_mapper(line, state)
         if not value and skip:
-            raise SkippingException(
-                f"Missing value for m2o_map with prefix '{prefix}'"
-            )
+            raise SkippingError(f"Missing value for m2o_map with prefix '{prefix}'")
         return to_m2o(prefix, value, default=default)
 
     return m2o_fun
 
 
 def m2m(prefix: str, *fields: Any, sep: str = ",") -> MapperFunc:
-    """Returns a mapper for creating a comma-separated list of Many2many
-    external IDs. It can take multiple fields or a single field to be split.
+    """M2M Mapper.
+
+    Returns a mapper for creating a comma-separated list of Many2many
+    external IDs.
+    It can take multiple fields or a single field to be split.
     """
 
     def m2m_fun(line: LineDict, state: StateDict) -> str:
@@ -170,9 +181,7 @@ def m2m(prefix: str, *fields: Any, sep: str = ",") -> MapperFunc:
             field = fields[0]
             value = _get_field_value(line, field)
             if value:
-                all_values.extend(
-                    to_m2o(prefix, v.strip()) for v in value.split(sep)
-                )
+                all_values.extend(to_m2o(prefix, v.strip()) for v in value.split(sep))
 
         return ",".join(all_values)
 
@@ -183,7 +192,7 @@ def m2m(prefix: str, *fields: Any, sep: str = ",") -> MapperFunc:
 
 
 def map_val(
-    mapping_dict: Dict, key_mapper: Any, default: Any = "", m2m: bool = False
+    mapping_dict: dict, key_mapper: Any, default: Any = "", m2m: bool = False
 ) -> MapperFunc:
     """Returns a mapper that translates a value using a provided dictionary."""
     key_m = _str_to_mapper(key_mapper)
@@ -198,18 +207,16 @@ def map_val(
     return map_val_fun
 
 
-def record(mapping: Dict) -> MapperFunc:
+def record(mapping: dict) -> MapperFunc:
     """Returns a mapper that processes a sub-mapping for a related record.
+
     Used for creating one-to-many records.
     """
 
-    def record_fun(line: LineDict, state: StateDict) -> Dict:
+    def record_fun(line: LineDict, state: StateDict) -> dict:
         # This function returns a dictionary that the Processor will understand
         # as a related record to be created.
-        return {
-            key: mapper_func(line, state)
-            for key, mapper_func in mapping.items()
-        }
+        return {key: mapper_func(line, state) for key, mapper_func in mapping.items()}
 
     return record_fun
 
@@ -218,7 +225,9 @@ def record(mapping: Dict) -> MapperFunc:
 
 
 def binary(field: str, path_prefix: str = "", skip: bool = False) -> MapperFunc:
-    """Returns a mapper that reads a local file path from a field,
+    """Binary mapper.
+
+    Returns a mapper that reads a local file path from a field,
     and converts the file content to a base64 string.
     """
 
@@ -231,9 +240,9 @@ def binary(field: str, path_prefix: str = "", skip: bool = False) -> MapperFunc:
         try:
             with open(full_path, "rb") as f:
                 return base64.b64encode(f.read()).decode("utf-8")
-        except FileNotFoundError:
+        except FileNotFoundError as e:
             if skip:
-                raise SkippingException(f"File not found at '{full_path}'")
+                raise SkippingError(f"File not found at '{full_path}'") from e
             log.warning(f"File not found at '{full_path}', skipping.")
             return ""
 
@@ -241,7 +250,9 @@ def binary(field: str, path_prefix: str = "", skip: bool = False) -> MapperFunc:
 
 
 def binary_url_map(field: str, skip: bool = False) -> MapperFunc:
-    """Returns a mapper that reads a URL from a field, downloads the content,
+    """Binary url mapper.
+
+    Returns a mapper that reads a URL from a field, downloads the content,
     and converts it to a base64 string.
     """
 
@@ -256,9 +267,7 @@ def binary_url_map(field: str, skip: bool = False) -> MapperFunc:
             return base64.b64encode(res.content).decode("utf-8")
         except requests.exceptions.RequestException as e:
             if skip:
-                raise SkippingException(
-                    f"Cannot fetch file at URL '{url}': {e}"
-                )
+                raise SkippingError(f"Cannot fetch file at URL '{url}': {e}") from e
             log.warning(f"Cannot fetch file at URL '{url}': {e}")
             return ""
 
@@ -269,7 +278,10 @@ def binary_url_map(field: str, skip: bool = False) -> MapperFunc:
 
 
 def m2m_template_attribute_value(prefix: str, *fields: Any) -> MapperFunc:
-    """Legacy mapper for creating complex XML IDs for product attribute values."""
+    """Legace m2m Template Attribute mapper.
+
+    Legacy mapper for creating complex XML IDs for product attribute values.
+    """
     concat_m = concat("_", *fields)
 
     def m2m_attribute_fun(line: LineDict, state: StateDict) -> str:
@@ -285,7 +297,9 @@ def m2m_template_attribute_value(prefix: str, *fields: Any) -> MapperFunc:
 
 
 def split_line_number(line_nb: int) -> Callable:
-    """Returns a function for the Processor's split method that creates a new
+    """Split line number.
+
+    Returns a function for the Processor's split method that creates a new
     chunk every 'line_nb' lines.
     """
 
@@ -296,7 +310,9 @@ def split_line_number(line_nb: int) -> Callable:
 
 
 def split_file_number(file_nb: int) -> Callable:
-    """Returns a function for the Processor's split method that distributes
+    """Split file number.
+
+    Returns a function for the Processor's split method that distributes
     records across a fixed number of 'file_nb' chunks.
     """
 

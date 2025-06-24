@@ -1,4 +1,6 @@
-"""This test script generates data for partner categories and partners
+"""Generate Test data.
+
+This test script generates data for partner categories and partners
 to be used in the main test suite.
 """
 
@@ -19,14 +21,15 @@ tags = [f"Tag {i}" for i in range(100)]
 # Create a dataset for 200 partners, each assigned 5 random tags
 header = ["id", "tags"]
 data = [
-    [str(i), ",".join(random.choice(tags) for _ in range(5))]
+    [str(i), ",".join(random.choice(tags) for _ in range(5))]  # noqa
     for i in range(200)
 ]
 
 # --- Mapping Definitions ---
 
 # Mapping to create the partner category records.
-# This will be processed in a special m2m mode to create one record per unique tag.
+# This will be processed in a special m2m mode to create one record
+# per unique tag.
 tag_mapping = {
     # CORRECTED: Use m2m_map to correctly prepend the prefix to each tag name
     # to create a unique external ID. e.g., "partner_tag_Tag 1"
@@ -41,9 +44,7 @@ partner_mapping = {
     "id": mapper.concat(PARTNER_PREFIX, "_", "id"),
     "name": mapper.val("id", postprocess=lambda x: f"Partner {x}"),
     "phone": mapper.val("id", postprocess=lambda x: f"0032{int(x) * 11}"),
-    "website": mapper.val(
-        "id", postprocess=lambda x: f"http://website-{x}.com"
-    ),
+    "website": mapper.val("id", postprocess=lambda x: f"http://website-{x}.com"),
     "street": mapper.val("id", postprocess=lambda x: f"Street {x}"),
     "city": mapper.val("id", postprocess=lambda x: f"City {x}"),
     "zip": mapper.val("id", postprocess=lambda x: str(x).zfill(6)),

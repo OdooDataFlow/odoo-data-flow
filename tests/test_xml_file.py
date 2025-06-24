@@ -1,4 +1,6 @@
-"""This test script checks the XML processing functionality.
+"""Test XML Files.
+
+This test script checks the XML processing functionality.
 It reads a source XML file, applies a mapping, and generates a
 clean CSV file.
 """

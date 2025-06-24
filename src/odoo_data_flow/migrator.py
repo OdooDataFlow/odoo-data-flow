@@ -1,4 +1,6 @@
-"""This module contains the logic for performing a direct, in-memory
+"""Migrate data between two odoo databases.
+
+This module contains the logic for performing a direct, in-memory
 migration of data from one Odoo instance to another.
 """
 

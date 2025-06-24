@@ -1,11 +1,10 @@
-"""This module acts as a dispatcher for running post-import workflows
-from the command line.
-"""
+"""Workflow Runner, invoke workflows.
 
-"""
 This module acts as a dispatcher for running post-import workflows
 from the command line.
 """
+
+import ast
 
 from .lib.conf_lib import get_connection_from_config
 from .lib.workflow.invoice_v9 import InvoiceWorkflowV9
@@ -28,7 +27,8 @@ def run_invoice_v9_workflow(
         connection = get_connection_from_config(config_file=config)
 
         # Safely evaluate the status map string into a dictionary
-        status_map = eval(status_map_str)
+        status_map = ast.literal_eval(status_map_str)
+
         if not isinstance(status_map, dict):
             raise TypeError("Status map must be a dictionary.")
 
@@ -62,9 +62,7 @@ def run_invoice_v9_workflow(
         wf.proforma_invoice()
     if "rename" in actions:
         rename_field = "x_legacy_number"
-        log.info(
-            f"Note: 'rename' action is using a placeholder field: {rename_field}"
-        )
+        log.info(f"Note: 'rename' action is using a placeholder field: {rename_field}")
         wf.rename(rename_field)
 
     log.info("--- Invoice Workflow Finished ---")

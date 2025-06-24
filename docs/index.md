@@ -24,7 +24,7 @@ graph TD
         C["@field Decorators"]
         D[Transformation & Validation Logic]
     end
-    
+
     subgraph Odoo
         E[Odoo Database]
     end
@@ -39,32 +39,28 @@ graph TD
 
 ## Key Features
 
-
-* **Declarative Python Configuration**: Define your entire data flow using clear and readable Python objects. This "configuration-as-code" approach allows for powerful, dynamic, and easily debugged setups. Making complex data operations manageable and repeatable.
-* **Multiple Data Sources**: Natively supports CSV, JSON, and XML files. Easily extendable to support other sources like databases or APIs.
-* **Built-in Data Transformation:** Clean, modify, and format data on the fly using simple `lambda` functions or your own custom python code.
-* **Relational Field Handling:** Easily import and export `Many2one`, `One2many`, and `Many2many` relationships.
-* **Data Validation:** Ensure data integrity before it even reaches Odoo.
-* **Extensible and Customizable:** Write your own custom methods to handle unique or complex data-processing requirements.
-* **Support for CSV and Excel:** Works seamlessly with the most common file formats for business data exchange.
-* **Robust Error Handling**: Provides clear logging and error reports to help you debug your data flows quickly.
-
+- **Declarative Python Configuration**: Define your entire data flow using clear and readable Python objects. This "configuration-as-code" approach allows for powerful, dynamic, and easily debugged setups. Making complex data operations manageable and repeatable.
+- **Multiple Data Sources**: Natively supports CSV, JSON, and XML files. Easily extendable to support other sources like databases or APIs.
+- **Built-in Data Transformation:** Clean, modify, and format data on the fly using simple `lambda` functions or your own custom python code.
+- **Relational Field Handling:** Easily import and export `Many2one`, `One2many`, and `Many2many` relationships.
+- **Data Validation:** Ensure data integrity before it even reaches Odoo.
+- **Extensible and Customizable:** Write your own custom methods to handle unique or complex data-processing requirements.
+- **Support for CSV and Excel:** Works seamlessly with the most common file formats for business data exchange.
+- **Robust Error Handling**: Provides clear logging and error reports to help you debug your data flows quickly.
 
 ## Getting Started
 
 Ready to simplify your Odoo data integrations?
 
-| Step                        | Description                                          |
-| --------------------------- | ---------------------------------------------------- |
-| 🚀 **[Quickstart](./quickstart.md)** | Your first end-to-end example. Go from file to Odoo in minutes. |
-| ⚙️ **[Installation](./installation.md)** | How to install the library in your project. |
-| 🧠 **[Core Concepts](./core_concepts.md)** | Understand the key ideas behind the library. |
-
+| Step                                       | Description                                                     |
+| ------------------------------------------ | --------------------------------------------------------------- |
+| 🚀 **[Quickstart](./quickstart.md)**       | Your first end-to-end example. Go from file to Odoo in minutes. |
+| ⚙️ **[Installation](./installation.md)**   | How to install the library in your project.                     |
+| 🧠 **[Core Concepts](./core_concepts.md)** | Understand the key ideas behind the library.                    |
 
 [license]: license
 [contributor guide]: contributing
 [command-line reference]: usage
-
 
 ```{toctree}
 ---
