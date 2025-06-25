@@ -1,23 +1,24 @@
 """This module contains the core logic for exporting data from Odoo."""
 
 import ast
+from typing import Any, Optional
 
 from . import export_threaded
 from .logging_config import log
 
 
 def run_export(
-    config,
-    filename,
-    model,
-    fields,
-    domain="[]",
-    worker=1,
-    batch_size=10,
-    separator=";",
-    context="{'tracking_disable' : True}",
-    encoding="utf-8",
-):
+    config: str,
+    filename: str,
+    model: str,
+    fields: str,
+    domain: str = "[]",
+    worker: int = 1,
+    batch_size: int = 10,
+    separator: str = ";",
+    context: str = "{'tracking_disable' : True}",
+    encoding: str = "utf-8",
+) -> None:
     """Export runner.
 
     Orchestrates the data export process, writing the output to a CSV file.
@@ -69,15 +70,15 @@ def run_export(
 
 
 def run_export_for_migration(
-    config,
-    model,
-    fields,
-    domain="[]",
-    worker=1,
-    batch_size=10,
-    context="{'tracking_disable' : True}",
-    encoding="utf-8",
-):
+    config: str,
+    model: str,
+    fields: list[str],
+    domain: str = "[]",
+    worker: int = 1,
+    batch_size: int = 10,
+    context: str = "{'tracking_disable' : True}",
+    encoding: str = "utf-8",
+) -> tuple[Optional[list[str]], Optional[list[list[Any]]]]:
     """Migration exporter.
 
     Orchestrates the data export process, returning the data in memory.
@@ -99,13 +100,11 @@ def run_export_for_migration(
     except Exception:
         parsed_context = {}
 
-    header_list = fields.split(",") if fields else []
-
     header, data = export_threaded.export_data(
         config,
         model,
         parsed_domain,
-        header_list,
+        fields,
         context=parsed_context,
         output=None,  # This signals the function to return data
         max_connection=int(worker),
@@ -113,5 +112,9 @@ def run_export_for_migration(
         encoding=encoding,
     )
 
-    log.info(f"In-memory export complete. Fetched {len(data)} records.")
+    if data:
+        log.info(f"In-memory export complete. Fetched {len(data)} records.")
+    else:
+        log.info("In-memory export complete. No records fetched.")
+
     return header, data
