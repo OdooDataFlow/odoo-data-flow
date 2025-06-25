@@ -14,7 +14,7 @@ import requests
 
 from ..logging_config import log
 from .internal.exceptions import SkippingError
-from .internal.tools import to_m2o
+from .internal.tools import to_m2m, to_m2o
 
 # Type alias for clarity
 LineDict = dict[str, Any]
@@ -156,7 +156,9 @@ def m2o_map(
     def m2o_fun(line: LineDict, state: StateDict) -> str:
         value = concat_mapper(line, state)
         if not value and skip:
-            raise SkippingError(f"Missing value for m2o_map with prefix '{prefix}'")
+            raise SkippingError(
+                f"Missing value for m2o_map with prefix '{prefix}'"
+            )
         return to_m2o(prefix, value, default=default)
 
     return m2o_fun
@@ -181,11 +183,29 @@ def m2m(prefix: str, *fields: Any, sep: str = ",") -> MapperFunc:
             field = fields[0]
             value = _get_field_value(line, field)
             if value:
-                all_values.extend(to_m2o(prefix, v.strip()) for v in value.split(sep))
+                all_values.extend(
+                    to_m2o(prefix, v.strip()) for v in value.split(sep)
+                )
 
         return ",".join(all_values)
 
     return m2m_fun
+
+
+def m2m_map(prefix: str, mapper_func: MapperFunc) -> MapperFunc:
+    """M2M_Map Many 2 Many Mapper.
+
+    Returns a mapper that takes the result of another mapper and creates
+    a Many2many external ID list from it.
+    """
+
+    def m2m_map_fun(line: LineDict, state: StateDict) -> str:
+        # Get the value from the provided mapper function
+        value = mapper_func(line, state)
+        # Use the standard to_m2m helper to format it correctly
+        return to_m2m(prefix, value)
+
+    return m2m_map_fun
 
 
 # --- Advanced Mappers ---
@@ -216,7 +236,10 @@ def record(mapping: dict) -> MapperFunc:
     def record_fun(line: LineDict, state: StateDict) -> dict:
         # This function returns a dictionary that the Processor will understand
         # as a related record to be created.
-        return {key: mapper_func(line, state) for key, mapper_func in mapping.items()}
+        return {
+            key: mapper_func(line, state)
+            for key, mapper_func in mapping.items()
+        }
 
     return record_fun
 
@@ -267,7 +290,9 @@ def binary_url_map(field: str, skip: bool = False) -> MapperFunc:
             return base64.b64encode(res.content).decode("utf-8")
         except requests.exceptions.RequestException as e:
             if skip:
-                raise SkippingError(f"Cannot fetch file at URL '{url}': {e}") from e
+                raise SkippingError(
+                    f"Cannot fetch file at URL '{url}': {e}"
+                ) from e
             log.warning(f"Cannot fetch file at URL '{url}': {e}")
             return ""
 
