@@ -42,10 +42,11 @@ __all__ = [
     "record",
     "split_file_number",
     "split_line_number",
+    "to_m2m",
+    "to_m2o",
     "val",
     "val_att",
 ]
-
 
 # Type alias for clarity
 LineDict = dict[str, Any]
@@ -53,7 +54,7 @@ StateDict = dict[str, Any]
 MapperFunc = Callable[[LineDict, StateDict], Any]
 
 
-# --- Helper Functions ---
+# ... (rest of the file remains the same as your version) ...
 
 
 def _get_field_value(line: LineDict, field: str, default: Any = "") -> Any:
@@ -68,16 +69,12 @@ def _str_to_mapper(field: Any) -> MapperFunc:
     """
     if isinstance(field, str):
         return val(field)
-    # Tell mypy to trust that if it's not a string, it's a valid mapper.
     return cast(MapperFunc, field)
 
 
 def _list_to_mappers(args: tuple[Any, ...]) -> list[MapperFunc]:
     """Converts a list of strings or mappers into a list of mappers."""
     return [_str_to_mapper(f) for f in args]
-
-
-# --- Basic Mappers ---
 
 
 def const(value: Any) -> MapperFunc:
@@ -104,27 +101,18 @@ def val(
 
         final_value = value or default
         try:
-            # Check how many arguments the postprocess function expects for
-            # backward compatibility with lambdas that only take one argument.
             sig = inspect.signature(postprocess)
             if len(sig.parameters) == 1:
-                # Old style: pass only the value
                 return postprocess(final_value)
             else:
-                # New style: pass value and state
                 return postprocess(final_value, state)
         except (ValueError, TypeError):
-            # Fallback for built-ins or other callables where signature
-            # inspection fails. Assume new style.
             try:
                 return postprocess(final_value, state)
             except TypeError:
                 return postprocess(final_value)
 
     return val_fun
-
-
-# --- Combining Mappers ---
 
 
 def concat(separator: str, *fields: Any, skip: bool = False) -> MapperFunc:
@@ -137,7 +125,6 @@ def concat(separator: str, *fields: Any, skip: bool = False) -> MapperFunc:
 
     def concat_fun(line: LineDict, state: StateDict) -> str:
         values = [str(m(line, state)) for m in mappers]
-        # Filter out empty strings before joining
         result = separator.join([v for v in values if v])
         if not result and skip:
             raise SkippingError(f"Concatenated value for fields {fields} is empty.")
@@ -157,9 +144,6 @@ def concat_mapper_all(separator: str, *fields: Any) -> MapperFunc:
         return separator.join(values)
 
     return concat_all_fun
-
-
-# --- Conditional Mappers ---
 
 
 def cond(field: str, true_mapper: Any, false_mapper: Any) -> MapperFunc:
@@ -192,9 +176,6 @@ def bool_val(field: str, true_values: list[str]) -> MapperFunc:
     return bool_val_fun
 
 
-# --- Numeric Mappers ---
-
-
 def num(field: str, default: str = "0.0") -> MapperFunc:
     """Number mapper.
 
@@ -207,9 +188,6 @@ def num(field: str, default: str = "0.0") -> MapperFunc:
         return str(value).replace(",", ".")
 
     return num_fun
-
-
-# --- Relational Mappers ---
 
 
 def field(col: str) -> MapperFunc:
@@ -270,13 +248,13 @@ def m2m(prefix: str, *fields: Any, sep: str = ",") -> MapperFunc:
     def m2m_fun(line: LineDict, state: StateDict) -> str:
         all_values = []
         if len(fields) > 1:  # Mode 1: Multiple columns
-            for field in fields:
-                value = _get_field_value(line, field)
+            for field_name in fields:
+                value = _get_field_value(line, field_name)
                 if value:
                     all_values.append(to_m2o(prefix, value))
         elif len(fields) == 1:  # Mode 2: Single column with separator
-            field = fields[0]
-            value = _get_field_value(line, field)
+            field_name = fields[0]
+            value = _get_field_value(line, field_name)
             if value:
                 all_values.extend(to_m2o(prefix, v.strip()) for v in value.split(sep))
 
@@ -293,9 +271,7 @@ def m2m_map(prefix: str, mapper_func: MapperFunc) -> MapperFunc:
     """
 
     def m2m_map_fun(line: LineDict, state: StateDict) -> str:
-        # Get the value from the provided mapper function
         value = mapper_func(line, state)
-        # Use the standard to_m2m helper to format it correctly
         return to_m2m(prefix, value)
 
     return m2m_map_fun
@@ -353,9 +329,6 @@ def m2m_value_list(*fields: Any, sep: str = ",") -> MapperFunc:
     return m2m_value_list_fun
 
 
-# --- Advanced Mappers ---
-
-
 def map_val(
     mapping_dict: dict[Any, Any],
     key_mapper: Any,
@@ -382,14 +355,9 @@ def record(mapping: dict[str, MapperFunc]) -> MapperFunc:
     """
 
     def record_fun(line: LineDict, state: StateDict) -> dict[str, Any]:
-        # This function returns a dictionary that the Processor will understand
-        # as a related record to be created.
         return {key: mapper_func(line, state) for key, mapper_func in mapping.items()}
 
     return record_fun
-
-
-# --- Binary Mappers ---
 
 
 def binary(field: str, path_prefix: str = "", skip: bool = False) -> MapperFunc:
@@ -431,7 +399,7 @@ def binary_url_map(field: str, skip: bool = False) -> MapperFunc:
 
         try:
             res = requests.get(url, timeout=10)
-            res.raise_for_status()  # Raises an exception for 4xx/5xx errors
+            res.raise_for_status()
             return base64.b64encode(res.content).decode("utf-8")
         except requests.exceptions.RequestException as e:
             if skip:
@@ -440,9 +408,6 @@ def binary_url_map(field: str, skip: bool = False) -> MapperFunc:
             return ""
 
     return binary_url_fun
-
-
-# --- Legacy / Specialized Mappers ---
 
 
 def val_att(att_list: list[str]) -> MapperFunc:
@@ -475,7 +440,6 @@ def m2o_att(prefix: str, att_list: list[str]) -> MapperFunc:
         for att in att_list:
             value = _get_field_value(line, att)
             if value:
-                # The ID is composed of 'prefix_attribute_value'
                 id_value = f"{att}_{value}"
                 result[att] = to_m2o(prefix, id_value)
         return result
@@ -528,9 +492,6 @@ def m2m_template_attribute_value(prefix: str, *fields: Any) -> MapperFunc:
         return to_m2o(prefix, value)
 
     return m2m_attribute_fun
-
-
-# --- Split Mappers ---
 
 
 def split_line_number(line_nb: int) -> Callable[[LineDict, int], int]:
