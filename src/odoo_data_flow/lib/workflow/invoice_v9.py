@@ -6,6 +6,7 @@ updated to work with modern Odoo versions.
 """
 
 from time import time
+from typing import Any
 from xmlrpc.client import Fault
 
 from ..internal.rpc_thread import RpcThread
@@ -18,24 +19,25 @@ class InvoiceWorkflowV9:
     such as validating, paying, and setting taxes.
     """
 
-    def __init__(  # noqa: doc301
+    def __init__(
         self,
-        connection,
-        field,
-        status_map,
-        paid_date_field,
-        payment_journal,
-        max_connection=4,
-    ):  # noqa: doc301
+        connection: Any,
+        field: str,
+        status_map: dict[str, list[str]],
+        paid_date_field: str,
+        payment_journal: int,
+        max_connection: int = 4,
+    ) -> None:
         """Initializes the workflow processor.
 
-        @param connection: An active odoo-client-lib connection object.
-        @param field: The field that contains the legacy status from source data
-        @param status_map: A dict mapping Odoo states to lists of legacy states.
-                           e.g., {'open': ['status1'], 'paid': ['status2']}
-        @param paid_date_field: The field containing the payment date.
-        @param payment_journal: The database ID of the payment journal to use.
-        @param max_connection: The number of parallel threads to use.
+        Args:
+            connection: An active odoo-client-lib connection object.
+            field: The field that contains the legacy status from source data
+            status_map: A dict mapping Odoo states to lists of legacy states.
+                        e.g., {'open': ['status1'], 'paid': ['status2']}
+            paid_date_field: The field containing the payment date.
+            payment_journal: The database ID of the payment journal to use.
+            max_connection: The number of parallel threads to use.
         """
         self.connection = connection
         self.invoice_obj = connection.get_model("account.invoice")
@@ -48,21 +50,21 @@ class InvoiceWorkflowV9:
         self.max_connection = max_connection
         self.time = time()
 
-    def _display_percent(self, i, percent_step, total):
+    def _display_percent(self, i: int, percent_step: int, total: int) -> None:
         if i % percent_step == 0:
             percentage = round(i / float(total) * 100, 2)
             elapsed_time = time() - self.time
             print(f"{percentage}% : {i}/{total} time {elapsed_time:.2f} sec")
 
-    def set_tax(self):
+    def set_tax(self) -> None:
         """Finds draft invoices and computes their taxes."""
 
-        def create_tax(invoice_id):
+        def create_tax(invoice_id: int) -> None:
             taxes = self.invoice_obj.get_taxes_values(invoice_id)
             for tax in taxes.values():
                 self.account_invoice_tax.create(tax)
 
-        invoices = self.invoice_obj.search(
+        invoices: list[int] = self.invoice_obj.search(
             [
                 ("state", "=", "draft"),
                 ("type", "=", "out_invoice"),
@@ -79,12 +81,12 @@ class InvoiceWorkflowV9:
             rpc_thread.spawn_thread(create_tax, [invoice_id])
         rpc_thread.wait()
 
-    def validate_invoice(self):
+    def validate_invoice(self) -> None:
         """Finds and validates invoices that should be open or paid."""
         statuses_to_validate = self.status_map.get("open", []) + self.status_map.get(
             "paid", []
         )
-        invoice_to_validate = self.invoice_obj.search(
+        invoice_to_validate: list[int] = self.invoice_obj.search(
             [
                 (self.field, "in", statuses_to_validate),
                 ("state", "=", "draft"),
@@ -112,9 +114,9 @@ class InvoiceWorkflowV9:
             )
         rpc_thread.wait()
 
-    def proforma_invoice(self):
+    def proforma_invoice(self) -> None:
         """Finds and moves invoices to the pro-forma state."""
-        invoice_to_proforma = self.invoice_obj.search(
+        invoice_to_proforma: list[int] = self.invoice_obj.search(
             [
                 (self.field, "in", self.status_map.get("proforma", [])),
                 ("state", "=", "draft"),
@@ -143,10 +145,12 @@ class InvoiceWorkflowV9:
             )
         rpc_thread.wait()
 
-    def paid_invoice(self):
+    def paid_invoice(self) -> None:
         """Finds open invoices and registers payments for them."""
 
-        def pay_single_invoice(data_update, wizard_context):
+        def pay_single_invoice(
+            data_update: dict[str, Any], wizard_context: dict[str, Any]
+        ) -> None:
             fields_to_get = [
                 "communication",
                 "currency_id",
@@ -177,7 +181,7 @@ class InvoiceWorkflowV9:
                 # which can be ignored in a batch process.
                 pass
 
-        invoices_to_paid = self.invoice_obj.search_read(
+        invoices_to_paid: list[dict[str, Any]] = self.invoice_obj.search_read(
             domain=[
                 (self.field, "in", self.status_map.get("paid", [])),
                 ("state", "=", "open"),
@@ -211,9 +215,9 @@ class InvoiceWorkflowV9:
             )
         rpc_thread.wait()
 
-    def rename(self, name_field):
+    def rename(self, name_field: str) -> None:
         """Utility to move a value from a custom field to the invoice number."""
-        invoices_to_rename = self.invoice_obj.search_read(
+        invoices_to_rename: list[dict[str, Any]] = self.invoice_obj.search_read(
             domain=[
                 (name_field, "!=", False),
                 (name_field, "!=", "0.0"),
