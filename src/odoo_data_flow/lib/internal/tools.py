@@ -96,5 +96,75 @@ def to_m2m(prefix: str, value: str) -> str:
     if not value:
         return ""
 
-    ids = [to_m2o(prefix, val.strip()) for val in value.split(",") if val.strip()]
+    ids = [
+        to_m2o(prefix, val.strip()) for val in value.split(",") if val.strip()
+    ]
     return ",".join(ids)
+
+
+class AttributeLineDict:
+    """Aggregates attribute line data for product templates."""
+
+    def __init__(self, attribute_list_ids, id_gen_fun):
+        self.data = {}
+        self.att_list = attribute_list_ids
+        self.id_gen = id_gen_fun
+
+    def add_line(self, line, header):
+        """Processes a single line of attribute data and aggregates it
+        by product template ID.
+
+        `line` is expected to contain:
+         - 'product_tmpl_id/id': The template's external ID.
+         - 'attribute_id/id': A dict mapping attribute name to its ID.
+         - 'value_ids/id': A dict mapping attribute name to the value's ID.
+        """
+        line_dict = dict(zip(header, line))
+        template_id = line_dict.get("product_tmpl_id/id")
+        if not template_id:
+            return
+
+        if self.data.get(template_id):
+            # Template already exists, add new attribute values
+            template_info = self.data[template_id]
+            for att_id, att_name in self.att_list:
+                # Check if the current line contains this attribute
+                if line_dict.get("attribute_id/id", {}).get(att_name):
+                    value = line_dict["value_ids/id"][att_name]
+                    # Ensure value is unique before adding
+                    if value not in template_info.setdefault(att_id, []):
+                        template_info[att_id].append(value)
+        else:
+            # This is a new template
+            d = {}
+            for att_id, att_name in self.att_list:
+                if line_dict.get("attribute_id/id", {}).get(att_name):
+                    d[att_id] = [line_dict["value_ids/id"][att_name]]
+            self.data[template_id] = d
+
+    def generate_line(self):
+        """Generates the final list of attribute lines for the CSV file,
+        one line per attribute per product template.
+        """
+        lines_header = [
+            "id",
+            "product_tmpl_id/id",
+            "attribute_id/id",
+            "value_ids/id",
+        ]
+        lines_out = []
+        for template_id, attributes in self.data.items():
+            if not template_id:
+                continue
+            # Create a unique line for each attribute associated with the template
+            for attribute_id, values in attributes.items():
+                line = [
+                    self.id_gen(template_id, attributes),
+                    template_id,
+                    attribute_id,
+                    ",".join(
+                        values
+                    ),  # Odoo m2m/o2m often use comma-separated IDs
+                ]
+                lines_out.append(line)
+        return lines_header, lines_out

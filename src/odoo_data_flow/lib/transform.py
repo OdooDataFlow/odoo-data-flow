@@ -3,11 +3,13 @@
 import csv
 import os
 from collections import OrderedDict
+from typing import Callable, Dict, List, Set, Tuple
 
 from ..logging_config import log
 from . import mapper
 from .internal.exceptions import SkippingError
 from .internal.io import write_file
+from .internal.tools import AttributeLineDict
 
 
 class MapperRepr:
@@ -117,7 +119,9 @@ class Processor:
     def get_o2o_mapping(self):
         """Generates a direct 1-to-1 mapping dictionary."""
         return {
-            str(column): MapperRepr(f"mapper.val('{column}')", mapper.val(column))
+            str(column): MapperRepr(
+                f"mapper.val('{column}')", mapper.val(column)
+            )
             for column in self.header
             if column
         }
@@ -140,9 +144,13 @@ class Processor:
         if params is None:
             params = {}
         if m2m:
-            head, data = self._process_mapping_m2m(mapping, null_values=null_values)
+            head, data = self._process_mapping_m2m(
+                mapping, null_values=null_values
+            )
         else:
-            head, data = self._process_mapping(mapping, t=t, null_values=null_values)
+            head, data = self._process_mapping(
+                mapping, t=t, null_values=null_values
+            )
 
         self._add_data(head, data, filename_out, params)
         return head, data
@@ -188,7 +196,9 @@ class Processor:
 
         Joins data from a secondary file into the processor's main data.
         """
-        child_header, child_data = self._read_file(filename, separator, encoding)
+        child_header, child_data = self._read_file(
+            filename, separator, encoding
+        )
 
         try:
             child_key_pos = child_header.index(child_key)
@@ -212,7 +222,9 @@ class Processor:
 
     def _add_data(self, head, data, filename_out, params):
         params = params.copy()
-        params["filename"] = os.path.abspath(filename_out) if filename_out else False
+        params["filename"] = (
+            os.path.abspath(filename_out) if filename_out else False
+        )
         params["header"] = head
         params["data"] = data
         self.file_to_write[filename_out] = params
@@ -225,13 +237,16 @@ class Processor:
         for i, line in enumerate(self.data):
             # Clean up null values
             cleaned_line = [
-                s.strip() if s and s.strip() not in null_values else "" for s in line
+                s.strip() if s and s.strip() not in null_values else ""
+                for s in line
             ]
             line_dict = dict(zip(self.header, cleaned_line))
 
             try:
                 # Pass the state dictionary to each mapper call
-                line_out = [mapping[k](line_dict, state) for k in mapping.keys()]
+                line_out = [
+                    mapping[k](line_dict, state) for k in mapping.keys()
+                ]
             except SkippingError as e:
                 log.debug(f"Skipping line {i}: {e.message}")
                 continue
@@ -270,3 +285,143 @@ class Processor:
                 lines_out.add(tuple(new_line))
 
         return head, lines_out
+
+
+class ProductProcessorV10(Processor):
+    """Processor to generate a 'product.attribute' file with dynamic variant creation."""
+
+    def process_attribute_data(
+        self, attributes_list, ATTRIBUTE_PREFIX, filename_out, import_args
+    ):
+        """Creates and registers the 'product.attribute.csv' file.
+
+        Args:
+            attributes_list (List[str]): List of attribute names (e.g., ['Color', 'Size']).
+            ATTRIBUTE_PREFIX (str): Prefix for generating external IDs.
+            filename_out (str): Output path for the CSV file.
+            import_args (Dict): Arguments for the import script.
+        """
+        attr_header = ["id", "name", "create_variant"]
+        attr_data = [
+            [mapper.to_m2o(ATTRIBUTE_PREFIX, att), att, "Dynamically"]
+            for att in attributes_list
+        ]
+        self._add_data(attr_header, attr_data, filename_out, import_args)
+
+
+class ProductProcessorV9(Processor):
+    """Processor to generate variant data from a flat file, creating three CSV files:
+    1. product.attribute.csv: The attributes themselves.
+    2. product.attribute.value.csv: The specific values for each attribute.
+    3. product.attribute.line.csv: Links attributes to product templates.
+    """
+
+    def _generate_attribute_file_data(
+        self, attributes_list: List[str], prefix: str
+    ) -> Tuple[List[str], List[List[str]]]:
+        """Generates header and data for 'product.attribute.csv'."""
+        header = ["id", "name"]
+        data = [[mapper.to_m2o(prefix, attr), attr] for attr in attributes_list]
+        return header, data
+
+    def _extract_attribute_value_data(
+        self,
+        mapping: Dict,
+        attributes_list: List[str],
+        processed_rows: List[Dict],
+    ) -> Set[Tuple]:
+        """Extracts and transforms data for 'product.attribute.value.csv'.
+        This replaces the original complex nested 'add_value_line' function.
+        """
+        attribute_values = set()
+        # The 'name' mapping is expected to return a dict of {attribute: value}
+        name_key = "name"  # This is a mandatory key in the original mapping
+
+        for row_dict in processed_rows:
+            # Apply all mapping functions to the current row
+            line_out_results = [mapping[k](row_dict) for k in mapping.keys()]
+
+            # Find the result of the 'name' mapping, which contains the values
+            name_mapping_index = list(mapping.keys()).index(name_key)
+            values_dict = line_out_results[name_mapping_index]
+
+            if not isinstance(values_dict, dict):
+                continue
+
+            for attr_name in attributes_list:
+                # If the attribute exists for this product, create a line for its value
+                if values_dict.get(attr_name):
+                    value_line = tuple(
+                        res[attr_name] if isinstance(res, dict) else res
+                        for res in line_out_results
+                    )
+                    attribute_values.add(value_line)
+
+        return attribute_values
+
+    def process_attribute_mapping(
+        self,
+        mapping: Dict,
+        line_mapping: Dict,
+        attributes_list: List[str],
+        ATTRIBUTE_PREFIX: str,
+        path: str,
+        import_args: Dict,
+        id_gen_fun: Callable = None,
+        null_values: List[str] = ["NULL"],
+    ):
+        """Orchestrates the processing of product attributes and variants from source data."""
+        # 1. Generate base attribute data (product.attribute.csv)
+        attr_header, attr_data = self._generate_attribute_file_data(
+            attributes_list, ATTRIBUTE_PREFIX
+        )
+
+        # 2. Clean and process all data rows into a list of dictionaries
+        processed_rows = []
+        for line in self.data:
+            cleaned_line = [
+                s.strip() if s.strip() not in null_values else "" for s in line
+            ]
+            processed_rows.append(dict(zip(self.header, cleaned_line)))
+
+        # 3. Generate attribute value data (product.attribute.value.csv)
+        values_header = list(mapping.keys())
+        values_data = self._extract_attribute_value_data(
+            mapping, attributes_list, processed_rows
+        )
+
+        # 4. Generate attribute line data (product.attribute.line.csv)
+        id_gen_fun = id_gen_fun or (
+            lambda tmpl_id, vals: mapper.to_m2o(
+                tmpl_id.split(".")[0] + "_LINE", tmpl_id
+            )
+        )
+        line_aggregator = AttributeLineDict(attr_data, id_gen_fun)
+        for row_dict in processed_rows:
+            values_lines = [
+                line_mapping[k](row_dict) for k in line_mapping.keys()
+            ]
+            line_aggregator.add_line(values_lines, list(line_mapping.keys()))
+        line_header, line_data = line_aggregator.generate_line()
+
+        # 5. Add all three generated files to the write queue
+        context = import_args.setdefault("context", {})
+        context["create_product_variant"] = True
+
+        self._add_data(
+            attr_header, attr_data, path + "product.attribute.csv", import_args
+        )
+        self._add_data(
+            values_header,
+            values_data,
+            path + "product.attribute.value.csv",
+            import_args,
+        )
+
+        line_import_args = dict(import_args, groupby="product_tmpl_id/id")
+        self._add_data(
+            line_header,
+            line_data,
+            path + "product.attribute.line.csv",
+            line_import_args,
+        )
