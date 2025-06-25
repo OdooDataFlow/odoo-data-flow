@@ -15,11 +15,6 @@ from .lib.internal.tools import batch
 from .logging_config import log
 
 # --- Fix for csv.field_size_limit OverflowError ---
-# In newer Python versions (3.10+), especially on 64-bit systems,
-# sys.maxsize is too large for the C long that the csv module's
-# field_size_limit function expects. This causes an OverflowError.
-# The following code block finds the maximum possible value that works
-# by reducing it until it's accepted.
 max_int = sys.maxsize
 decrement = True
 while decrement:
@@ -43,24 +38,22 @@ class RPCThreadExport(RpcThread):
         max_connection: int,
         model: Any,
         header: list[str],
-        context: Optional[dict] = None,
-    ):
+        context: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """Initializes the export thread handler."""
         super().__init__(max_connection)
         self.model = model
         self.header = header
         self.context = context or {}
         self.results: dict[int, list[list[Any]]] = {}
 
-    def launch_batch(self, data_ids: list[int], batch_number: int):
+    def launch_batch(self, data_ids: list[int], batch_number: int) -> None:
         """Submits a batch of IDs to be exported by a worker thread."""
 
-        def launch_batch_fun(ids_to_export: list[int], num: int):
+        def launch_batch_fun(ids_to_export: list[int], num: int) -> None:
             start_time = time()
             try:
-                log.debug(
-                    f"Exporting batch {num} with {len(ids_to_export)} records..."
-                )
-                # The actual RPC call to Odoo
+                log.debug(f"Exporting batch {num} with {len(ids_to_export)} records...")
                 datas = self.model.export_data(
                     ids_to_export, self.header, context=self.context
                 ).get("datas", [])
@@ -81,10 +74,9 @@ class RPCThreadExport(RpcThread):
         Waits for all threads to complete and returns the collected data
         in the correct order.
         """
-        super().wait()  # Wait for all futures to complete
+        super().wait()
 
         all_data = []
-        # Sort results by batch number to ensure original order is maintained
         for batch_number in sorted(self.results.keys()):
             all_data.extend(self.results[batch_number])
         return all_data
@@ -93,15 +85,15 @@ class RPCThreadExport(RpcThread):
 def export_data(
     config_file: str,
     model: str,
-    domain: list,
+    domain: list[Any],
     header: list[str],
-    context: Optional[dict] = None,
+    context: Optional[dict[str, Any]] = None,
     output: Optional[str] = None,
     max_connection: int = 1,
     batch_size: int = 100,
     separator: str = ";",
     encoding: str = "utf-8",
-):
+) -> tuple[Optional[list[str]], Optional[list[list[Any]]]]:
     """Export Data.
 
     The main function for exporting data. It can either write to a file or
@@ -115,7 +107,7 @@ def export_data(
             f"Failed to connect to Odoo or get model '{model}'. "
             f"Please check your configuration. Error: {e}"
         )
-        return None, None if not output else (None, None)
+        return None, None
 
     rpc_thread = RPCThreadExport(max_connection, model_obj, header, context)
     start_time = time()
@@ -132,7 +124,6 @@ def export_data(
         rpc_thread.launch_batch(list(id_batch), i)
         i += 1
 
-    # This will block until all threads are done, then collect and sort the data
     all_exported_data = rpc_thread.get_data()
 
     log.info(
@@ -141,20 +132,16 @@ def export_data(
     )
 
     if output:
-        # Mode 1: Write to a file
         log.info(f"Writing exported data to file: {output}")
         try:
             with open(output, "w", newline="", encoding=encoding) as f:
-                writer = csv.writer(
-                    f, separator=separator, quoting=csv.QUOTE_ALL
-                )
+                writer = csv.writer(f, delimiter=separator, quoting=csv.QUOTE_ALL)
                 writer.writerow(header)
                 writer.writerows(all_exported_data)
             log.info("File writing complete.")
         except OSError as e:
             log.error(f"Failed to write to output file {output}: {e}")
-        return None, None  # Return nothing when writing to file
+        return None, None
     else:
-        # Mode 2: Return data for in-memory use (e.g., migration)
         log.info("Returning exported data in-memory.")
         return header, all_exported_data
