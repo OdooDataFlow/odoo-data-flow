@@ -11,32 +11,28 @@ from .logging_config import setup_logging
 from .migrator import run_migration
 from .workflow_runner import run_invoice_v9_workflow
 
-# This creates a main command group.
-# All other commands will be attached to this.# -*- coding: utf-8 -*-
-"""
-Command-line interface for odoo-data-flow.
-"""
 
-
-@click.group()
+@click.group(
+    context_settings=dict(help_option_names=["-h", "--help"]),
+    invoke_without_command=True,
+)
 @click.version_option()
 @click.option(
     "-v", "--verbose", is_flag=True, help="Enable verbose, debug-level logging."
 )
-def cli(verbose):
+@click.pass_context
+def cli(ctx, verbose):
     """Odoo Data Flow: A tool for importing, exporting, and processing data."""
     setup_logging(verbose)
+    # If no subcommand is invoked, we explicitly print the help text.
+    # This is required when using invoke_without_command=True.
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
 
 
-# --- Workflow Command Group ---
-@click.group(name="workflow")
-def workflow_group():
-    """Run post-import processing workflows."""
-    pass
-
-
-# --- Invoice v9 Workflow Sub-command ---
-@workflow_group.command(name="invoice-v9")
+# --- Workflow Command ---
+# This command is now a top-level command attached directly to 'cli'.
+@cli.command(name="workflow-invoice-v9")
 @click.option(
     "-c", "--config", required=True, help="Path to the connection.conf file."
 )
@@ -49,8 +45,7 @@ def workflow_group():
         case_sensitive=False,
     ),
     default=["all"],
-    help="Workflow action to run. Can be specified multiple times. "
-    "Defaults to 'all'.",
+    help="Workflow action to run. Can be specified multiple times. Defaults to 'all'.",
 )
 @click.option(
     "--field",
@@ -84,9 +79,8 @@ def invoice_v9_cmd(**kwargs):
 
 
 # --- Import Command ---
-# We define the 'import' command and all its options.
-# Each @click.option corresponds to a parameter in our run_import function.
-@click.command(name="import")
+# This command is attached directly to the main 'cli' group.
+@cli.command(name="import")
 @click.option(
     "-c",
     "--config",
@@ -146,14 +140,11 @@ def invoice_v9_cmd(**kwargs):
 @click.option("--encoding", default="utf-8", help="Encoding of the data file.")
 def import_cmd(**kwargs):
     """Runs the data import process."""
-    # The **kwargs automatically collects all the options defined above
-    # into a dictionary and passes them to the run_import function.
     run_import(**kwargs)
 
 
 # --- Export Command ---
-# We define the 'export' command and its options similarly.
-@click.command(name="export")
+@cli.command(name="export")
 @click.option(
     "-c",
     "--config",
@@ -192,8 +183,8 @@ def export_cmd(**kwargs):
     run_export(**kwargs)
 
 
-# --- Path-to-Image Command --- #
-@click.command(name="path-to-image")
+# --- Path-to-Image Command ---
+@cli.command(name="path-to-image")
 @click.argument("file")
 @click.option(
     "-f",
@@ -215,7 +206,7 @@ def path_to_image_cmd(**kwargs):
 
 
 # --- URL-to-Image Command ---
-@click.command(name="url-to-image")
+@cli.command(name="url-to-image")
 @click.argument("file")
 @click.option(
     "-f",
@@ -232,7 +223,7 @@ def url_to_image_cmd(**kwargs):
 
 
 # --- Migrate Command ---
-@click.command(name="migrate")
+@cli.command(name="migrate")
 @click.option(
     "--config-export",
     required=True,
@@ -281,26 +272,20 @@ def url_to_image_cmd(**kwargs):
 )
 def migrate_cmd(**kwargs):
     """Performs a direct server-to-server data migration."""
-    # We need to handle the mapping string here before passing it on
     if kwargs.get("mapping"):
         try:
             kwargs["mapping"] = ast.literal_eval(kwargs["mapping"])
-        except Exception:
+        except Exception as e:
             print(
                 "Error: Invalid mapping provided. "
-                "Must be a valid Python dictionary string. {e}"
+                f"Must be a valid Python dictionary string. Error: {e}"
             )
             return
     run_migration(**kwargs)
 
 
-# We add the individual commands to our main CLI group.
-cli.add_command(import_cmd)
-cli.add_command(export_cmd)
-cli.add_command(migrate_cmd)
-cli.add_command(path_to_image_cmd)
-cli.add_command(url_to_image_cmd)
-cli.add_command(workflow_group)
+# No cli.add_command() calls are needed here because the decorators
+# handle the registration automatically.
 
 if __name__ == "__main__":
     cli()
