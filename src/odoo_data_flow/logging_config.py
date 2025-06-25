@@ -7,15 +7,15 @@ import sys
 log = logging.getLogger("odoo_data_flow")
 
 
-def setup_logging(verbose=False):
+def setup_logging(verbose: bool = False) -> None:
     """Configures the root logger for the application.
 
     This function sets up a handler that prints logs to the console
     with a consistent format.
 
     Args:
-        verbose (bool): If True, the logging level is set to DEBUG.
-                        Otherwise, it's set to INFO.
+        verbose: If True, the logging level is set to DEBUG.
+                 Otherwise, it's set to INFO.
     """
     # Determine the logging level
     level = logging.DEBUG if verbose else logging.INFO
