@@ -111,7 +111,6 @@ def precommit(session: nox.Session) -> None:
     session.run(
         "uv",
         "sync",
-        "--active",
         "--group",
         "dev",
         "--group",
@@ -127,36 +126,46 @@ def precommit(session: nox.Session) -> None:
 def mypy(session: nox.Session) -> None:
     """Type-check using mypy."""
     args = session.posargs or ["src", "tests", "docs/conf.py"]
-    session.install(
-        "--group", "dev", "--group", "mypy"
-    )  # Install mypy and dev dependencies
+
+    session.run(
+        "uv",
+        "sync",
+        "--group",
+        "dev",
+        "--group",
+        "mypy",
+        external=True,
+    )
+
+    session.install("mypy")
+
+    # ADD THESE PACKAGES: Install pytest and its type stubs for MyPy
+    session.install("pytest")  # <--- Add this line
+
     session.install("-e", ".")
     session.run("mypy", *args)
     if not session.posargs:
-        session.run("mypy", f"--python-executable={sys.executable}", "noxfile.py")
+        session.run(
+            "mypy", f"--python-executable={sys.executable}", "noxfile.py"
+        )
 
 
 @nox.session(python=python_versions)
 def tests(session: nox.Session) -> None:
     """Run the test suite."""
-    session.env["PYTHONPATH"] = "src"
-    session.install("--group", "dev", "--group", "lint")
-    session.install("-e", ".")
+    session.run(
+        "uv",
+        "sync",
+        "--group",
+        "dev",
+        "--group",
+        "lint",
+        external=True,
+    )
 
-    try:
-        session.run(
-            "coverage",
-            "run",
-            "--parallel",
-            "-m",
-            "pytest",
-            *session.posargs,
-            external=True,
-            env={"UV_PROJECT_ENVIRONMENT": session.virtualenv.location},
-        )
-    finally:
-        if session.interactive:
-            session.notify("coverage", posargs=[])
+    session.install("pytest", "coverage")
+    session.install("-e", ".")
+    session.run("pytest", *session.posargs)
 
 
 @nox.session(python=python_versions[0])
@@ -167,23 +176,34 @@ def coverage(session: nox.Session) -> None:
         "uv",
         "pip",
         "install",
-        "--active",
         "coverage[toml]",
         env={"UV_PROJECT_ENVIRONMENT": session.virtualenv.location},
         external=True,
     )
+    session.install("coverage[toml]")
     if not session.posargs and any(Path().glob(".coverage.*")):
         session.run("coverage", "combine")
 
     session.run("coverage", *args)
 
 
-@nox.session(python=python_versions[0])
-def typeguard(session: nox.Session) -> None:
-    """Runtime type checking using Typeguard."""
-    session.install("--group", "dev", "--group", "typeguard")
+@nox.session(name="typeguard", python=python_versions[0])
+def typeguard_tests(session: nox.Session) -> None:
+    """Run tests with typeguard."""
+    session.run(
+        "uv",
+        "sync",
+        "--group",
+        "dev",
+        "--group",
+        "typeguard",
+        external=True,
+    )
+
+    session.install("typeguard", "pytest")
+
     session.install("-e", ".")
-    session.run("pytest", "--typeguard-packages", package, *session.posargs)
+    session.run("pytest", *session.posargs)
 
 
 @nox.session(python=python_versions)
@@ -195,9 +215,18 @@ def xdoctest(session: nox.Session) -> None:
         args = [f"--modname={package}", "--command=all"]
         if "FORCE_COLOR" in os.environ:
             args.append("--colored=1")
-    session.install("--group", "dev", "--group", "xdoctest")
+    session.run(
+        "uv",
+        "sync",
+        "--group",
+        "dev",
+        "--group",
+        "xdoctest",
+        external=True,  # Ensure external=True is present
+    )
+    session.install("xdoctest")
     session.install("-e", ".")
-    session.run("xdoctest", package, *args)
+    session.run("python", "-m", "xdoctest", package, *args)
 
 
 @nox.session(name="docs-build", python=python_versions[1])
