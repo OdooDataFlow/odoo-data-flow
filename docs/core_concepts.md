@@ -105,7 +105,7 @@ The `Processor` is the engine of the library. You initialize it with your source
 
 Mappers are the individual building blocks for your transformations. They are simple, reusable functions that define _how_ to create the value for a single column in your destination file. The library provides a rich set of mappers for concatenation, direct value mapping, static values, and handling complex relationships.
 
-> For a complete list of all available mappers and their options, see the [Data Transformations Guide](guides/04_data_transformations.md).
+> For a complete list of all available mappers and their options, see the [Data Transformations Guide](guides/03_data_transformations.md).
 
 ### 3. The Mapping Dictionary
 
@@ -163,4 +163,4 @@ graph TD
     end
 ```
 
-> For detailed instructions, see the [Exporting Data Guide](guides/03_exporting_data.md).
+> For detailed instructions, see the [Exporting Data Guide](guides/02_exporting_data.md).

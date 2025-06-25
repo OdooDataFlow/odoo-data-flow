@@ -50,7 +50,7 @@ Create a raw data file in `origin/clients.csv`.
 
 **File: `origin/clients.csv`**
 
-```csv
+```text
 ID,Firstname,Lastname,EmailAddress
 C001,John,Doe,john.doe@test.com
 C002,Jane,Smith,jane.s@test.com
