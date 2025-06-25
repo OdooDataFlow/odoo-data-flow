@@ -143,9 +143,7 @@ def mypy(session: nox.Session) -> None:
     session.install("-e", ".")
     session.run("mypy", *args)
     if not session.posargs:
-        session.run(
-            "mypy", f"--python-executable={sys.executable}", "noxfile.py"
-        )
+        session.run("mypy", f"--python-executable={sys.executable}", "noxfile.py")
 
 
 @nox.session(python=python_versions)
@@ -238,9 +236,7 @@ def docs_build(session: nox.Session) -> None:
         "docs",
         external=True,
     )
-    session.install(
-        "sphinx", "sphinx-mermaid", "sphinx-click", "myst_parser", "furo"
-    )
+    session.install("sphinx", "sphinx-mermaid", "sphinx-click", "myst_parser", "furo")
     session.install("-e", ".")
 
     build_dir = Path("docs", "_build")
