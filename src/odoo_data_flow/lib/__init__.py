@@ -7,7 +7,6 @@ from . import (
     mapper,
     transform,
     workflow,
-    xml_transform,
 )
 
 __all__ = [
@@ -17,5 +16,4 @@ __all__ = [
     "mapper",
     "transform",
     "workflow",
-    "xml_transform",
 ]

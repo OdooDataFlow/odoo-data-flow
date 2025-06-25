@@ -5,6 +5,8 @@ import os
 from collections import OrderedDict
 from typing import Callable, Optional
 
+from lxml import etree
+
 from ..logging_config import log
 from . import mapper
 from .internal.exceptions import SkippingError
@@ -49,9 +51,8 @@ class Processor:
         # Determine if initializing from a file or in-memory data
         if filename:
             # The 'xml_...' kwargs are passed to the file reader
-            xml_args = {k: v for k, v in kwargs.items() if k.startswith("xml_")}
             self.header, self.data = self._read_file(
-                filename, separator, encoding, **xml_args
+                filename, separator, encoding, **kwargs
             )
         elif header is not None and data is not None:
             self.header = header
@@ -66,30 +67,62 @@ class Processor:
         self.header, self.data = preprocess(self.header, self.data)
 
     def _read_file(self, filename, separator, encoding, **kwargs):
-        """Reads a CSV file and returns its header and data."""
-        # This check should be updated if more file types are supported
-        if kwargs.get("xml_root_tag"):
-            # Logic for reading XML would go here, for now we assume CSV
-            # and that the old xml_transform.py will be removed.
-            # This part will need implementation if XML support is kept.
-            raise NotImplementedError(
-                "XML file processing needs to be integrated into the standard "
-                "Processor."
-            )
+        """Reads a CSV or XML file and returns its header and data."""
+        xml_root_path = kwargs.get("xml_root_tag")
 
-        log.info(f"Reading CSV file: {filename}")
-        try:
-            with open(filename, encoding=encoding, newline="") as f:
-                reader = csv.reader(f, separator=separator)
-                header = next(reader)
-                data = [row for row in reader]
+        if xml_root_path:
+            log.info(f"Reading XML file: {filename}")
+            try:
+                # Use a secure parser to prevent XXE and other vulnerabilities
+                parser = etree.XMLParser(
+                    resolve_entities=False,
+                    no_network=True,
+                    dtd_validation=False,
+                    load_dtd=False,
+                )
+                tree = etree.parse(filename, parser=parser)
+                nodes = tree.xpath(xml_root_path)
+
+                if not nodes:
+                    log.warning(
+                        f"No nodes found for root path '{xml_root_path}'"
+                    )
+                    return [], []
+
+                # Infer header from the tags of the first node's children
+                header = [elem.tag for elem in nodes[0]]
+                data = []
+                for node in nodes:
+                    row = []
+                    for col in header:
+                        # Find the child element and get its text content
+                        child = node.find(col)
+                        row.append(child.text if child is not None else "")
+                    data.append(row)
                 return header, data
-        except FileNotFoundError:
-            log.error(f"Source file not found at: {filename}")
-            return [], []
-        except Exception as e:
-            log.error(f"Failed to read file {filename}: {e}")
-            return [], []
+
+            except etree.XMLSyntaxError as e:
+                log.error(f"Failed to parse XML file {filename}: {e}")
+                return [], []
+            except Exception as e:
+                log.error(
+                    f"An unexpected error occurred while reading XML file {filename}: {e}"
+                )
+                return [], []
+        else:
+            log.info(f"Reading CSV file: {filename}")
+            try:
+                with open(filename, encoding=encoding, newline="") as f:
+                    reader = csv.reader(f, delimiter=separator)
+                    header = next(reader)
+                    data = [row for row in reader]
+                    return header, data
+            except FileNotFoundError:
+                log.error(f"Source file not found at: {filename}")
+                return [], []
+            except Exception as e:
+                log.error(f"Failed to read file {filename}: {e}")
+                return [], []
 
     def check(self, check_fun, message=None):
         """Runs a data quality check function against the loaded data."""
@@ -250,6 +283,10 @@ class Processor:
             except SkippingError as e:
                 log.debug(f"Skipping line {i}: {e.message}")
                 continue
+            # This try/except handles mappers that do not accept the `state` dictionary
+            # for backward compatibility.
+            except TypeError:
+                line_out = [mapping[k](line_dict) for k in mapping.keys()]
 
             if t == "list":
                 lines_out.append(line_out)
@@ -263,7 +300,7 @@ class Processor:
         Handles special m2m mapping by expanding list values into unique rows.
         """
         head, data = self._process_mapping(mapping, "list", null_values)
-        lines_out = set()
+        lines_out = []
 
         for line_out in data:
             index_list, zip_list = [], []
@@ -273,7 +310,9 @@ class Processor:
                     zip_list.append(value)
 
             if not zip_list:
-                lines_out.add(tuple(line_out))
+                # Ensure we don't add duplicate rows
+                if line_out not in lines_out:
+                    lines_out.append(line_out)
                 continue
 
             # Transpose the lists of values to create new rows
@@ -282,7 +321,10 @@ class Processor:
                 new_line = list(line_out)
                 for i, val in enumerate(values):
                     new_line[index_list[i]] = val
-                lines_out.add(tuple(new_line))
+
+                # Ensure we don't add duplicate rows
+                if new_line not in lines_out:
+                    lines_out.append(new_line)
 
         return head, lines_out
 
@@ -340,7 +382,14 @@ class ProductProcessorV9(Processor):
 
         for row_dict in processed_rows:
             # Apply all mapping functions to the current row
-            line_out_results = [mapping[k](row_dict) for k in mapping.keys()]
+            try:
+                line_out_results = [
+                    mapping[k](row_dict) for k in mapping.keys()
+                ]
+            except TypeError:
+                line_out_results = [
+                    mapping[k](row_dict, {}) for k in mapping.keys()
+                ]
 
             # Find the result of the 'name' mapping, which contains the values
             name_mapping_index = list(mapping.keys()).index(name_key)
@@ -370,7 +419,7 @@ class ProductProcessorV9(Processor):
         path: str,
         import_args: dict,
         id_gen_fun: Optional[Callable] = None,
-        null_values: list[str] = None,
+        null_values: Optional[list[str]] = None,
     ):
         """Orchestrates the processing of product attributes and variants from source data."""
         # 1. Generate base attribute data (product.attribute.csv)
@@ -402,9 +451,14 @@ class ProductProcessorV9(Processor):
         )
         line_aggregator = AttributeLineDict(attr_data, id_gen_fun)
         for row_dict in processed_rows:
-            values_lines = [
-                line_mapping[k](row_dict) for k in line_mapping.keys()
-            ]
+            try:
+                values_lines = [
+                    line_mapping[k](row_dict) for k in line_mapping.keys()
+                ]
+            except TypeError:
+                values_lines = [
+                    line_mapping[k](row_dict, {}) for k in line_mapping.keys()
+                ]
             line_aggregator.add_line(values_lines, list(line_mapping.keys()))
         line_header, line_data = line_aggregator.generate_line()
 
