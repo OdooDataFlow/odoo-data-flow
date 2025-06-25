@@ -6,13 +6,14 @@ or URLs to base64 strings, for use in Odoo imports.
 
 import base64
 import os
+from typing import Optional
 
 from .lib import mapper
 from .lib.transform import Processor
 from .logging_config import log
 
 
-def to_base64(filepath):
+def to_base64(filepath: str) -> str:
     """Reads a local file and returns its base64 encoded content."""
     try:
         with open(filepath, "rb") as f:
@@ -22,7 +23,9 @@ def to_base64(filepath):
         return ""  # Return empty string if file is not found
 
 
-def run_path_to_image(file, fields, out="out.csv", path=None):
+def run_path_to_image(
+    file: str, fields: str, out: str = "out.csv", path: Optional[str] = None
+) -> None:
     """Path to image.
 
     Takes a CSV file and converts columns containing local file paths
@@ -52,7 +55,7 @@ def run_path_to_image(file, fields, out="out.csv", path=None):
     log.info(f"Conversion complete. Output written to '{out}'.")
 
 
-def run_url_to_image(file, fields, out="out.csv"):
+def run_url_to_image(file: str, fields: str, out: str = "out.csv") -> None:
     """URL to image.
 
     Takes a CSV file and converts columns containing URLs
