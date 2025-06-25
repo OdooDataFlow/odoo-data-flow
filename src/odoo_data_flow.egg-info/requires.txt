@@ -1,4 +1,0 @@
-click>=8.0.1
-odoo-client-lib
-requests
-lxml
