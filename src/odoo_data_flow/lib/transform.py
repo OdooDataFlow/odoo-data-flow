@@ -3,9 +3,9 @@
 import csv
 import os
 from collections import OrderedDict
-from typing import Callable, Optional
+from typing import Any, Callable, Optional, Union
 
-from lxml import etree
+from lxml import etree  # type: ignore[import-untyped]
 
 from ..logging_config import log
 from . import mapper
@@ -20,15 +20,16 @@ class MapperRepr:
     A wrapper to provide a useful string representation for mapper functions.
     """
 
-    def __init__(self, repr_string, func):
+    def __init__(self, repr_string: str, func: Callable[..., Any]) -> None:
+        """Initializes the MapperRepr."""
         self._repr_string = repr_string
         self.func = func
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Call the wrapped function."""
         return self.func(*args, **kwargs)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """Return the string representation."""
         return self._repr_string
 
@@ -38,15 +39,18 @@ class Processor:
 
     def __init__(
         self,
-        filename=None,
-        separator=";",
-        encoding="utf-8",
-        header=None,
-        data=None,
-        preprocess=lambda h, d: (h, d),
-        **kwargs,
-    ):
-        self.file_to_write = OrderedDict()
+        filename: Optional[str] = None,
+        separator: str = ";",
+        encoding: str = "utf-8",
+        header: Optional[list[str]] = None,
+        data: Optional[list[list[Any]]] = None,
+        preprocess: Callable[
+            [list[str], list[list[Any]]], tuple[list[str], list[list[Any]]]
+        ] = lambda h, d: (h, d),
+        **kwargs: Any,
+    ) -> None:
+        """Initializes the Processor."""
+        self.file_to_write: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
         # Determine if initializing from a file or in-memory data
         if filename:
@@ -66,7 +70,9 @@ class Processor:
         # Apply any pre-processing hooks
         self.header, self.data = preprocess(self.header, self.data)
 
-    def _read_file(self, filename, separator, encoding, **kwargs):
+    def _read_file(
+        self, filename: str, separator: str, encoding: str, **kwargs: Any
+    ) -> tuple[list[str], list[list[Any]]]:
         """Reads a CSV or XML file and returns its header and data."""
         xml_root_path = kwargs.get("xml_root_tag")
 
@@ -80,13 +86,11 @@ class Processor:
                     dtd_validation=False,
                     load_dtd=False,
                 )
-                tree = etree.parse(filename, parser=parser)
+                tree = etree.parse(filename, parser=parser)  # noqa: S320
                 nodes = tree.xpath(xml_root_path)
 
                 if not nodes:
-                    log.warning(
-                        f"No nodes found for root path '{xml_root_path}'"
-                    )
+                    log.warning(f"No nodes found for root path '{xml_root_path}'")
                     return [], []
 
                 # Infer header from the tags of the first node's children
@@ -106,7 +110,8 @@ class Processor:
                 return [], []
             except Exception as e:
                 log.error(
-                    f"An unexpected error occurred while reading XML file {filename}: {e}"
+                    "An unexpected error occurred while reading XML file "
+                    f"{filename}: {e}"
                 )
                 return [], []
         else:
@@ -123,8 +128,11 @@ class Processor:
             except Exception as e:
                 log.error(f"Failed to read file {filename}: {e}")
                 return [], []
+        return [], []
 
-    def check(self, check_fun, message=None):
+    def check(
+        self, check_fun: Callable[..., bool], message: Optional[str] = None
+    ) -> bool:
         """Runs a data quality check function against the loaded data."""
         res = check_fun(self.header, self.data)
         if not res:
@@ -134,9 +142,9 @@ class Processor:
             log.warning(error_message)
         return res
 
-    def split(self, split_fun):
+    def split(self, split_fun: Callable[..., Any]) -> dict[Any, "Processor"]:
         """Splits the processor's data into multiple new Processor objects."""
-        grouped_data = OrderedDict()
+        grouped_data: OrderedDict[Any, list[list[Any]]] = OrderedDict()
         for i, row in enumerate(self.data):
             row_dict = dict(zip(self.header, row))
             key = split_fun(row_dict, i)
@@ -149,25 +157,23 @@ class Processor:
             for key, data in grouped_data.items()
         }
 
-    def get_o2o_mapping(self):
+    def get_o2o_mapping(self) -> dict[str, MapperRepr]:
         """Generates a direct 1-to-1 mapping dictionary."""
         return {
-            str(column): MapperRepr(
-                f"mapper.val('{column}')", mapper.val(column)
-            )
+            str(column): MapperRepr(f"mapper.val('{column}')", mapper.val(column))
             for column in self.header
             if column
         }
 
     def process(
         self,
-        mapping,
-        filename_out,
-        params=None,
-        t="list",
-        null_values=None,
-        m2m=False,
-    ):
+        mapping: dict[str, Callable[..., Any]],
+        filename_out: str,
+        params: Optional[dict[str, Any]] = None,
+        t: str = "list",
+        null_values: Optional[list[Any]] = None,
+        m2m: bool = False,
+    ) -> tuple[list[str], Union[list[Any], set[Any]]]:
         """Main processor.
 
         Processes the data using a mapping and prepares it for writing.
@@ -177,25 +183,21 @@ class Processor:
         if params is None:
             params = {}
         if m2m:
-            head, data = self._process_mapping_m2m(
-                mapping, null_values=null_values
-            )
+            head, data = self._process_mapping_m2m(mapping, null_values=null_values)
         else:
-            head, data = self._process_mapping(
-                mapping, t=t, null_values=null_values
-            )
+            head, data = self._process_mapping(mapping, t=t, null_values=null_values)
 
         self._add_data(head, data, filename_out, params)
         return head, data
 
     def write_to_file(
         self,
-        script_filename,
-        fail=True,
-        append=False,
-        python_exe="python",
-        path="",
-    ):
+        script_filename: str,
+        fail: bool = True,
+        append: bool = False,
+        python_exe: str = "python",
+        path: str = "",
+    ) -> None:
         """Write bash script.
 
         Generates the .sh script for the import.
@@ -218,20 +220,18 @@ class Processor:
 
     def join_file(
         self,
-        filename,
-        master_key,
-        child_key,
-        header_prefix="child",
-        separator=";",
-        encoding="utf-8",
-    ):
+        filename: str,
+        master_key: str,
+        child_key: str,
+        header_prefix: str = "child",
+        separator: str = ";",
+        encoding: str = "utf-8",
+    ) -> None:
         """File joiner.
 
         Joins data from a secondary file into the processor's main data.
         """
-        child_header, child_data = self._read_file(
-            filename, separator, encoding
-        )
+        child_header, child_data = self._read_file(filename, separator, encoding)
 
         try:
             child_key_pos = child_header.index(child_key)
@@ -253,54 +253,65 @@ class Processor:
 
         self.header.extend([f"{header_prefix}_{h}" for h in child_header])
 
-    def _add_data(self, head, data, filename_out, params):
-        params = params.copy()
-        params["filename"] = (
+    def _add_data(
+        self,
+        head: list[str],
+        data: Union[list[Any], set[Any]],
+        filename_out: str,
+        params: dict[str, Any],
+    ) -> None:
+        """Adds data to the write queue."""
+        params_copy = params.copy()
+        params_copy["filename"] = (
             os.path.abspath(filename_out) if filename_out else False
         )
-        params["header"] = head
-        params["data"] = data
-        self.file_to_write[filename_out] = params
+        params_copy["header"] = head
+        params_copy["data"] = data
+        self.file_to_write[filename_out] = params_copy
 
-    def _process_mapping(self, mapping, t, null_values):
+    def _process_mapping(
+        self,
+        mapping: dict[str, Callable[..., Any]],
+        t: str,
+        null_values: list[Any],
+    ) -> tuple[list[str], Union[list[Any], set[Any]]]:
         """The core transformation loop."""
-        lines_out = [] if t == "list" else set()
-        state = {}  # Persistent state for the entire file processing
+        lines_out: Union[list[Any], set[Any]] = [] if t == "list" else set()
+        state: dict[str, Any] = {}  # Persistent state for the entire file processing
 
         for i, line in enumerate(self.data):
             # Clean up null values
             cleaned_line = [
-                s.strip() if s and s.strip() not in null_values else ""
-                for s in line
+                s.strip() if s and s.strip() not in null_values else "" for s in line
             ]
             line_dict = dict(zip(self.header, cleaned_line))
 
             try:
                 # Pass the state dictionary to each mapper call
-                line_out = [
-                    mapping[k](line_dict, state) for k in mapping.keys()
-                ]
+                line_out = [mapping[k](line_dict, state) for k in mapping.keys()]
             except SkippingError as e:
                 log.debug(f"Skipping line {i}: {e.message}")
                 continue
-            # This try/except handles mappers that do not accept the `state` dictionary
-            # for backward compatibility.
             except TypeError:
                 line_out = [mapping[k](line_dict) for k in mapping.keys()]
 
-            if t == "list":
+            if isinstance(lines_out, list):
                 lines_out.append(line_out)
             else:
                 lines_out.add(tuple(line_out))
         return list(mapping.keys()), lines_out
 
-    def _process_mapping_m2m(self, mapping, null_values):
+    def _process_mapping_m2m(
+        self,
+        mapping: dict[str, Callable[..., Any]],
+        null_values: list[Any],
+    ) -> tuple[list[str], list[Any]]:
         """m2m process mapping.
 
         Handles special m2m mapping by expanding list values into unique rows.
         """
         head, data = self._process_mapping(mapping, "list", null_values)
-        lines_out = []
+        lines_out: list[Any] = []
 
         for line_out in data:
             index_list, zip_list = [], []
@@ -310,19 +321,15 @@ class Processor:
                     zip_list.append(value)
 
             if not zip_list:
-                # Ensure we don't add duplicate rows
                 if line_out not in lines_out:
                     lines_out.append(line_out)
                 continue
 
-            # Transpose the lists of values to create new rows
             values_list = zip(*zip_list)
             for values in values_list:
                 new_line = list(line_out)
                 for i, val in enumerate(values):
                     new_line[index_list[i]] = val
-
-                # Ensure we don't add duplicate rows
                 if new_line not in lines_out:
                     lines_out.append(new_line)
 
@@ -330,29 +337,28 @@ class Processor:
 
 
 class ProductProcessorV10(Processor):
-    """Processor to generate a 'product.attribute' file with dynamic variant creation."""
+    """Processor for generating a 'product.attribute' file."""
 
     def process_attribute_data(
-        self, attributes_list, ATTRIBUTE_PREFIX, filename_out, import_args
-    ):
-        """Creates and registers the 'product.attribute.csv' file.
-
-        Args:
-            attributes_list (List[str]): list of attribute names (e.g., ['Color', 'Size']).
-            ATTRIBUTE_PREFIX (str): Prefix for generating external IDs.
-            filename_out (str): Output path for the CSV file.
-            import_args (Dict): Arguments for the import script.
-        """
+        self,
+        attributes_list: list[str],
+        attribute_prefix: str,
+        filename_out: str,
+        import_args: dict[str, Any],
+    ) -> None:
+        """Creates and registers the 'product.attribute.csv' file."""
         attr_header = ["id", "name", "create_variant"]
         attr_data = [
-            [mapper.to_m2o(ATTRIBUTE_PREFIX, att), att, "Dynamically"]
+            [mapper.to_m2o(attribute_prefix, att), att, "Dynamically"]
             for att in attributes_list
         ]
         self._add_data(attr_header, attr_data, filename_out, import_args)
 
 
 class ProductProcessorV9(Processor):
-    """Processor to generate variant data from a flat file, creating three CSV files:
+    """Processor to generate variant data from a flat file.
+
+    Creates three CSV files:
     1. product.attribute.csv: The attributes themselves.
     2. product.attribute.value.csv: The specific values for each attribute.
     3. product.attribute.line.csv: Links attributes to product templates.
@@ -368,30 +374,20 @@ class ProductProcessorV9(Processor):
 
     def _extract_attribute_value_data(
         self,
-        mapping: dict,
+        mapping: dict[str, Callable[..., Any]],
         attributes_list: list[str],
-        processed_rows: list[dict],
-    ) -> set[tuple]:
-        """Extracts and transforms data for 'product.attribute.value.csv'.
-
-        This replaces the original complex nested 'add_value_line' function.
-        """
-        attribute_values = set()
-        # The 'name' mapping is expected to return a dict of {attribute: value}
-        name_key = "name"  # This is a mandatory key in the original mapping
+        processed_rows: list[dict[str, Any]],
+    ) -> set[tuple[Any, ...]]:
+        """Extracts and transforms data for 'product.attribute.value.csv'."""
+        attribute_values: set[tuple[Any, ...]] = set()
+        name_key = "name"
 
         for row_dict in processed_rows:
-            # Apply all mapping functions to the current row
             try:
-                line_out_results = [
-                    mapping[k](row_dict) for k in mapping.keys()
-                ]
+                line_out_results = [mapping[k](row_dict) for k in mapping.keys()]
             except TypeError:
-                line_out_results = [
-                    mapping[k](row_dict, {}) for k in mapping.keys()
-                ]
+                line_out_results = [mapping[k](row_dict, {}) for k in mapping.keys()]
 
-            # Find the result of the 'name' mapping, which contains the values
             name_mapping_index = list(mapping.keys()).index(name_key)
             values_dict = line_out_results[name_mapping_index]
 
@@ -399,8 +395,6 @@ class ProductProcessorV9(Processor):
                 continue
 
             for attr_name in attributes_list:
-                # If the attribute exists for this product,
-                # create a line for its value
                 if values_dict.get(attr_name):
                     value_line = tuple(
                         res[attr_name] if isinstance(res, dict) else res
@@ -412,49 +406,42 @@ class ProductProcessorV9(Processor):
 
     def process_attribute_mapping(
         self,
-        mapping: dict,
-        line_mapping: dict,
+        mapping: dict[str, Callable[..., Any]],
+        line_mapping: dict[str, Callable[..., Any]],
         attributes_list: list[str],
-        ATTRIBUTE_PREFIX: str,
+        attribute_prefix: str,
         path: str,
-        import_args: dict,
-        id_gen_fun: Optional[Callable] = None,
+        import_args: dict[str, Any],
+        id_gen_fun: Optional[Callable[..., str]] = None,
         null_values: Optional[list[str]] = None,
-    ):
-        """Orchestrates the processing of product attributes and variants from source data."""
-        # 1. Generate base attribute data (product.attribute.csv)
-        if null_values is None:
-            null_values = ["NULL"]
+    ) -> None:
+        """Orchestrates the processing of product attributes and variants."""
+        _null_values = null_values if null_values is not None else ["NULL"]
         attr_header, attr_data = self._generate_attribute_file_data(
-            attributes_list, ATTRIBUTE_PREFIX
+            attributes_list, attribute_prefix
         )
 
-        # 2. Clean and process all data rows into a list of dictionaries
-        processed_rows = []
+        processed_rows: list[dict[str, Any]] = []
         for line in self.data:
             cleaned_line = [
-                s.strip() if s.strip() not in null_values else "" for s in line
+                s.strip() if s and s.strip() not in _null_values else "" for s in line
             ]
             processed_rows.append(dict(zip(self.header, cleaned_line)))
 
-        # 3. Generate attribute value data (product.attribute.value.csv)
         values_header = list(mapping.keys())
         values_data = self._extract_attribute_value_data(
             mapping, attributes_list, processed_rows
         )
 
-        # 4. Generate attribute line data (product.attribute.line.csv)
-        id_gen_fun = id_gen_fun or (
+        _id_gen_fun = id_gen_fun or (
             lambda tmpl_id, vals: mapper.to_m2o(
                 tmpl_id.split(".")[0] + "_LINE", tmpl_id
             )
         )
-        line_aggregator = AttributeLineDict(attr_data, id_gen_fun)
+        line_aggregator = AttributeLineDict(attr_data, _id_gen_fun)
         for row_dict in processed_rows:
             try:
-                values_lines = [
-                    line_mapping[k](row_dict) for k in line_mapping.keys()
-                ]
+                values_lines = [line_mapping[k](row_dict) for k in line_mapping.keys()]
             except TypeError:
                 values_lines = [
                     line_mapping[k](row_dict, {}) for k in line_mapping.keys()
@@ -462,7 +449,6 @@ class ProductProcessorV9(Processor):
             line_aggregator.add_line(values_lines, list(line_mapping.keys()))
         line_header, line_data = line_aggregator.generate_line()
 
-        # 5. Add all three generated files to the write queue
         context = import_args.setdefault("context", {})
         context["create_product_variant"] = True
 
