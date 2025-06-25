@@ -32,6 +32,7 @@ repos:
         entry: pydoclint
         language: system
         types: [python]
+        args: ["--generate-baseline=True"]
       - id: ruff
         name: ruff
         entry: ruff check
