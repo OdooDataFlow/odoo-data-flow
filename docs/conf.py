@@ -6,7 +6,7 @@ copyright = "2025, bosd"
 extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
-    "sphinx_mermaid",
+    "sphinxmermaid",
     "sphinx_click",
     "myst_parser",
 ]
