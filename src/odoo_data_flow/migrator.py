@@ -4,7 +4,7 @@ This module contains the logic for performing a direct, in-memory
 migration of data from one Odoo instance to another.
 """
 
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from .exporter import run_export_for_migration
 from .importer import run_import_for_migration
@@ -18,7 +18,7 @@ def run_migration(
     model: str,
     domain: str = "[]",
     fields: Optional[list[str]] = None,
-    mapping: Optional[dict[str, Any]] = None,
+    mapping: Optional[dict[str, Callable[..., Any]]] = None,
     export_worker: int = 1,
     export_batch_size: int = 100,
     import_worker: int = 1,
@@ -52,18 +52,24 @@ def run_migration(
     log.info("Transforming data in memory...")
     processor = Processor(header=header, data=data)
 
+    final_mapping: dict[str, Callable[..., Any]]
     if not mapping:
         log.info("No mapping provided, using 1-to-1 mapping.")
-        mapping = processor.get_o2o_mapping()
+        final_mapping = processor.get_o2o_mapping()
+    else:
+        final_mapping = mapping
 
     # The process method returns the transformed header and data
-    to_import_header, to_import_data = processor.process(mapping, filename_out="")
+    to_import_header, to_import_data_unioned = processor.process(
+        final_mapping, filename_out=""
+    )
 
     # Ensure to_import_data is a list of lists
-    if isinstance(to_import_data, set):
-        to_import_data_list = [list(row) for row in to_import_data]
+    to_import_data_list: list[list[Any]]
+    if isinstance(to_import_data_unioned, set):
+        to_import_data_list = [list(row) for row in to_import_data_unioned]
     else:
-        to_import_data_list = to_import_data
+        to_import_data_list = to_import_data_unioned
 
     # Step 3: Import the transformed data into the destination database
     log.info(f"Importing {len(to_import_data_list)} records into destination...")
