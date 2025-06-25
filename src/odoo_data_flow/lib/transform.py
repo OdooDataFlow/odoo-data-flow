@@ -51,10 +51,11 @@ class Processor:
     ) -> None:
         """Initializes the Processor."""
         self.file_to_write: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self.header: list[str]
+        self.data: list[list[Any]]
 
         # Determine if initializing from a file or in-memory data
         if filename:
-            # The 'xml_...' kwargs are passed to the file reader
             self.header, self.data = self._read_file(
                 filename, separator, encoding, **kwargs
             )
@@ -79,7 +80,6 @@ class Processor:
         if xml_root_path:
             log.info(f"Reading XML file: {filename}")
             try:
-                # Use a secure parser to prevent XXE and other vulnerabilities
                 parser = etree.XMLParser(
                     resolve_entities=False,
                     no_network=True,
@@ -93,27 +93,24 @@ class Processor:
                     log.warning(f"No nodes found for root path '{xml_root_path}'")
                     return [], []
 
-                # Infer header from the tags of the first node's children
                 header = [elem.tag for elem in nodes[0]]
                 data = []
                 for node in nodes:
-                    row = []
-                    for col in header:
-                        # Find the child element and get its text content
-                        child = node.find(col)
-                        row.append(child.text if child is not None else "")
+                    row = [
+                        (child.text if child is not None else "")
+                        for child in (node.find(col) for col in header)
+                    ]
                     data.append(row)
                 return header, data
 
             except etree.XMLSyntaxError as e:
                 log.error(f"Failed to parse XML file {filename}: {e}")
-                return [], []
             except Exception as e:
                 log.error(
                     "An unexpected error occurred while reading XML file "
                     f"{filename}: {e}"
                 )
-                return [], []
+            return [], []
         else:
             log.info(f"Reading CSV file: {filename}")
             try:
@@ -124,10 +121,8 @@ class Processor:
                     return header, data
             except FileNotFoundError:
                 log.error(f"Source file not found at: {filename}")
-                return [], []
             except Exception as e:
                 log.error(f"Failed to read file {filename}: {e}")
-                return [], []
         return [], []
 
     def check(
@@ -173,7 +168,7 @@ class Processor:
         t: str = "list",
         null_values: Optional[list[Any]] = None,
         m2m: bool = False,
-    ) -> tuple[list[str], Union[list[Any], set[Any]]]:
+    ) -> tuple[list[str], Union[list[Any], set[tuple[Any, ...]]]]:
         """Main processor.
 
         Processes the data using a mapping and prepares it for writing.
@@ -182,6 +177,9 @@ class Processor:
             null_values = ["NULL", False]
         if params is None:
             params = {}
+
+        head: list[str]
+        data: Union[list[Any], set[tuple[Any, ...]]]
         if m2m:
             head, data = self._process_mapping_m2m(mapping, null_values=null_values)
         else:
@@ -256,7 +254,7 @@ class Processor:
     def _add_data(
         self,
         head: list[str],
-        data: Union[list[Any], set[Any]],
+        data: Union[list[Any], set[tuple[Any, ...]]],
         filename_out: str,
         params: dict[str, Any],
     ) -> None:
@@ -274,20 +272,18 @@ class Processor:
         mapping: dict[str, Callable[..., Any]],
         t: str,
         null_values: list[Any],
-    ) -> tuple[list[str], Union[list[Any], set[Any]]]:
+    ) -> tuple[list[str], Union[list[Any], set[tuple[Any, ...]]]]:
         """The core transformation loop."""
-        lines_out: Union[list[Any], set[Any]] = [] if t == "list" else set()
-        state: dict[str, Any] = {}  # Persistent state for the entire file processing
+        lines_out: Union[list[Any], set[tuple[Any, ...]]] = [] if t == "list" else set()
+        state: dict[str, Any] = {}
 
         for i, line in enumerate(self.data):
-            # Clean up null values
             cleaned_line = [
                 s.strip() if s and s.strip() not in null_values else "" for s in line
             ]
             line_dict = dict(zip(self.header, cleaned_line))
 
             try:
-                # Pass the state dictionary to each mapper call
                 line_out = [mapping[k](line_dict, state) for k in mapping.keys()]
             except SkippingError as e:
                 log.debug(f"Skipping line {i}: {e.message}")
@@ -310,7 +306,8 @@ class Processor:
 
         Handles special m2m mapping by expanding list values into unique rows.
         """
-        head, data = self._process_mapping(mapping, "list", null_values)
+        head, data_unioned = self._process_mapping(mapping, "list", null_values)
+        data = list(data_unioned)  # Ensure data is a list
         lines_out: list[Any] = []
 
         for line_out in data:
