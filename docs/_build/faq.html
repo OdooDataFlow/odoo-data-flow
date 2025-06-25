@@ -1,0 +1,518 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="./">
+  <head><meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="genindex.html" /><link rel="search" title="Search" href="search.html" /><link rel="next" title="Contributor Guide" href="contributing.html" /><link rel="prev" title="API Reference" href="reference.html" />
+
+    <!-- Generated with Sphinx 7.4.7 and Furo 2024.08.06 -->
+        <title>FAQ &amp; Troubleshooting - Odoo Data Flow documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=354aac6f" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?v=302659d7" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f8f8f8;
+  --color-code-foreground: black;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc">
+<label class="overlay sidebar-overlay" for="__navigation">
+  <div class="visually-hidden">Hide navigation sidebar</div>
+</label>
+<label class="overlay toc-overlay" for="__toc">
+  <div class="visually-hidden">Hide table of contents sidebar</div>
+</label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <div class="visually-hidden">Toggle site navigation sidebar</div>
+        <i class="icon"><svg><use href="#svg-menu"></use></svg></i>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="index.html"><div class="brand">Odoo Data Flow  documentation</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle">
+          <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <div class="visually-hidden">Toggle table of contents sidebar</div>
+        <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="index.html">
+  
+  
+  <span class="sidebar-brand-text">Odoo Data Flow  documentation</span>
+  
+</a><form class="sidebar-search-container" method="get" action="search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="installation.html">Installation with uv</a></li>
+<li class="toctree-l1"><a class="reference internal" href="quickstart.html">Quickstart</a></li>
+<li class="toctree-l1"><a class="reference internal" href="usage.html">Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="core_concepts.html">Core Concepts</a></li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="guides/index.html">How-To Guides</a><input class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><div class="visually-hidden">Toggle navigation of How-To Guides</div><i class="icon"><svg><use href="#svg-arrow-right"></use></svg></i></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="guides/01_importing_data.html">Guide: A Deep Dive into Importing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="guides/02_exporting_data.html">Guide: Exporting Data from Odoo</a></li>
+<li class="toctree-l2"><a class="reference internal" href="guides/03_data_transformations.html">Guide: Data Transformations with Mappers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="guides/04_advanced_usage.html">Guide: Advanced Usage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="guides/05_performance_tuning.html">Guide: Performance Tuning</a></li>
+<li class="toctree-l2"><a class="reference internal" href="guides/06_post_import_workflows.html">Guide: Post-Import Workflows</a></li>
+<li class="toctree-l2"><a class="reference internal" href="guides/07_server_to_server_migration.html">Guide: Server-to-Server Migration</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="reference.html">API Reference</a></li>
+<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">FAQ &amp; Troubleshooting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="contributing.html">Contributor Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="codeofconduct.html">Code of Conduct</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://github.com/OdooDataFlow/odoo-data-flow/releases">Changelog</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ROADMAP.html">Project Roadmap</a></li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="_sources/faq.md.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle">
+              <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <div class="visually-hidden">Toggle table of contents sidebar</div>
+            <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="faq-troubleshooting">
+<h1>FAQ &amp; Troubleshooting<a class="headerlink" href="#faq-troubleshooting" title="Link to this heading">¶</a></h1>
+<p>This document answers frequently asked questions and provides solutions to common problems you may encounter while using <code class="docutils literal notranslate"><span class="pre">odoo-data-flow</span></code>.</p>
+<section id="frequently-asked-questions">
+<h2>Frequently Asked Questions<a class="headerlink" href="#frequently-asked-questions" title="Link to this heading">¶</a></h2>
+<section id="what-is-odoo-data-flow">
+<h3>What is <code class="docutils literal notranslate"><span class="pre">odoo-data-flow</span></code>?<a class="headerlink" href="#what-is-odoo-data-flow" title="Link to this heading">¶</a></h3>
+<p>It is a powerful Python library designed to handle the import and export of data to and from Odoo. It allows you to define complex data transformations in Python, providing a robust and repeatable process for data migrations.</p>
+</section>
+<section id="how-is-this-different-from-odoo-s-standard-import-tool">
+<h3>How is this different from Odoo’s standard import tool?<a class="headerlink" href="#how-is-this-different-from-odoo-s-standard-import-tool" title="Link to this heading">¶</a></h3>
+<p>While Odoo’s built-in import is great for simple tasks, <code class="docutils literal notranslate"><span class="pre">odoo-data-flow</span></code> offers several key advantages for complex or large-scale migrations:</p>
+<ul class="simple">
+<li><p><strong>Separation of Concerns</strong>: It cleanly separates the data <strong>transformation</strong> logic (cleaning your source data) from the data <strong>loading</strong> logic (importing into Odoo).</p></li>
+<li><p><strong>Robust Error Handling</strong>: Its two-pass import system intelligently handles errors, ensuring that one bad record doesn’t stop the entire process.</p></li>
+<li><p><strong>Powerful Transformations</strong>: You can use the full power of Python and a rich set of built-in <code class="docutils literal notranslate"><span class="pre">mapper</span></code> functions to handle almost any data transformation challenge.</p></li>
+<li><p><strong>Repeatability and Version Control</strong>: Since your transformation logic is code, it can be version-controlled (with Git), tested, and reused across multiple environments (like staging and production) with confidence.</p></li>
+</ul>
+</section>
+<section id="can-i-use-this-for-both-importing-and-exporting">
+<h3>Can I use this for both importing and exporting?<a class="headerlink" href="#can-i-use-this-for-both-importing-and-exporting" title="Link to this heading">¶</a></h3>
+<p>Yes. The library provides tools for both workflows. The <code class="docutils literal notranslate"><span class="pre">Processor</span></code> and <code class="docutils literal notranslate"><span class="pre">mapper</span></code> modules are used for transforming and preparing data for import, while the <code class="docutils literal notranslate"><span class="pre">odoo-data-flow</span> <span class="pre">export</span></code> command is used to export data from Odoo into CSV files.</p>
+</section>
+<section id="can-i-migrate-data-directly-between-two-odoo-databases">
+<h3>Can I migrate data directly between two Odoo databases?<a class="headerlink" href="#can-i-migrate-data-directly-between-two-odoo-databases" title="Link to this heading">¶</a></h3>
+<p>Yes. The library includes a powerful <code class="docutils literal notranslate"><span class="pre">odoo-data-flow</span> <span class="pre">migrate</span></code> command that performs a complete export, transform, and import from one Odoo instance to another in a single step, without creating intermediate files. This is ideal for migrating data from a staging server to production.</p>
+<blockquote>
+<div><p>For detailed instructions, see the <a class="reference internal" href="guides/07_server_to_server_migration.html"><span class="std std-doc">Server-to-Server Migration Guide</span></a>.</p>
+</div></blockquote>
+</section>
+<section id="how-do-i-process-a-csv-file-that-has-no-header">
+<h3>How do I process a CSV file that has no header?<a class="headerlink" href="#how-do-i-process-a-csv-file-that-has-no-header" title="Link to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">Processor</span></code> can be initialized directly with in-memory data. If your source file has no header, you can read it manually using Python’s standard <code class="docutils literal notranslate"><span class="pre">csv</span></code> module and provide your own header list.</p>
+<ol class="arabic simple">
+<li><p>Read the raw data from the CSV file into a list of lists.</p></li>
+<li><p>Create a Python list containing the header names in the correct order.</p></li>
+<li><p>Initialize the <code class="docutils literal notranslate"><span class="pre">Processor</span></code> using the <code class="docutils literal notranslate"><span class="pre">header=</span></code> and <code class="docutils literal notranslate"><span class="pre">data=</span></code> arguments instead of <code class="docutils literal notranslate"><span class="pre">filename=</span></code>.</p></li>
+</ol>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">csv</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">odoo_data_flow.lib.transform</span><span class="w"> </span><span class="kn">import</span> <span class="n">Processor</span>
+
+<span class="c1"># 1. Define the header manually</span>
+<span class="n">my_header</span> <span class="o">=</span> <span class="p">[</span><span class="s1">&#39;LegacyID&#39;</span><span class="p">,</span> <span class="s1">&#39;FirstName&#39;</span><span class="p">,</span> <span class="s1">&#39;LastName&#39;</span><span class="p">,</span> <span class="s1">&#39;Email&#39;</span><span class="p">]</span>
+<span class="n">my_data</span> <span class="o">=</span> <span class="p">[]</span>
+
+<span class="c1"># 2. Read the file into a list</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s1">&#39;origin/contacts_no_header.csv&#39;</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">reader</span> <span class="o">=</span> <span class="n">csv</span><span class="o">.</span><span class="n">reader</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+    <span class="n">my_data</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">reader</span><span class="p">)</span>
+
+<span class="c1"># 3. Initialize the Processor with the in-memory data</span>
+<span class="n">processor</span> <span class="o">=</span> <span class="n">Processor</span><span class="p">(</span><span class="n">header</span><span class="o">=</span><span class="n">my_header</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">my_data</span><span class="p">)</span>
+
+<span class="c1"># You can now proceed with your mapping as usual</span>
+<span class="c1"># my_mapping = {&#39;name&#39;: mapper.concat(&#39; &#39;, &#39;FirstName&#39;, &#39;LastName&#39;), ...}</span>
+</pre></div>
+</div>
+</section>
+<section id="where-can-i-find-a-complete-real-world-example">
+<h3>Where can I find a complete, real-world example?<a class="headerlink" href="#where-can-i-find-a-complete-real-world-example" title="Link to this heading">¶</a></h3>
+<p>A full example project, demonstrating a realistic data migration workflow with multiple models and complex transformations, is available on GitHub. This is an excellent resource for seeing how all the pieces fit together.</p>
+<ul class="simple">
+<li><p><strong><a class="reference external" href="https://github.com/OdooDataFlow/odoo-data-flow-example/tree/18.0">Odoo Data Flow Example Repository</a></strong></p></li>
+</ul>
+</section>
+</section>
+<hr class="docutils" />
+<section id="troubleshooting-common-errors">
+<h2>Troubleshooting Common Errors<a class="headerlink" href="#troubleshooting-common-errors" title="Link to this heading">¶</a></h2>
+<p>When an import fails, understanding why is key. Here are some of the most common issues and how to solve them.</p>
+<section id="understanding-the-fail-and-fail-bis-files">
+<h3>Understanding the <code class="docutils literal notranslate"><span class="pre">.fail</span></code> and <code class="docutils literal notranslate"><span class="pre">.fail.bis</span></code> Files<a class="headerlink" href="#understanding-the-fail-and-fail-bis-files" title="Link to this heading">¶</a></h3>
+<p>The two-pass import process is designed to isolate errors effectively.</p>
+<ul class="simple">
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">my_file.csv.fail</span></code></strong>: This file is created during the <strong>first pass</strong> of the import. It contains every record that failed for <em>any</em> reason. This can include genuine data errors or temporary database issues like deadlocks.</p></li>
+<li><p><strong><code class="docutils literal notranslate"><span class="pre">my_file.csv.fail.bis</span></code></strong>: This file is created during the <strong>second pass</strong> (the <code class="docutils literal notranslate"><span class="pre">--fail</span></code> run), which retries the records from the <code class="docutils literal notranslate"><span class="pre">.fail</span></code> file using a single worker. The <code class="docutils literal notranslate"><span class="pre">.fail.bis</span></code> file contains only the records that <em>still</em> failed. These are almost always genuine data errors that you need to investigate and fix manually.</p></li>
+</ul>
+<p><strong>Your workflow should be:</strong></p>
+<ol class="arabic simple">
+<li><p>Run your <code class="docutils literal notranslate"><span class="pre">load.sh</span></code> script (which contains the <code class="docutils literal notranslate"><span class="pre">odoo-data-flow</span> <span class="pre">import</span></code> commands).</p></li>
+<li><p>If a <code class="docutils literal notranslate"><span class="pre">.fail.bis</span></code> file is created, open it to identify the data issue.</p></li>
+<li><p>Fix the issue in your original source file or your <code class="docutils literal notranslate"><span class="pre">transform.py</span></code> script.</p></li>
+<li><p>Rerun the transformation and load process.</p></li>
+</ol>
+</section>
+<section id="record-count-mismatch">
+<h3>Record Count Mismatch<a class="headerlink" href="#record-count-mismatch" title="Link to this heading">¶</a></h3>
+<p>Sometimes, the number of records in your source file doesn’t match the number of records created in Odoo, even if there are no errors in the <code class="docutils literal notranslate"><span class="pre">.fail.bis</span></code> file.</p>
+<ul class="simple">
+<li><p><strong>Cause:</strong> This usually happens when your mapping logic unintentionally filters out rows. For example, using a <code class="docutils literal notranslate"><span class="pre">postprocess</span></code> function that can return an empty value for an external ID (<code class="docutils literal notranslate"><span class="pre">id</span></code> field). If the external ID is empty, the entire record is skipped without error.</p></li>
+<li><p><strong>Solution:</strong></p>
+<ol class="arabic simple">
+<li><p><strong>Check your <code class="docutils literal notranslate"><span class="pre">id</span></code> field</strong>: The most common culprit is the mapping for the <code class="docutils literal notranslate"><span class="pre">id</span></code> field. Ensure it <em>always</em> returns a non-empty, unique value for every row you intend to import.</p></li>
+<li><p><strong>Use a <code class="docutils literal notranslate"><span class="pre">preprocessor</span></code></strong>: For complex debugging, you can use a <a class="reference internal" href="guides/03_data_transformations.html#pre-processing-data"><span class="std std-ref">preprocessor function</span></a> to add a unique line number to each row. Import this line number into a custom field in Odoo (<code class="docutils literal notranslate"><span class="pre">x_studio_import_line_number</span></code>). After the import, you can easily compare the line numbers in your source file with those in Odoo to find exactly which rows were skipped.</p></li>
+</ol>
+</li>
+</ul>
+</section>
+<section id="connection-errors">
+<h3>Connection Errors<a class="headerlink" href="#connection-errors" title="Link to this heading">¶</a></h3>
+<p>These errors usually happen when the <code class="docutils literal notranslate"><span class="pre">odoo-data-flow</span></code> client cannot reach your Odoo instance.</p>
+<ul class="simple">
+<li><p><strong>Error:</strong> <code class="docutils literal notranslate"><span class="pre">Connection</span> <span class="pre">refused</span></code></p>
+<ul>
+<li><p><strong>Cause:</strong> The <code class="docutils literal notranslate"><span class="pre">hostname</span></code> or <code class="docutils literal notranslate"><span class="pre">port</span></code> in your <code class="docutils literal notranslate"><span class="pre">conf/connection.conf</span></code> is incorrect, or the Odoo server is not running.</p></li>
+<li><p><strong>Solution:</strong> Double-check your connection details and ensure the Odoo instance is active and accessible.</p></li>
+</ul>
+</li>
+<li><p><strong>Error:</strong> <code class="docutils literal notranslate"><span class="pre">Wrong</span> <span class="pre">login/password</span></code></p>
+<ul>
+<li><p><strong>Cause:</strong> The credentials in <code class="docutils literal notranslate"><span class="pre">conf/connection.conf</span></code> are incorrect.</p></li>
+<li><p><strong>Solution:</strong> Verify your <code class="docutils literal notranslate"><span class="pre">database</span></code>, <code class="docutils literal notranslate"><span class="pre">login</span></code>, and <code class="docutils literal notranslate"><span class="pre">password</span></code>.</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="odoo-access-validation-errors">
+<h3>Odoo Access &amp; Validation Errors<a class="headerlink" href="#odoo-access-validation-errors" title="Link to this heading">¶</a></h3>
+<p>These errors come directly from Odoo when the data is not valid enough to save.</p>
+<ul class="simple">
+<li><p><strong>Error:</strong> <code class="docutils literal notranslate"><span class="pre">AccessError</span></code>, <code class="docutils literal notranslate"><span class="pre">You</span> <span class="pre">are</span> <span class="pre">not</span> <span class="pre">allowed</span> <span class="pre">to</span> <span class="pre">modify</span> <span class="pre">this</span> <span class="pre">document</span></code></p>
+<ul>
+<li><p><strong>Cause:</strong> The user specified by <code class="docutils literal notranslate"><span class="pre">uid</span></code> in your <code class="docutils literal notranslate"><span class="pre">conf/connection.conf</span></code> lacks the necessary permissions (e.g., Create or Write access) for the target model.</p></li>
+<li><p><strong>Solution:</strong> Check the user’s Access Rights in Odoo’s settings.</p></li>
+</ul>
+</li>
+<li><p><strong>Error:</strong> <code class="docutils literal notranslate"><span class="pre">ValidationError:</span> <span class="pre">A</span> <span class="pre">required</span> <span class="pre">field</span> <span class="pre">was</span> <span class="pre">not</span> <span class="pre">provided</span></code></p>
+<ul>
+<li><p><strong>Cause:</strong> Your transformed CSV file is missing a column for a field marked as <code class="docutils literal notranslate"><span class="pre">required=True</span></code> on the Odoo model.</p></li>
+<li><p><strong>Solution:</strong> Check the model’s definition in Odoo and ensure your <code class="docutils literal notranslate"><span class="pre">transform.py</span></code> script generates a value for that field.</p></li>
+</ul>
+</li>
+<li><p><strong>Error:</strong> <code class="docutils literal notranslate"><span class="pre">No</span> <span class="pre">matching</span> <span class="pre">record</span> <span class="pre">found</span> <span class="pre">for</span> <span class="pre">external</span> <span class="pre">id</span> <span class="pre">'__export__.my_external_id_123'</span></code></p>
+<ul>
+<li><p><strong>Cause:</strong> You are trying to link to a related record (e.g., setting the <code class="docutils literal notranslate"><span class="pre">partner_id</span></code> on a sales order), but the external ID you are providing does not exist in the database.</p></li>
+<li><p><strong>Solution:</strong></p>
+<ol class="arabic simple">
+<li><p>Ensure you have successfully imported the parent records first.</p></li>
+<li><p>Check for typos. The prefix and value used in your <code class="docutils literal notranslate"><span class="pre">m2o_map</span></code> must exactly match the external ID of the parent record.</p></li>
+<li><p>See the section below on Import Order.</p></li>
+</ol>
+</li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="understanding-import-order-for-relational-data">
+<h3>Understanding Import Order for Relational Data<a class="headerlink" href="#understanding-import-order-for-relational-data" title="Link to this heading">¶</a></h3>
+<p>A very common reason for the <code class="docutils literal notranslate"><span class="pre">No</span> <span class="pre">matching</span> <span class="pre">record</span> <span class="pre">found</span></code> error is that you are trying to import records in the wrong order.</p>
+<ul class="simple">
+<li><p><strong>The Rule:</strong> You must always import “parent” records <strong>before</strong> you import the “child” records that refer to them.</p></li>
+<li><p><strong>Example:</strong> Imagine you are importing Contacts (<code class="docutils literal notranslate"><span class="pre">res.partner</span></code>) and assigning them to Contact Tags (<code class="docutils literal notranslate"><span class="pre">res.partner.category</span></code>). Odoo cannot assign a contact to the “VIP” tag if that “VIP” tag doesn’t exist in the database yet.</p></li>
+<li><p><strong>Correct Import Sequence:</strong></p>
+<ol class="arabic simple">
+<li><p><strong>First, import <code class="docutils literal notranslate"><span class="pre">res.partner.category</span></code></strong>: Run a transformation and load process for your contact tags. This creates the tags and their external IDs in Odoo.</p></li>
+<li><p><strong>Then, import <code class="docutils literal notranslate"><span class="pre">res.partner</span></code></strong>: Run a separate process for your contacts. The mapping for the <code class="docutils literal notranslate"><span class="pre">category_id/id</span></code> field can now successfully use <code class="docutils literal notranslate"><span class="pre">mapper.m2o_map</span></code> to look up the external IDs of the tags you created in the first step.</p></li>
+</ol>
+</li>
+<li><p><strong>General Advice:</strong> Always map out the dependencies in your data. If Model B has a Many2one field pointing to Model A, you must always import Model A first.</p></li>
+</ul>
+</section>
+</section>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="contributing.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">Contributor Guide</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="reference.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">API Reference</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2025, bosd
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">FAQ &amp; Troubleshooting</a><ul>
+<li><a class="reference internal" href="#frequently-asked-questions">Frequently Asked Questions</a><ul>
+<li><a class="reference internal" href="#what-is-odoo-data-flow">What is <code class="docutils literal notranslate"><span class="pre">odoo-data-flow</span></code>?</a></li>
+<li><a class="reference internal" href="#how-is-this-different-from-odoo-s-standard-import-tool">How is this different from Odoo’s standard import tool?</a></li>
+<li><a class="reference internal" href="#can-i-use-this-for-both-importing-and-exporting">Can I use this for both importing and exporting?</a></li>
+<li><a class="reference internal" href="#can-i-migrate-data-directly-between-two-odoo-databases">Can I migrate data directly between two Odoo databases?</a></li>
+<li><a class="reference internal" href="#how-do-i-process-a-csv-file-that-has-no-header">How do I process a CSV file that has no header?</a></li>
+<li><a class="reference internal" href="#where-can-i-find-a-complete-real-world-example">Where can I find a complete, real-world example?</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#troubleshooting-common-errors">Troubleshooting Common Errors</a><ul>
+<li><a class="reference internal" href="#understanding-the-fail-and-fail-bis-files">Understanding the <code class="docutils literal notranslate"><span class="pre">.fail</span></code> and <code class="docutils literal notranslate"><span class="pre">.fail.bis</span></code> Files</a></li>
+<li><a class="reference internal" href="#record-count-mismatch">Record Count Mismatch</a></li>
+<li><a class="reference internal" href="#connection-errors">Connection Errors</a></li>
+<li><a class="reference internal" href="#odoo-access-validation-errors">Odoo Access &amp; Validation Errors</a></li>
+<li><a class="reference internal" href="#understanding-import-order-for-relational-data">Understanding Import Order for Relational Data</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=9a2dae69"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/scripts/furo.js?v=5fa4622c"></script>
+    <script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({"startOnLoad": true})</script>
+    </body>
+</html>

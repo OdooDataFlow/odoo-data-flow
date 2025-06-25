@@ -50,7 +50,7 @@ The core workflow involves two simple steps:
 **1. Transform your source data with a Python script.**
 Create a `transform.py` file to define the mapping from your source file to Odoo's format.
 
-````python
+```python
 # transform.py
 from odoo_data_flow.lib.transform import Processor
 from odoo_data_flow.lib import mapper
@@ -64,20 +64,23 @@ my_mapping = {
 processor = Processor('origin/products.csv')
 processor.process(my_mapping, 'data/products_clean.csv', {'model': 'product.product'})
 processor.write_to_file("load.sh")
+```
+...
 ```console
 $ python transform.py
-````
+```
 
 **2. Load the clean data into Odoo using the CLI.**
 The `transform.py` script generates a `load.sh` file containing the correct CLI command.
 
-````bash
+```bash
 # Contents of the generated load.sh
-odoo-data-flow import --config conf/connection.conf --file data/products_clean.csv --model product.product
-...
+odoo-data-flow import --config conf/connection.conf --file data/products_clean.csv --model product.product ...
+```
+Then execute the script.
 ```console
 $ bash load.sh
-````
+```
 
 ## Documentation
 
