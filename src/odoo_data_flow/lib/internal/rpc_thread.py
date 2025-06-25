@@ -17,7 +17,7 @@ class RpcThread:
     the number of simultaneous connections to the server.
     """
 
-    def __init__(self, max_connection: int):  # noqa: d301
+    def __init__(self, max_connection: int) -> None:
         """Initializes the thread pool.
 
         Args:
@@ -29,14 +29,14 @@ class RpcThread:
         self.executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=max_connection
         )
-        self.futures: list[concurrent.futures.Future] = []
+        self.futures: list[concurrent.futures.Future[Any]] = []
 
     def spawn_thread(
         self,
-        fun: Callable,
+        fun: Callable[..., Any],
         args: list[Any],
         kwargs: Optional[dict[str, Any]] = None,
-    ):
+    ) -> None:
         """Submits a function to be executed by a worker thread in the pool.
 
         Args:
@@ -50,7 +50,7 @@ class RpcThread:
         future = self.executor.submit(fun, *args, **kwargs)
         self.futures.append(future)
 
-    def wait(self):
+    def wait(self) -> None:
         """Waits for all submitted tasks to complete.
 
         This method will block until every task has finished. If any task
