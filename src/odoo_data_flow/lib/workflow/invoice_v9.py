@@ -9,6 +9,7 @@ from time import time
 from typing import Any
 from xmlrpc.client import Fault
 
+from ...logging_config import log
 from ..internal.rpc_thread import RpcThread
 
 
@@ -54,7 +55,7 @@ class InvoiceWorkflowV9:
         if i % percent_step == 0:
             percentage = round(i / float(total) * 100, 2)
             elapsed_time = time() - self.time
-            print(f"{percentage}% : {i}/{total} time {elapsed_time:.2f} sec")
+            log.info(f"{percentage}% : {i}/{total} time {elapsed_time:.2f} sec")
 
     def set_tax(self) -> None:
         """Finds draft invoices and computes their taxes."""
@@ -75,7 +76,7 @@ class InvoiceWorkflowV9:
         percent_step = int(total / 5000) or 1
         self.time = time()
         rpc_thread = RpcThread(self.max_connection)
-        print(f"Computing tax for {total} invoices...")
+        log.info(f"Computing tax for {total} invoices...")
         for i, invoice_id in enumerate(invoices):
             self._display_percent(i, percent_step, total)
             rpc_thread.spawn_thread(create_tax, [invoice_id])
@@ -96,7 +97,7 @@ class InvoiceWorkflowV9:
         total = len(invoice_to_validate)
         percent_step = int(total / 5000) or 1
         rpc_thread = RpcThread(1)  # Validation should be single-threaded
-        print(f"Validating {total} invoices...")
+        log.info(f"Validating {total} invoices...")
         self.time = time()
         for i, invoice_id in enumerate(invoice_to_validate):
             self._display_percent(i, percent_step, total)
@@ -127,7 +128,7 @@ class InvoiceWorkflowV9:
         percent_step = int(total / 100) or 1
         self.time = time()
         rpc_thread = RpcThread(self.max_connection)
-        print(f"Setting {total} invoices to pro-forma...")
+        log.info(f"Setting {total} invoices to pro-forma...")
         for i, invoice_id in enumerate(invoice_to_proforma):
             self._display_percent(i, percent_step, total)
             fun = self.connection.get_service("object").exec_workflow
@@ -193,7 +194,7 @@ class InvoiceWorkflowV9:
         percent_step = int(total / 1000) or 1
         self.time = time()
         rpc_thread = RpcThread(self.max_connection)
-        print(f"Registering payment for {total} invoices...")
+        log.info(f"Registering payment for {total} invoices...")
         for i, invoice in enumerate(invoices_to_paid):
             self._display_percent(i, percent_step, total)
             wizard_context = {
@@ -230,7 +231,7 @@ class InvoiceWorkflowV9:
         percent_step = int(total / 1000) or 1
         self.time = time()
         rpc_thread = RpcThread(int(self.max_connection * 1.5))
-        print(f"Renaming {total} invoices...")
+        log.info(f"Renaming {total} invoices...")
         for i, invoice in enumerate(invoices_to_rename):
             self._display_percent(i, percent_step, total)
             update_vals = {"number": invoice[name_field], name_field: False}
