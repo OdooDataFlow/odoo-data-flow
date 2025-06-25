@@ -41,9 +41,7 @@ partner_mapping = {
     "id": mapper.concat(PARTNER_PREFIX, "_", "id"),
     "name": mapper.val("id", postprocess=lambda x: f"Partner {x}"),
     "phone": mapper.val("id", postprocess=lambda x: f"0032{int(x) * 11}"),
-    "website": mapper.val(
-        "id", postprocess=lambda x: f"http://website-{x}.com"
-    ),
+    "website": mapper.val("id", postprocess=lambda x: f"http://website-{x}.com"),
     "street": mapper.val("id", postprocess=lambda x: f"Street {x}"),
     "city": mapper.val("id", postprocess=lambda x: f"City {x}"),
     "zip": mapper.val("id", postprocess=lambda x: str(x).zfill(6)),

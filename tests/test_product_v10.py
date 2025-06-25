@@ -98,9 +98,7 @@ processor.process_attribute_data(
 # STEP 5: Generate data for Attribute Values
 print("Generating data for product attribute values...")
 attribute_value_mapping = {
-    "id": mapper.m2m_template_attribute_value(
-        ATTRIBUTE_VALUE_PREFIX, *attribute_list
-    ),
+    "id": mapper.m2m_template_attribute_value(ATTRIBUTE_VALUE_PREFIX, *attribute_list),
     "name": mapper.m2m_value_list(*attribute_list),
     "attribute_id/id": mapper.m2m_id_list(
         ATTRIBUTE_PREFIX, *[mapper.field(f) for f in attribute_list]
