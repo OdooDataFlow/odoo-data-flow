@@ -25,7 +25,7 @@ Yes. The library provides tools for both workflows. The `Processor` and `mapper`
 
 Yes. The library includes a powerful `odoo-data-flow migrate` command that performs a complete export, transform, and import from one Odoo instance to another in a single step, without creating intermediate files. This is ideal for migrating data from a staging server to production.
 
-> For detailed instructions, see the [Server-to-Server Migration Guide](guides/08_server_to_server_migration.md).
+> For detailed instructions, see the [Server-to-Server Migration Guide](guides/07_server_to_server_migration.md).
 
 ### How do I process a CSV file that has no header?
 
@@ -90,7 +90,7 @@ Sometimes, the number of records in your source file doesn't match the number of
 
 - **Solution:**
   1.  **Check your `id` field**: The most common culprit is the mapping for the `id` field. Ensure it _always_ returns a non-empty, unique value for every row you intend to import.
-  2.  **Use a `preprocessor`**: For complex debugging, you can use a [preprocessor function](guides/04_data_transformations.md#pre-processing-data) to add a unique line number to each row. Import this line number into a custom field in Odoo (`x_studio_import_line_number`). After the import, you can easily compare the line numbers in your source file with those in Odoo to find exactly which rows were skipped.
+  2.  **Use a `preprocessor`**: For complex debugging, you can use a [preprocessor function](guides/03_data_transformations.md#pre-processing-data) to add a unique line number to each row. Import this line number into a custom field in Odoo (`x_studio_import_line_number`). After the import, you can easily compare the line numbers in your source file with those in Odoo to find exactly which rows were skipped.
 
 ### Connection Errors
 

@@ -56,7 +56,7 @@ This method is useful when your source file contains data for multiple companies
 
 **Example: A source file with mixed-company products**
 
-```csv
+```text
 SKU,ProductName,CompanyCode
 P100,Product A,COMPANY_US
 P101,Product B,COMPANY_EU
