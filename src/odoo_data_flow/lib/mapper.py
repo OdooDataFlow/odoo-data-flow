@@ -75,17 +75,23 @@ def val(
 # --- Combining Mappers ---
 
 
-def concat(separator: str, *fields: Any) -> MapperFunc:
+def concat(separator: str, *fields: Any, skip: bool = False) -> MapperFunc:
     """Concatenate mapper.
 
     Returns a mapper that joins values from multiple fields or static strings.
+    If `skip` is True, it will raise a SkippingError if the result is empty.
     """
     mappers = _list_to_mappers(fields)
 
     def concat_fun(line: LineDict, state: StateDict) -> str:
         values = [str(m(line, state)) for m in mappers]
         # Filter out empty strings before joining
-        return separator.join([v for v in values if v])
+        result = separator.join([v for v in values if v])
+        if not result and skip:
+            raise SkippingError(
+                f"Concatenated value for fields {fields} is empty."
+            )
+        return result
 
     return concat_fun
 
@@ -206,6 +212,42 @@ def m2m_map(prefix: str, mapper_func: MapperFunc) -> MapperFunc:
         return to_m2m(prefix, value)
 
     return m2m_map_fun
+
+
+def m2m_id_list(prefix: str, *fields: Any, sep: str = ",") -> MapperFunc:
+    """M2M ID List Mapper.
+
+    Returns a mapper that creates a comma-separated list of Many2many
+    external IDs from one or more fields. It concatenates values from the
+    fields first, then splits them by the separator.
+    """
+    concat_m = concat("", *fields)
+
+    def m2m_id_list_fun(line: LineDict, state: StateDict) -> str:
+        value = concat_m(line, state)
+        if not value:
+            return ""
+        values = [v.strip() for v in value.split(sep)]
+        return ",".join(to_m2o(prefix, v) for v in values if v)
+
+    return m2m_id_list_fun
+
+
+def m2m_value_list(*fields: Any, sep: str = ",") -> MapperFunc:
+    """M2M Value List Mapper.
+
+    Returns a mapper that combines values from multiple fields and returns
+    them as a Python list of strings, split by the separator.
+    """
+    concat_m = concat("", *fields)
+
+    def m2m_value_list_fun(line: LineDict, state: StateDict) -> list[str]:
+        value = concat_m(line, state)
+        if not value:
+            return []
+        return [v.strip() for v in value.split(sep) if v.strip()]
+
+    return m2m_value_list_fun
 
 
 # --- Advanced Mappers ---
