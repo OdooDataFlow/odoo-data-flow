@@ -45,13 +45,15 @@ categ_map = {
 processor.process(
     categ_parent_map,
     os.path.join("data", "product.category.parent.csv"),
-    params={"model": "product.category", "worker": 1, "batch_size": 5},
+    {"model": "product.category", "worker": 1, "batch_size": 5},
+    "set",
     m2m=True,  # Use m2m=True to get a unique set of parent categories
 )
 processor.process(
     categ_map,
     os.path.join("data", "product.category.csv"),
-    params={"model": "product.category", "worker": 1, "batch_size": 20},
+    {"model": "product.category", "worker": 1, "batch_size": 20},
+    "set",
     m2m=True,  # Use m2m=True to get a unique set of child categories
 )
 
@@ -69,7 +71,7 @@ template_map = {
 processor.process(
     template_map,
     os.path.join("data", "product.template.csv"),
-    params={
+    {
         "model": "product.template",
         "worker": 4,
         "batch_size": 10,
@@ -85,7 +87,7 @@ processor.process_attribute_data(
     attribute_list,
     ATTRIBUTE_PREFIX,
     os.path.join("data", "product.attribute.csv"),
-    params={
+    {
         "model": "product.attribute",
         "worker": 4,
         "batch_size": 10,
@@ -105,7 +107,7 @@ attribute_value_mapping = {
 processor.process(
     attribute_value_mapping,
     os.path.join("data", "product.attribute.value.csv"),
-    params={
+    {
         "model": "product.attribute.value",
         "worker": 3,
         "batch_size": 50,
@@ -138,7 +140,7 @@ context_with_update["update_many2many"] = True
 processor.process(
     line_mapping,
     os.path.join("data", "product.attribute.line.csv"),
-    params={
+    {
         "model": "product.attribute.line",
         "worker": 3,
         "batch_size": 50,
@@ -165,7 +167,7 @@ product_mapping = {
 processor.process(
     product_mapping,
     os.path.join("data", "product.product.csv"),
-    params={
+    {
         "model": "product.product",
         "worker": 3,
         "batch_size": 50,

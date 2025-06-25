@@ -50,9 +50,7 @@ partner_mapping = {
     "customer_rank": mapper.val("id", postprocess=lambda x: int(x) % 2),
     "supplier_rank": mapper.val("id", postprocess=lambda x: (int(x) + 1) % 2),
     "lang": mapper.const("en_US"),
-    # CORRECTED: Use m2m_map to ensure each tag in the list is correctly
-    # prefixed, matching the external IDs created by the tag_mapping.
-    "category_id/id": mapper.m2m_map(TAG_PREFIX, "tags", sep=","),
+    "category_id/id": mapper.m2m(TAG_PREFIX, "tags"),
 }
 
 # --- Processing ---

@@ -29,7 +29,7 @@ data = [
 
 # Mapping to create the partner category records.
 tag_mapping = {
-    "id": mapper.m2m_map(TAG_PREFIX, "tags", sep=","),
+    "id": mapper.m2m_id_list(TAG_PREFIX, "tags"),
     "name": mapper.m2m("tags", sep=","),
     "parent_id/id": mapper.const("base.res_partner_category_0"),
 }
