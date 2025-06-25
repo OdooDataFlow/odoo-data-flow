@@ -13,8 +13,11 @@ from ...logging_config import log
 
 
 def write_csv(
-    filename: str, header: list[str], data: list[list[Any]], encoding="utf-8"
-):
+    filename: str,
+    header: list[str],
+    data: list[list[Any]],
+    encoding: str = "utf-8",
+) -> None:
     """Writes data to a CSV file with a semicolon separator.
 
     Args:
@@ -25,7 +28,7 @@ def write_csv(
     """
     try:
         with open(filename, "w", newline="", encoding=encoding) as f:
-            writer = csv.writer(f, separator=";", quoting=csv.QUOTE_ALL)
+            writer = csv.writer(f, delimiter=";", quoting=csv.QUOTE_ALL)
             writer.writerow(header)
             writer.writerows(data)
     except OSError as e:
@@ -45,10 +48,10 @@ def write_file(
     encoding: str = "utf-8",
     groupby: str = "",
     sep: str = ";",
-    context: Optional[dict] = None,
+    context: Optional[dict[str, Any]] = None,
     ignore: str = "",
-    **kwargs,  # to catch other unused params
-):
+    **kwargs: Any,  # to catch other unused params
+) -> None:
     """Filewriter.
 
     Writes data to a CSV file and generates a corresponding shell script
@@ -62,53 +65,55 @@ def write_file(
     if not launchfile:
         return
 
-    # Step 3: Determine the target model name
-    if model == "auto" and filename:
-        model_name = os.path.basename(filename).replace(".csv", "")
-    else:
-        model_name = model
+    # Step 3: Only generate the import script if a filename was provided.
+    if filename:
+        # Determine the target model name
+        if model == "auto":
+            model_name = os.path.basename(filename).replace(".csv", "")
+        else:
+            model_name = model
 
-    # Step 4: Build the base command with its arguments
-    # We use shlex.quote to ensure all arguments
-    # are safely escaped for the shell.
-    command_parts = [
-        "odoo-data-flow",
-        "import",
-        "--config",
-        shlex.quote(kwargs.get("conf_file", "conf/connection.conf")),
-        "--file",
-        shlex.quote(filename),
-        "--model",
-        shlex.quote(model_name),
-        "--encoding",
-        shlex.quote(encoding),
-        "--worker",
-        str(worker),
-        "--size",
-        str(batch_size),
-        "--sep",
-        shlex.quote(sep),
-    ]
+        # Build the base command with its arguments
+        # We use shlex.quote to ensure all arguments
+        # are safely escaped for the shell.
+        command_parts = [
+            "odoo-data-flow",
+            "import",
+            "--config",
+            shlex.quote(kwargs.get("conf_file", "conf/connection.conf")),
+            "--file",
+            shlex.quote(filename),
+            "--model",
+            shlex.quote(model_name),
+            "--encoding",
+            shlex.quote(encoding),
+            "--worker",
+            str(worker),
+            "--size",
+            str(batch_size),
+            "--sep",
+            shlex.quote(sep),
+        ]
 
-    # Add optional arguments if they have a value
-    if groupby:
-        command_parts.extend(["--groupby", shlex.quote(groupby)])
-    if ignore:
-        command_parts.extend(["--ignore", shlex.quote(ignore)])
-    if context:
-        command_parts.extend(["--context", shlex.quote(str(context))])
+        # Add optional arguments if they have a value
+        if groupby:
+            command_parts.extend(["--groupby", shlex.quote(groupby)])
+        if ignore:
+            command_parts.extend(["--ignore", shlex.quote(ignore)])
+        if context:
+            command_parts.extend(["--context", shlex.quote(str(context))])
 
-    # Step 5: Write the command(s) to the shell script
-    mode = "w" if init else "a"
-    try:
-        with open(launchfile, mode) as f:
-            # Write the main import command
-            f.write(" ".join(command_parts) + "\n")
+        # Write the command(s) to the shell script
+        mode = "w" if init else "a"
+        try:
+            with open(launchfile, mode, encoding="utf-8") as f:
+                # Write the main import command
+                f.write(" ".join(command_parts) + "\n")
 
-            # If fail mode is enabled,
-            # write the second command with the --fail flag
-            if fail:
-                fail_command_parts = [*command_parts, "--fail"]
-                f.write(" ".join(fail_command_parts) + "\n")
-    except OSError as e:
-        log.error(f"Failed to write to launch file {launchfile}: {e}")
+                # If fail mode is enabled,
+                # write the second command with the --fail flag
+                if fail:
+                    fail_command_parts = [*command_parts, "--fail"]
+                    f.write(" ".join(fail_command_parts) + "\n")
+        except OSError as e:
+            log.error(f"Failed to write to launch file {launchfile}: {e}")
