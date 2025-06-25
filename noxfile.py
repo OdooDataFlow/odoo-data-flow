@@ -108,6 +108,7 @@ def precommit(session: nox.Session) -> None:
         "--hook-stage=manual",
         "--show-diff-on-failure",
     ]
+
     session.run(
         "uv",
         "sync",
@@ -138,16 +139,11 @@ def mypy(session: nox.Session) -> None:
     )
 
     session.install("mypy")
-
-    # ADD THESE PACKAGES: Install pytest and its type stubs for MyPy
-    session.install("pytest")  # <--- Add this line
-
+    session.install("pytest")
     session.install("-e", ".")
     session.run("mypy", *args)
     if not session.posargs:
-        session.run(
-            "mypy", f"--python-executable={sys.executable}", "noxfile.py"
-        )
+        session.run("mypy", f"--python-executable={sys.executable}", "noxfile.py")
 
 
 @nox.session(python=python_versions)
@@ -172,15 +168,11 @@ def tests(session: nox.Session) -> None:
 def coverage(session: nox.Session) -> None:
     """Produce the coverage report."""
     args = session.posargs or ["report"]
-    session.run(
-        "uv",
-        "pip",
-        "install",
-        "coverage[toml]",
-        env={"UV_PROJECT_ENVIRONMENT": session.virtualenv.location},
-        external=True,
-    )
-    session.install("coverage[toml]")
+    session.install("pytest", "coverage[toml]", "pytest-cov")
+    session.install("-e", ".")
+    session.log("Running pytest with coverage...")
+    session.run("pytest", "--cov=src", "--cov-report=xml", *session.posargs)
+
     if not session.posargs and any(Path().glob(".coverage.*")):
         session.run("coverage", "combine")
 
@@ -201,9 +193,8 @@ def typeguard_tests(session: nox.Session) -> None:
     )
 
     session.install("typeguard", "pytest")
-
     session.install("-e", ".")
-    session.run("pytest", *session.posargs)
+    session.run("pytest", "--typeguard-packages", package, *session.posargs)
 
 
 @nox.session(python=python_versions)
@@ -222,7 +213,7 @@ def xdoctest(session: nox.Session) -> None:
         "dev",
         "--group",
         "xdoctest",
-        external=True,  # Ensure external=True is present
+        external=True,
     )
     session.install("xdoctest")
     session.install("-e", ".")
@@ -236,17 +227,16 @@ def docs_build(session: nox.Session) -> None:
     if not session.posargs and "FORCE_COLOR" in os.environ:
         args.insert(0, "--color")
 
-    # session.run(
-    #     "uv",
-    #     "sync",
-    #     "--group",
-    #     "docs",
-    #     "--group",
-    #     "dev",
-    #     env={"UV_PROJECT_ENVIRONMENT": session.virtualenv.location},
-    #     external=True,
-    # )
-    session.install("--group", "dev", "--group", "docs")
+    session.run(
+        "uv",
+        "sync",
+        "--group",
+        "dev",
+        "--group",
+        "docs",
+        external=True,
+    )
+    session.install("sphinx", "sphinx-mermaid", "sphinx-click", "myst_parser", "furo")
     session.install("-e", ".")
 
     build_dir = Path("docs", "_build")
