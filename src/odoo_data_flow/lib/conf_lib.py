@@ -41,9 +41,7 @@ def get_connection_from_config(config_file: str) -> Any:
             # The OdooClient expects the user ID as 'user_id'
             conn_details["user_id"] = int(conn_details.pop("uid"))
 
-        log.info(
-            f"Connecting to Odoo server at {conn_details.get('hostname')}..."
-        )
+        log.info(f"Connecting to Odoo server at {conn_details.get('hostname')}...")
 
         # Use odoo-client-lib to establish the connection
         connection = odoolib.get_connection(**conn_details)

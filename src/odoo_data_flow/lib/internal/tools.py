@@ -96,9 +96,7 @@ def to_m2m(prefix: str, value: str) -> str:
     if not value:
         return ""
 
-    ids = [
-        to_m2o(prefix, val.strip()) for val in value.split(",") if val.strip()
-    ]
+    ids = [to_m2o(prefix, val.strip()) for val in value.split(",") if val.strip()]
     return ",".join(ids)
 
 
@@ -162,9 +160,7 @@ class AttributeLineDict:
                     self.id_gen(template_id, attributes),
                     template_id,
                     attribute_id,
-                    ",".join(
-                        values
-                    ),  # Odoo m2m/o2m often use comma-separated IDs
+                    ",".join(values),  # Odoo m2m/o2m often use comma-separated IDs
                 ]
                 lines_out.append(line)
         return lines_header, lines_out

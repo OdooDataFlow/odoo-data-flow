@@ -31,10 +31,7 @@ data = [
 # This will be processed in a special m2m mode to create one record
 # per unique tag.
 tag_mapping = {
-    # CORRECTED: Use m2m_map to correctly prepend the prefix to each tag name
-    # to create a unique external ID. e.g., "partner_tag_Tag 1"
-    "id": mapper.m2m_map(TAG_PREFIX, "tags", sep=","),
-    # CORRECTED: Use m2m with a separator to extract the individual tag names.
+    "id": mapper.m2m_id_list(TAG_PREFIX, "tags"),
     "name": mapper.m2m("tags", sep=","),
     "parent_id/id": mapper.const("base.res_partner_category_0"),
 }

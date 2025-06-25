@@ -60,10 +60,11 @@ mapping = {
     "supplier_rank": mapper.bool_val("IsSupplier", ["1"]),
     "lang": mapper.map_val(lang_map, mapper.val("Language")),
     # CORRECTED: Prepend the image path prefix using a postprocess function.
-    "image_1920": mapper.binary(
-        "Image",
-        postprocess=lambda p: os.path.join(IMAGE_PATH_PREFIX, p) if p else "",
-    ),
+    # "image_1920": mapper.binary(
+    #     "Image",
+    #     postprocess=lambda p: os.path.join(IMAGE_PATH_PREFIX, p) if p else "",
+    # ), TODO
+    "image_1920": mapper.binary("Image", "origin/img/"),
 }
 
 # Step 3: Check data quality (Optional)

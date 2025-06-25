@@ -3,7 +3,7 @@
 import csv
 import os
 from collections import OrderedDict
-from typing import Callable, Dict, List, Set, Tuple
+from typing import Callable, Optional
 
 from ..logging_config import log
 from . import mapper
@@ -119,7 +119,9 @@ class Processor:
     def get_o2o_mapping(self):
         """Generates a direct 1-to-1 mapping dictionary."""
         return {
-            str(column): MapperRepr(f"mapper.val('{column}')", mapper.val(column))
+            str(column): MapperRepr(
+                f"mapper.val('{column}')", mapper.val(column)
+            )
             for column in self.header
             if column
         }
@@ -142,9 +144,13 @@ class Processor:
         if params is None:
             params = {}
         if m2m:
-            head, data = self._process_mapping_m2m(mapping, null_values=null_values)
+            head, data = self._process_mapping_m2m(
+                mapping, null_values=null_values
+            )
         else:
-            head, data = self._process_mapping(mapping, t=t, null_values=null_values)
+            head, data = self._process_mapping(
+                mapping, t=t, null_values=null_values
+            )
 
         self._add_data(head, data, filename_out, params)
         return head, data
@@ -190,7 +196,9 @@ class Processor:
 
         Joins data from a secondary file into the processor's main data.
         """
-        child_header, child_data = self._read_file(filename, separator, encoding)
+        child_header, child_data = self._read_file(
+            filename, separator, encoding
+        )
 
         try:
             child_key_pos = child_header.index(child_key)
@@ -214,7 +222,9 @@ class Processor:
 
     def _add_data(self, head, data, filename_out, params):
         params = params.copy()
-        params["filename"] = os.path.abspath(filename_out) if filename_out else False
+        params["filename"] = (
+            os.path.abspath(filename_out) if filename_out else False
+        )
         params["header"] = head
         params["data"] = data
         self.file_to_write[filename_out] = params
@@ -227,13 +237,16 @@ class Processor:
         for i, line in enumerate(self.data):
             # Clean up null values
             cleaned_line = [
-                s.strip() if s and s.strip() not in null_values else "" for s in line
+                s.strip() if s and s.strip() not in null_values else ""
+                for s in line
             ]
             line_dict = dict(zip(self.header, cleaned_line))
 
             try:
                 # Pass the state dictionary to each mapper call
-                line_out = [mapping[k](line_dict, state) for k in mapping.keys()]
+                line_out = [
+                    mapping[k](line_dict, state) for k in mapping.keys()
+                ]
             except SkippingError as e:
                 log.debug(f"Skipping line {i}: {e.message}")
                 continue
@@ -283,7 +296,7 @@ class ProductProcessorV10(Processor):
         """Creates and registers the 'product.attribute.csv' file.
 
         Args:
-            attributes_list (List[str]): List of attribute names (e.g., ['Color', 'Size']).
+            attributes_list (List[str]): list of attribute names (e.g., ['Color', 'Size']).
             ATTRIBUTE_PREFIX (str): Prefix for generating external IDs.
             filename_out (str): Output path for the CSV file.
             import_args (Dict): Arguments for the import script.
@@ -304,8 +317,8 @@ class ProductProcessorV9(Processor):
     """
 
     def _generate_attribute_file_data(
-        self, attributes_list: List[str], prefix: str
-    ) -> Tuple[List[str], List[List[str]]]:
+        self, attributes_list: list[str], prefix: str
+    ) -> tuple[list[str], list[list[str]]]:
         """Generates header and data for 'product.attribute.csv'."""
         header = ["id", "name"]
         data = [[mapper.to_m2o(prefix, attr), attr] for attr in attributes_list]
@@ -313,11 +326,12 @@ class ProductProcessorV9(Processor):
 
     def _extract_attribute_value_data(
         self,
-        mapping: Dict,
-        attributes_list: List[str],
-        processed_rows: List[Dict],
-    ) -> Set[Tuple]:
+        mapping: dict,
+        attributes_list: list[str],
+        processed_rows: list[dict],
+    ) -> set[tuple]:
         """Extracts and transforms data for 'product.attribute.value.csv'.
+
         This replaces the original complex nested 'add_value_line' function.
         """
         attribute_values = set()
@@ -336,7 +350,8 @@ class ProductProcessorV9(Processor):
                 continue
 
             for attr_name in attributes_list:
-                # If the attribute exists for this product, create a line for its value
+                # If the attribute exists for this product,
+                # create a line for its value
                 if values_dict.get(attr_name):
                     value_line = tuple(
                         res[attr_name] if isinstance(res, dict) else res
@@ -348,17 +363,19 @@ class ProductProcessorV9(Processor):
 
     def process_attribute_mapping(
         self,
-        mapping: Dict,
-        line_mapping: Dict,
-        attributes_list: List[str],
+        mapping: dict,
+        line_mapping: dict,
+        attributes_list: list[str],
         ATTRIBUTE_PREFIX: str,
         path: str,
-        import_args: Dict,
-        id_gen_fun: Callable = None,
-        null_values: List[str] = ["NULL"],
+        import_args: dict,
+        id_gen_fun: Optional[Callable] = None,
+        null_values: list[str] = None,
     ):
         """Orchestrates the processing of product attributes and variants from source data."""
         # 1. Generate base attribute data (product.attribute.csv)
+        if null_values is None:
+            null_values = ["NULL"]
         attr_header, attr_data = self._generate_attribute_file_data(
             attributes_list, ATTRIBUTE_PREFIX
         )
@@ -385,7 +402,9 @@ class ProductProcessorV9(Processor):
         )
         line_aggregator = AttributeLineDict(attr_data, id_gen_fun)
         for row_dict in processed_rows:
-            values_lines = [line_mapping[k](row_dict) for k in line_mapping.keys()]
+            values_lines = [
+                line_mapping[k](row_dict) for k in line_mapping.keys()
+            ]
             line_aggregator.add_line(values_lines, list(line_mapping.keys()))
         line_header, line_data = line_aggregator.generate_line()
 
