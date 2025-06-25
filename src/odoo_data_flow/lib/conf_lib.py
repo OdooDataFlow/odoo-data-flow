@@ -7,7 +7,7 @@ establishing a connection to the Odoo server using odoo-client-lib.
 import configparser
 from typing import Any
 
-import odoolib
+import odoolib  # type: ignore[import-untyped]
 
 from ..logging_config import log
 
@@ -19,12 +19,12 @@ def get_connection_from_config(config_file: str) -> Any:
     initialized OdooClient object.
 
     Args:
-        config_file (str): The path to the connection.conf file.
+        config_file: The path to the connection.conf file.
 
     Returns:
-        Any: An initialized and connected Odoo client object,
-             returned by odoolib.get_connection)
-                    or raises an exception on failure.
+        An initialized and connected Odoo client object,
+        (returned by odoolib.get_connection)
+        or raises an exception on failure.
     """
     config = configparser.ConfigParser()
     if not config.read(config_file):
@@ -32,7 +32,8 @@ def get_connection_from_config(config_file: str) -> Any:
         raise FileNotFoundError(f"Configuration file not found: {config_file}")
 
     try:
-        conn_details = dict(config["Connection"])
+        # Define conn_details to hold both strings and integers.
+        conn_details: dict[str, Any] = dict(config["Connection"])
 
         # Ensure port and uid are integers
         if "port" in conn_details:
