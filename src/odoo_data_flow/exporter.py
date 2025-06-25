@@ -110,6 +110,7 @@ def run_export_for_migration(
         max_connection=int(worker),
         batch_size=int(batch_size),
         encoding=encoding,
+        separator=";",  # Provide a default separator
     )
 
     if data:
