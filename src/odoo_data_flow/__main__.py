@@ -1,6 +1,7 @@
 """Command-line interface for odoo-data-flow."""
 
 import ast
+from typing import Any
 
 import click
 
@@ -21,21 +22,16 @@ from .workflow_runner import run_invoice_v9_workflow
     "-v", "--verbose", is_flag=True, help="Enable verbose, debug-level logging."
 )
 @click.pass_context
-def cli(ctx, verbose):
+def cli(ctx: click.Context, verbose: bool) -> None:
     """Odoo Data Flow: A tool for importing, exporting, and processing data."""
     setup_logging(verbose)
-    # If no subcommand is invoked, we explicitly print the help text.
-    # This is required when using invoke_without_command=True.
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
 
 
 # --- Workflow Command ---
-# This command is now a top-level command attached directly to 'cli'.
 @cli.command(name="workflow-invoice-v9")
-@click.option(
-    "-c", "--config", required=True, help="Path to the connection.conf file."
-)
+@click.option("-c", "--config", required=True, help="Path to the connection.conf file.")
 @click.option(
     "--action",
     "actions",
@@ -73,13 +69,12 @@ def cli(ctx, verbose):
 @click.option(
     "--max-connection", default=4, type=int, help="Number of parallel threads."
 )
-def invoice_v9_cmd(**kwargs):
+def invoice_v9_cmd(**kwargs: Any) -> None:
     """Runs the legacy Odoo v9 invoice processing workflow."""
     run_invoice_v9_workflow(**kwargs)
 
 
 # --- Import Command ---
-# This command is attached directly to the main 'cli' group.
 @cli.command(name="import")
 @click.option(
     "-c",
@@ -99,18 +94,14 @@ def invoice_v9_cmd(**kwargs):
     type=int,
     help="Number of lines to import per connection.",
 )
-@click.option(
-    "--skip", default=0, type=int, help="Number of initial lines to skip."
-)
+@click.option("--skip", default=0, type=int, help="Number of initial lines to skip.")
 @click.option(
     "--fail",
     is_flag=True,
     default=False,
     help="Run in fail mode, retrying records from the .fail file.",
 )
-@click.option(
-    "-s", "--sep", "separator", default=";", help="CSV separator character."
-)
+@click.option("-s", "--sep", "separator", default=";", help="CSV separator character.")
 @click.option(
     "--groupby",
     "split",
@@ -138,7 +129,7 @@ def invoice_v9_cmd(**kwargs):
     help="Special handling for one-to-many imports.",
 )
 @click.option("--encoding", default="utf-8", help="Encoding of the data file.")
-def import_cmd(**kwargs):
+def import_cmd(**kwargs: Any) -> None:
     """Runs the data import process."""
     run_import(**kwargs)
 
@@ -156,9 +147,7 @@ def import_cmd(**kwargs):
 @click.option(
     "--fields", required=True, help="Comma-separated list of fields to export."
 )
-@click.option(
-    "--domain", default="[]", help="Odoo domain filter as a list string."
-)
+@click.option("--domain", default="[]", help="Odoo domain filter as a list string.")
 @click.option(
     "--worker", default=1, type=int, help="Number of simultaneous connections."
 )
@@ -169,16 +158,14 @@ def import_cmd(**kwargs):
     type=int,
     help="Number of records to process per batch.",
 )
-@click.option(
-    "-s", "--sep", "separator", default=";", help="CSV separator character."
-)
+@click.option("-s", "--sep", "separator", default=";", help="CSV separator character.")
 @click.option(
     "--context",
     default="{'tracking_disable': True}",
     help="Odoo context as a dictionary string.",
 )
 @click.option("--encoding", default="utf-8", help="Encoding of the data file.")
-def export_cmd(**kwargs):
+def export_cmd(**kwargs: Any) -> None:
     """Runs the data export process."""
     run_export(**kwargs)
 
@@ -197,10 +184,8 @@ def export_cmd(**kwargs):
     default=None,
     help="Image path prefix. Defaults to the current working directory.",
 )
-@click.option(
-    "--out", default="out.csv", help="Name of the resulting output file."
-)
-def path_to_image_cmd(**kwargs):
+@click.option("--out", default="out.csv", help="Name of the resulting output file.")
+def path_to_image_cmd(**kwargs: Any) -> None:
     """Converts columns with local file paths into base64 strings."""
     run_path_to_image(**kwargs)
 
@@ -214,10 +199,8 @@ def path_to_image_cmd(**kwargs):
     required=True,
     help="Comma-separated list of fields with URLs to convert to base64.",
 )
-@click.option(
-    "--out", default="out.csv", help="Name of the resulting output file."
-)
-def url_to_image_cmd(**kwargs):
+@click.option("--out", default="out.csv", help="Name of the resulting output file.")
+def url_to_image_cmd(**kwargs: Any) -> None:
     """Downloads content from URLs in columns and converts to base64."""
     run_url_to_image(**kwargs)
 
@@ -270,7 +253,7 @@ def url_to_image_cmd(**kwargs):
     type=int,
     help="Batch size for the import phase.",
 )
-def migrate_cmd(**kwargs):
+def migrate_cmd(**kwargs: Any) -> None:
     """Performs a direct server-to-server data migration."""
     if kwargs.get("mapping"):
         try:
@@ -283,9 +266,6 @@ def migrate_cmd(**kwargs):
             return
     run_migration(**kwargs)
 
-
-# No cli.add_command() calls are needed here because the decorators
-# handle the registration automatically.
 
 if __name__ == "__main__":
     cli()
