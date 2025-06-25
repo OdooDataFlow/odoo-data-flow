@@ -43,13 +43,13 @@ categ_map = {
 processor.process(
     categ_parent_map,
     os.path.join("data", "product.category.parent.v9.csv"),
-    params={"model": "product.category"},
+    {"model": "product.category"},
     m2m=True,
 )
 processor.process(
     categ_map,
     os.path.join("data", "product.category.v9.csv"),
-    params={"model": "product.category"},
+    {"model": "product.category"},
     m2m=True,
 )
 
@@ -67,7 +67,7 @@ template_map = {
 processor.process(
     template_map,
     os.path.join("data", "product.template.v9.csv"),
-    params={"model": "product.template", "context": context},
+    {"model": "product.template", "context": context},
     m2m=True,
 )
 
@@ -76,37 +76,43 @@ processor.process(
 # We now standardize this to create two separate, clean files.
 print("Generating data for product attributes and values...")
 
-# Attribute mapping
-attribute_map = {
-    "id": mapper.m2m_map(
-        ATTRIBUTE_PREFIX, *[mapper.const(attr) for attr in attribute_list]
-    ),
-    "name": mapper.m2m(*[mapper.const(attr) for attr in attribute_list]),
-}
-processor.process(
-    attribute_map,
-    os.path.join("data", "product.attribute.v9.csv"),
-    params={"model": "product.attribute"},
-    m2m=True,
-)
 
 # Attribute Value mapping
 attribute_value_map = {
     "id": mapper.m2m_template_attribute_value(ATTRIBUTE_VALUE_PREFIX, *attribute_list),
     "name": mapper.m2m_value_list(*attribute_list),
-    "attribute_id/id": mapper.m2m_map(
-        ATTRIBUTE_PREFIX, *[mapper.field(f) for f in attribute_list]
-    ),
+    "attribute_id/id": mapper.m2o_att_name(ATTRIBUTE_PREFIX, attribute_list),
 }
 processor.process(
     attribute_value_map,
     os.path.join("data", "product.attribute.value.v9.csv"),
-    params={
+    {
         "model": "product.attribute.value",
         "context": context,
         "groupby": "attribute_id/id",
     },
     m2m=True,
+)
+
+attribute_list = ["Color", "Gender", "Size_H", "Size_W"]
+attribue_value_mapping = {
+    "id": mapper.m2o_att(ATTRIBUTE_VALUE_PREFIX, attribute_list),  # TODO
+    "name": mapper.val_att(attribute_list),  # TODO
+    "attribute_id/id": mapper.m2o_att_name(ATTRIBUTE_PREFIX, attribute_list),
+}
+
+line_mapping = {
+    "product_tmpl_id/id": mapper.m2o(TEMPLATE_PREFIX, "ref"),
+    "attribute_id/id": mapper.m2o_att_name(ATTRIBUTE_PREFIX, attribute_list),
+    "value_ids/id": mapper.m2o_att(ATTRIBUTE_VALUE_PREFIX, attribute_list),  # TODO
+}
+processor.process_attribute_mapping(
+    attribue_value_mapping,
+    line_mapping,
+    attribute_list,
+    ATTRIBUTE_PREFIX,
+    "data/",
+    {"worker": 3, "batch_size": 50, "context": context},
 )
 
 
@@ -123,7 +129,7 @@ product_mapping = {
 processor.process(
     product_mapping,
     os.path.join("data", "product.product.v9.csv"),
-    params={
+    {
         "model": "product.product",
         "worker": 3,
         "batch_size": 50,
