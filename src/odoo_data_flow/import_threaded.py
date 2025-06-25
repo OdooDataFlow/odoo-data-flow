@@ -44,9 +44,10 @@ class RPCThreadImport(RpcThread):
         max_connection: int,
         model: Any,
         header: list[str],
-        writer: csv.writer,
-        context: Optional[dict] = None,
-    ):
+        writer: Optional[Any] = None,  # csv.writer is not a type, use Any
+        context: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """Initializes the import thread handler."""
         super().__init__(max_connection)
         self.model = model
         self.header = header
@@ -58,10 +59,10 @@ class RPCThreadImport(RpcThread):
         data_lines: list[list[Any]],
         batch_number: Any,
         check: bool = False,
-    ):
+    ) -> None:
         """Submits a batch of data lines to be imported by a worker thread."""
 
-        def launch_batch_fun(lines: list[list[Any]], num: Any, do_check: bool):
+        def launch_batch_fun(lines: list[list[Any]], num: Any, do_check: bool) -> None:
             start_time = time()
             success = False
             try:
@@ -73,7 +74,7 @@ class RPCThreadImport(RpcThread):
                         record_index = msg.get("record", -1)
                         failed_line = (
                             lines[record_index]
-                            if record_index < len(lines)
+                            if record_index >= 0 and record_index < len(lines)
                             else "N/A"
                         )
                         log.error(
@@ -81,23 +82,20 @@ class RPCThreadImport(RpcThread):
                             f"{msg.get('message', 'Unknown error')}. "
                             f"Record data: {failed_line}"
                         )
-                    # Mark as failed if there are any error messages
                     success = False
                 elif do_check and len(res.get("ids", [])) != len(lines):
                     log.error(
                         f"Record count mismatch for batch {num}. "
                         f"Expected {len(lines)}, "
                         f"got {len(res.get('ids', []))}. "
-                        f"Probably a duplicate XML ID."
+                        "Probably a duplicate XML ID."
                     )
                     success = False
                 else:
                     success = True
 
             except Exception as e:
-                log.error(
-                    f"RPC call for batch {num} failed: {e}", exc_info=True
-                )
+                log.error(f"RPC call for batch {num} failed: {e}", exc_info=True)
                 success = False
 
             if not success and self.writer:
@@ -133,7 +131,7 @@ def _read_data_file(
     log.info(f"Reading data from file: {file_path}")
     try:
         with open(file_path, encoding=encoding, newline="") as f:
-            reader = csv.reader(f, separator=separator)
+            reader = csv.reader(f, delimiter=separator)
             header = next(reader)
 
             if "id" not in header:
@@ -157,11 +155,11 @@ def _read_data_file(
 
 def _create_batches(
     data: list[list[Any]],
-    split_by_col: str,
+    split_by_col: Optional[str],
     header: list[str],
     batch_size: int,
     o2m: bool,
-) -> Generator[tuple[Any, list], None, None]:
+) -> Generator[tuple[Any, list[list[Any]]], None, None]:
     """A generator that yields batches of data.
 
     If split_by_col is provided, it
@@ -177,27 +175,19 @@ def _create_batches(
         split_index = header.index(split_by_col)
         id_index = header.index("id")
     except ValueError as e:
-        log.error(
-            f"Grouping column '{e}' not found in header. Cannot use --groupby."
-        )
+        log.error(f"Grouping column '{e}' not found in header. Cannot use --groupby.")
         return
 
-    # Sort data by the grouping column
-    # to ensure all related records are contiguous
     data.sort(key=lambda row: row[split_index])
 
-    current_batch = []
-    current_split_value = None
+    current_batch: list[list[Any]] = []
+    current_split_value: Optional[str] = None
     batch_num = 0
 
     for row in data:
-        # For o2m, keep adding lines to the batch if the ID is empty
         is_o2m_line = o2m and not row[id_index]
-
         row_split_value = row[split_index]
 
-        # Start a new batch if we are not in an o2m block and either the
-        # split value changes or the batch size is reached.
         if (
             current_batch
             and not is_o2m_line
@@ -223,24 +213,24 @@ def import_data(
     header: Optional[list[str]] = None,
     data: Optional[list[list[Any]]] = None,
     file_csv: Optional[str] = None,
-    context: Optional[dict] = None,
-    fail_file: str = False,
+    context: Optional[dict[str, Any]] = None,
+    fail_file: Optional[str] = None,
     encoding: str = "utf-8",
     separator: str = ";",
     ignore: Optional[list[str]] = None,
-    split: str = False,
+    split: Optional[str] = None,
     check: bool = True,
     max_connection: int = 1,
     batch_size: int = 10,
     skip: int = 0,
     o2m: bool = False,
-):
+) -> None:
     """Main function to orchestrate the import process.
 
     Can be run from a file or from in-memory data.
     """
-    ignore = ignore or []
-    context = context or {}
+    _ignore = ignore or []
+    _context = context or {}
 
     if file_csv:
         header, data = _read_data_file(file_csv, separator, encoding, skip)
@@ -255,7 +245,7 @@ def import_data(
         )
 
     # Filter out ignored columns from both header and data
-    header, data = _filter_ignored_columns(ignore, header, data)
+    header, data = _filter_ignored_columns(_ignore, header, data)
 
     try:
         connection = conf_lib.get_connection_from_config(config_file)
@@ -265,27 +255,21 @@ def import_data(
         return
 
     # Set up the writer for the fail file
-    fail_file_writer = None
+    fail_file_writer: Optional[Any] = None
     fail_file_handle = None
     if fail_file:
         try:
-            fail_file_handle = open(
-                fail_file, "w", newline="", encoding=encoding
-            )
+            fail_file_handle = open(fail_file, "w", newline="", encoding=encoding)
             fail_file_writer = csv.writer(
-                fail_file_handle, separator=separator, quoting=csv.QUOTE_ALL
+                fail_file_handle, delimiter=separator, quoting=csv.QUOTE_ALL
             )
-            fail_file_writer.writerow(
-                header
-            )  # Write header to fail file immediately
+            fail_file_writer.writerow(header)
         except OSError as e:
-            log.error(
-                f"Could not open fail file for writing: {fail_file}. Error: {e}"
-            )
-            return  # Cannot proceed without a fail file
+            log.error(f"Could not open fail file for writing: {fail_file}. Error: {e}")
+            return
 
     rpc_thread = RPCThreadImport(
-        max_connection, model_obj, header, fail_file_writer, context
+        max_connection, model_obj, header, fail_file_writer, _context
     )
     start_time = time()
 
