@@ -98,9 +98,11 @@ processor.process_attribute_data(
 # STEP 5: Generate data for Attribute Values
 print("Generating data for product attribute values...")
 attribute_value_mapping = {
-    "id": mapper.m2m_template_attribute_value(ATTRIBUTE_VALUE_PREFIX, *attribute_list),
+    "id": mapper.m2m_template_attribute_value(
+        ATTRIBUTE_VALUE_PREFIX, *attribute_list
+    ),
     "name": mapper.m2m_value_list(*attribute_list),
-    "attribute_id/id": mapper.m2m_map(
+    "attribute_id/id": mapper.m2m_id_list(
         ATTRIBUTE_PREFIX, *[mapper.field(f) for f in attribute_list]
     ),
 }
@@ -120,15 +122,15 @@ processor.process(
 # STEP 6: Generate data for Attribute Lines (linking attributes to templates)
 print("Generating data for product attribute lines...")
 line_mapping = {
-    "id": mapper.m2m_map(
+    "id": mapper.m2m_id_list(
         ATTRIBUTE_LINE_PREFIX,
         *[
-            mapper.concat("_", mapper.field(f), mapper.val("ref"))
+            mapper.concat_mapper_all("_", mapper.field(f), mapper.val("ref"))
             for f in attribute_list
         ],
     ),
     "product_tmpl_id/id": mapper.m2o_map(TEMPLATE_PREFIX, "ref"),
-    "attribute_id/id": mapper.m2m_map(
+    "attribute_id/id": mapper.m2m_id_list(
         ATTRIBUTE_PREFIX, *[mapper.field(f) for f in attribute_list]
     ),
     "value_ids/id": mapper.m2m_template_attribute_value(

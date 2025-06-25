@@ -39,16 +39,18 @@ partner_mapping = {
     "id": mapper.concat(PARTNER_PREFIX, "_", "id"),
     "name": mapper.val("id", postprocess=lambda x: f"Partner {x}"),
     "phone": mapper.val("id", postprocess=lambda x: f"0032{int(x) * 11}"),
-    "website": mapper.val("id", postprocess=lambda x: f"http://website-{x}.com"),
+    "website": mapper.val(
+        "id", postprocess=lambda x: f"http://website-{x}.com"
+    ),
     "street": mapper.val("id", postprocess=lambda x: f"Street {x}"),
     "city": mapper.val("id", postprocess=lambda x: f"City {x}"),
     "zip": mapper.val("id", postprocess=lambda x: str(x).zfill(6)),
     "country_id/id": mapper.const("base.be"),
     "company_type": mapper.const("company"),
-    "customer_rank": mapper.val("id", postprocess=lambda x: int(x) % 2),
-    "supplier_rank": mapper.val("id", postprocess=lambda x: (int(x) + 1) % 2),
+    "customer": mapper.val("id", postprocess=lambda x: int(x) % 2),
+    "supplier": mapper.val("id", postprocess=lambda x: (int(x) + 1) % 2),
     "lang": mapper.const("en_US"),
-    "category_id/id": mapper.m2m_map(TAG_PREFIX, "tags", sep=","),
+    "category_id/id": mapper.m2m(TAG_PREFIX, "tags"),
 }
 
 # --- Processing ---
@@ -68,7 +70,7 @@ print(f"Generating single tag file for all splits at: {TAG_OUTPUT}")
 processor.process(
     tag_mapping,
     TAG_OUTPUT,
-    params={"model": "res.partner.category"},
+    {"model": "res.partner.category"},
     m2m=True,
 )
 
@@ -81,7 +83,7 @@ for index, p in processor_dictionary.items():
     p.process(
         partner_mapping,
         output_filename,
-        params={"model": "res.partner"},
+        {"model": "res.partner"},
     )
 
 print("Split file generation complete.")

@@ -7,6 +7,7 @@ Processor for each row of the source data.
 """
 
 import base64
+import inspect
 import os
 from typing import Any, Callable
 
@@ -66,8 +67,21 @@ def val(
         if not value and skip:
             raise SkippingError(f"Missing required value for field '{field}'")
 
-        # Pass both value and state to the postprocess function
-        return postprocess(value or default, state)
+        final_value = value or default
+        try:
+            # Check how many arguments the postprocess function expects for
+            # backward compatibility with lambdas that only take one argument.
+            sig = inspect.signature(postprocess)
+            if len(sig.parameters) == 1:
+                # Old style: pass only the value
+                return postprocess(final_value)
+            else:
+                # New style: pass value and state
+                return postprocess(final_value, state)
+        except (ValueError, TypeError):
+            # Fallback for built-ins or other callables where signature
+            # inspection fails. Assume new style.
+            return postprocess(final_value, state)
 
     return val_fun
 
@@ -88,10 +102,27 @@ def concat(separator: str, *fields: Any, skip: bool = False) -> MapperFunc:
         # Filter out empty strings before joining
         result = separator.join([v for v in values if v])
         if not result and skip:
-            raise SkippingError(f"Concatenated value for fields {fields} is empty.")
+            raise SkippingError(
+                f"Concatenated value for fields {fields} is empty."
+            )
         return result
 
     return concat_fun
+
+
+def concat_mapper_all(separator: str, *fields: Any) -> MapperFunc:
+    """Same as concat mapper, but if one value in the list of values to concat
+    is empty, the entire returned value is an empty string.
+    """
+    mappers = _list_to_mappers(fields)
+
+    def concat_all_fun(line: LineDict, state: StateDict) -> str:
+        values = [str(m(line, state)) for m in mappers]
+        if not all(values):
+            return ""
+        return separator.join(values)
+
+    return concat_all_fun
 
 
 # --- Conditional Mappers ---
@@ -147,6 +178,34 @@ def num(field: str, default: str = "0.0") -> MapperFunc:
 # --- Relational Mappers ---
 
 
+def field(col: str) -> MapperFunc:
+    """Returns the column name if the column has a value, otherwise an empty string.
+    Useful for product attribute mappings where the attribute name itself is needed.
+    """
+
+    def field_fun(line: LineDict, state: StateDict) -> str:
+        return col if _get_field_value(line, col) else ""
+
+    return field_fun
+
+
+def m2o(
+    prefix: str, field: str, default: str = "", skip: bool = False
+) -> MapperFunc:
+    """M2O mapper.
+
+    Takes a field name and creates a Many2one external ID from its value.
+    """
+
+    def m2o_fun(line: LineDict, state: StateDict) -> str:
+        value = _get_field_value(line, field)
+        if skip and not value:
+            raise SkippingError(f"Missing Value for {field}")
+        return to_m2o(prefix, value, default=default)
+
+    return m2o_fun
+
+
 def m2o_map(
     prefix: str, *fields: Any, default: str = "", skip: bool = False
 ) -> MapperFunc:
@@ -160,7 +219,9 @@ def m2o_map(
     def m2o_fun(line: LineDict, state: StateDict) -> str:
         value = concat_mapper(line, state)
         if not value and skip:
-            raise SkippingError(f"Missing value for m2o_map with prefix '{prefix}'")
+            raise SkippingError(
+                f"Missing value for m2o_map with prefix '{prefix}'"
+            )
         return to_m2o(prefix, value, default=default)
 
     return m2o_fun
@@ -185,7 +246,9 @@ def m2m(prefix: str, *fields: Any, sep: str = ",") -> MapperFunc:
             field = fields[0]
             value = _get_field_value(line, field)
             if value:
-                all_values.extend(to_m2o(prefix, v.strip()) for v in value.split(sep))
+                all_values.extend(
+                    to_m2o(prefix, v.strip()) for v in value.split(sep)
+                )
 
         return ",".join(all_values)
 
@@ -206,6 +269,24 @@ def m2m_map(prefix: str, mapper_func: MapperFunc) -> MapperFunc:
         return to_m2m(prefix, value)
 
     return m2m_map_fun
+
+
+def m2o_att_name(prefix: str, att_list: list[str]) -> MapperFunc:
+    """M2O Attribute Name Mapper.
+
+    Returns a mapper that creates a dictionary mapping attribute names to
+    their corresponding external IDs, but only for attributes that have a
+    value in the current row.
+    """
+
+    def m2o_att_fun(line: LineDict, state: StateDict) -> dict[str, str]:
+        return {
+            att: to_m2o(prefix, att)
+            for att in att_list
+            if _get_field_value(line, att)
+        }
+
+    return m2o_att_fun
 
 
 def m2m_id_list(prefix: str, *fields: Any, sep: str = ",") -> MapperFunc:
@@ -272,7 +353,10 @@ def record(mapping: dict) -> MapperFunc:
     def record_fun(line: LineDict, state: StateDict) -> dict:
         # This function returns a dictionary that the Processor will understand
         # as a related record to be created.
-        return {key: mapper_func(line, state) for key, mapper_func in mapping.items()}
+        return {
+            key: mapper_func(line, state)
+            for key, mapper_func in mapping.items()
+        }
 
     return record_fun
 
@@ -323,7 +407,9 @@ def binary_url_map(field: str, skip: bool = False) -> MapperFunc:
             return base64.b64encode(res.content).decode("utf-8")
         except requests.exceptions.RequestException as e:
             if skip:
-                raise SkippingError(f"Cannot fetch file at URL '{url}': {e}") from e
+                raise SkippingError(
+                    f"Cannot fetch file at URL '{url}': {e}"
+                ) from e
             log.warning(f"Cannot fetch file at URL '{url}': {e}")
             return ""
 
@@ -331,6 +417,73 @@ def binary_url_map(field: str, skip: bool = False) -> MapperFunc:
 
 
 # --- Legacy / Specialized Mappers ---
+
+
+def val_att(att_list: list[str]) -> MapperFunc:
+    """Value Attribute Mapper for version 9.
+
+    Returns a mapper that creates a dictionary containing only the attributes
+    from `att_list` that exist and have a truthy value in the current row.
+    """
+
+    def val_att_fun(line: LineDict, state: StateDict) -> dict[str, Any]:
+        return {
+            att: _get_field_value(line, att)
+            for att in att_list
+            if _get_field_value(line, att)
+        }
+
+    return val_att_fun
+
+
+def m2o_att(prefix: str, att_list: list[str]) -> MapperFunc:
+    """M2O Attribute Mapper for Version 9.
+
+    Returns a mapper that creates a dictionary mapping an attribute name
+    to its corresponding external ID, where the ID is composed of the
+    prefix, the attribute name, and the attribute's value.
+    """
+
+    def m2o_att_fun(line: LineDict, state: StateDict) -> dict[str, str]:
+        result = {}
+        for att in att_list:
+            value = _get_field_value(line, att)
+            if value:
+                # The ID is composed of 'prefix_attribute_value'
+                id_value = f"{att}_{value}"
+                result[att] = to_m2o(prefix, id_value)
+        return result
+
+    return m2o_att_fun
+
+
+def concat_field_value_m2m(separator: str, *fields: str) -> MapperFunc:
+    """Specialized concat mapper that joins each field name with its value,
+    then joins all resulting parts with a comma.
+    Example: ('_', 'Color', 'Size') on a row with Color='Red' and Size='L'
+    returns "Color_Red,Size_L"
+    """
+
+    def concat_fun(line: LineDict, state: StateDict) -> str:
+        parts = []
+        for field in fields:
+            value = _get_field_value(line, field)
+            if value:
+                parts.append(f"{field}{separator}{value}")
+        return ",".join(parts)
+
+    return concat_fun
+
+
+def m2m_attribute_value(prefix: str, *fields: str) -> MapperFunc:
+    """Creates a comma-separated list of m2m external IDs where each ID is
+    composed of the attribute name and its value. This is a composite
+    mapper for a common product attribute pattern.
+
+    Example: ('ATT', 'Color', 'Size') on a row with Color='Red'
+    returns "external_id::ATT_Color_Red,external_id::ATT_Size_L"
+    """
+    return m2m_map(prefix, concat_field_value_m2m("_", *fields))
 
 
 def m2m_template_attribute_value(prefix: str, *fields: Any) -> MapperFunc:
