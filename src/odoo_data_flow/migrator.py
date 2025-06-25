@@ -4,6 +4,8 @@ This module contains the logic for performing a direct, in-memory
 migration of data from one Odoo instance to another.
 """
 
+from typing import Any, Optional
+
 from .exporter import run_export_for_migration
 from .importer import run_import_for_migration
 from .lib.transform import Processor
@@ -11,17 +13,17 @@ from .logging_config import log
 
 
 def run_migration(
-    config_export,
-    config_import,
-    model,
-    domain="[]",
-    fields=None,
-    mapping=None,
-    export_worker=1,
-    export_batch_size=100,
-    import_worker=1,
-    import_batch_size=10,
-):
+    config_export: str,
+    config_import: str,
+    model: str,
+    domain: str = "[]",
+    fields: Optional[list[str]] = None,
+    mapping: Optional[dict[str, Any]] = None,
+    export_worker: int = 1,
+    export_batch_size: int = 100,
+    import_worker: int = 1,
+    import_batch_size: int = 10,
+) -> None:
     """Performs a server-to-server data migration.
 
     This function chains together the export, transform, and import processes
@@ -35,12 +37,12 @@ def run_migration(
         config=config_export,
         model=model,
         domain=domain,
-        fields=fields,
+        fields=fields or [],
         worker=export_worker,
         batch_size=export_batch_size,
     )
 
-    if not data:
+    if not header or not data:
         log.warning("No data exported. Migration finished.")
         return
 
@@ -55,15 +57,21 @@ def run_migration(
         mapping = processor.get_o2o_mapping()
 
     # The process method returns the transformed header and data
-    to_import_header, to_import_data = processor.process(mapping, filename=None)
+    to_import_header, to_import_data = processor.process(mapping, filename_out="")
+
+    # Ensure to_import_data is a list of lists
+    if isinstance(to_import_data, set):
+        to_import_data_list = [list(row) for row in to_import_data]
+    else:
+        to_import_data_list = to_import_data
 
     # Step 3: Import the transformed data into the destination database
-    log.info(f"Importing {len(to_import_data)} records into destination...")
+    log.info(f"Importing {len(to_import_data_list)} records into destination...")
     run_import_for_migration(
         config=config_import,
         model=model,
         header=to_import_header,
-        data=to_import_data,
+        data=to_import_data_list,
         worker=import_worker,
         batch_size=import_batch_size,
     )
