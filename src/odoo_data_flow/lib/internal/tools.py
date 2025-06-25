@@ -1,16 +1,16 @@
-"""Internal dooo-flow Tools.
+"""Internal odoo-data-flow Tools.
 
 This module provides low-level utility functions for data formatting
 and iteration,
 primarily used by the mapper and processor modules.
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from itertools import islice
-from typing import Any
+from typing import Any, Callable
 
 
-def batch(iterable: Iterable[Any], size: int) -> Iterable[list[Any]]:
+def batch(iterable: Iterable[Any], size: int) -> Iterator[list[Any]]:
     """Splits an iterable into batches of a specified size.
 
     Args:
@@ -43,9 +43,6 @@ def to_xmlid(name: str) -> str:
     Sanitizes a string to make it a valid XML ID, replacing special
     characters with underscores.
     """
-    if not isinstance(name, str):
-        name = str(name)
-
     # A mapping of characters to replace.
     replacements = {".": "_", ",": "_", "\n": "_", "|": "_", " ": "_"}
     for old, new in replacements.items():
@@ -71,11 +68,11 @@ def to_m2o(prefix: str, value: Any, default: str = "") -> str:
         return default
 
     # Ensure the prefix ends with a dot,
-    #  but don't add one if it's already there.
+    # but don't add one if it's already there.
     if not prefix.endswith("."):
         prefix += "."
 
-    return f"{prefix}{to_xmlid(value)}"
+    return f"{prefix}{to_xmlid(str(value))}"
 
 
 def to_m2m(prefix: str, value: str) -> str:
@@ -103,13 +100,20 @@ def to_m2m(prefix: str, value: str) -> str:
 class AttributeLineDict:
     """Aggregates attribute line data for product templates."""
 
-    def __init__(self, attribute_list_ids, id_gen_fun):
-        self.data = {}
-        self.att_list = attribute_list_ids
-        self.id_gen = id_gen_fun
+    def __init__(
+        self,
+        attribute_list_ids: list[list[str]],
+        id_gen_fun: Callable[..., str],
+    ) -> None:
+        """Initializes the aggregator."""
+        self.data: dict[str, dict[str, list[str]]] = {}
+        self.att_list: list[list[str]] = attribute_list_ids
+        self.id_gen: Callable[..., str] = id_gen_fun
 
-    def add_line(self, line, header):
-        """Processes a single line of attribute data and aggregates it
+    def add_line(self, line: list[Any], header: list[str]) -> None:
+        """Add line.
+
+        Processes a single line of attribute data and aggregates it
         by product template ID.
 
         `line` is expected to contain:
@@ -134,14 +138,16 @@ class AttributeLineDict:
                         template_info[att_id].append(value)
         else:
             # This is a new template
-            d = {}
+            d: dict[str, list[str]] = {}
             for att_id, att_name in self.att_list:
                 if line_dict.get("attribute_id/id", {}).get(att_name):
                     d[att_id] = [line_dict["value_ids/id"][att_name]]
             self.data[template_id] = d
 
-    def generate_line(self):
-        """Generates the final list of attribute lines for the CSV file,
+    def generate_line(self) -> tuple[list[str], list[list[str]]]:
+        """Generate line.
+
+        Generates the final list of attribute lines for the CSV file,
         one line per attribute per product template.
         """
         lines_header = [
@@ -150,7 +156,7 @@ class AttributeLineDict:
             "attribute_id/id",
             "value_ids/id",
         ]
-        lines_out = []
+        lines_out: list[list[str]] = []
         for template_id, attributes in self.data.items():
             if not template_id:
                 continue
