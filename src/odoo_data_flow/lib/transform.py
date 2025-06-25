@@ -86,7 +86,7 @@ class Processor:
                     dtd_validation=False,
                     load_dtd=False,
                 )
-                tree = etree.parse(filename, parser=parser)  # noqa: S320
+                tree = etree.parse(filename, parser=parser)
                 nodes = tree.xpath(xml_root_path)
 
                 if not nodes:

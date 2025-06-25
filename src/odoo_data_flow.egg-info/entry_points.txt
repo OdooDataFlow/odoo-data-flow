@@ -1,0 +1,2 @@
+[console_scripts]
+odoo-data-flow = odoo_data_flow.__main__:cli

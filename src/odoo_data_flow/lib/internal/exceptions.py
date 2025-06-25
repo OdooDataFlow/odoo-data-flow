@@ -14,7 +14,7 @@ class SkippingError(Exception):
     process to fail.
     """
 
-    def __init__(self, message: str, *args: Any):  # noqa: d301
+    def __init__(self, message: str, *args: Any):
         """Initializes the exception with a descriptive message.
 
         *args:
