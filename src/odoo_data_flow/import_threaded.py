@@ -15,8 +15,21 @@ from .lib.internal.rpc_thread import RpcThread
 from .lib.internal.tools import batch
 from .logging_config import log
 
-if sys.version_info.major >= 3:
-    csv.field_size_limit(sys.maxsize)
+# --- Fix for csv.field_size_limit OverflowError ---
+# In newer Python versions (3.10+), especially on 64-bit systems,
+# sys.maxsize is too large for the C long that the csv module's
+# field_size_limit function expects. This causes an OverflowError.
+# The following code block finds the maximum possible value that works
+# by reducing it until it's accepted.
+max_int = sys.maxsize
+decrement = True
+while decrement:
+    decrement = False
+    try:
+        csv.field_size_limit(max_int)
+    except OverflowError:
+        max_int = int(max_int / 10)
+        decrement = True
 
 
 class RPCThreadImport(RpcThread):
@@ -59,7 +72,9 @@ class RPCThreadImport(RpcThread):
                     for msg in res["messages"]:
                         record_index = msg.get("record", -1)
                         failed_line = (
-                            lines[record_index] if record_index < len(lines) else "N/A"
+                            lines[record_index]
+                            if record_index < len(lines)
+                            else "N/A"
                         )
                         log.error(
                             f"Odoo message for batch {num}: "
@@ -80,10 +95,12 @@ class RPCThreadImport(RpcThread):
                     success = True
 
             except Exception as e:
-                log.error(f"RPC call for batch {num} failed: {e}", exc_info=True)
+                log.error(
+                    f"RPC call for batch {num} failed: {e}", exc_info=True
+                )
                 success = False
 
-            if not success:
+            if not success and self.writer:
                 self.writer.writerows(lines)
 
             log.info(
@@ -91,7 +108,7 @@ class RPCThreadImport(RpcThread):
             )
 
         self.spawn_thread(
-            launch_batch_fun, [data_lines, batch_number], {"check": check}
+            launch_batch_fun, [data_lines, batch_number], {"do_check": check}
         )
 
 
@@ -160,7 +177,9 @@ def _create_batches(
         split_index = header.index(split_by_col)
         id_index = header.index("id")
     except ValueError as e:
-        log.error(f"Grouping column '{e}' not found in header. Cannot use --groupby.")
+        log.error(
+            f"Grouping column '{e}' not found in header. Cannot use --groupby."
+        )
         return
 
     # Sort data by the grouping column
@@ -227,7 +246,8 @@ def import_data(
         header, data = _read_data_file(file_csv, separator, encoding, skip)
         if not data:
             return  # Stop if file reading failed
-        fail_file = fail_file or file_csv + ".fail"
+        if not fail_file:  # Only set default if not provided
+            fail_file = file_csv + ".fail"
 
     if header is None or data is None:
         raise ValueError(
@@ -249,13 +269,19 @@ def import_data(
     fail_file_handle = None
     if fail_file:
         try:
-            fail_file_handle = open(fail_file, "w", newline="", encoding=encoding)
+            fail_file_handle = open(
+                fail_file, "w", newline="", encoding=encoding
+            )
             fail_file_writer = csv.writer(
                 fail_file_handle, separator=separator, quoting=csv.QUOTE_ALL
             )
-            fail_file_writer.writerow(header)  # Write header to fail file immediately
+            fail_file_writer.writerow(
+                header
+            )  # Write header to fail file immediately
         except OSError as e:
-            log.error(f"Could not open fail file for writing: {fail_file}. Error: {e}")
+            log.error(
+                f"Could not open fail file for writing: {fail_file}. Error: {e}"
+            )
             return  # Cannot proceed without a fail file
 
     rpc_thread = RPCThreadImport(

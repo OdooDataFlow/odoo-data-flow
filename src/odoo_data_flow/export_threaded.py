@@ -14,10 +14,21 @@ from .lib.internal.rpc_thread import RpcThread
 from .lib.internal.tools import batch
 from .logging_config import log
 
-# Set a high field size limit for CSV to handle potentially large fields
-# like base64 encoded binary data.
-if sys.version_info.major >= 3:
-    csv.field_size_limit(sys.maxsize)
+# --- Fix for csv.field_size_limit OverflowError ---
+# In newer Python versions (3.10+), especially on 64-bit systems,
+# sys.maxsize is too large for the C long that the csv module's
+# field_size_limit function expects. This causes an OverflowError.
+# The following code block finds the maximum possible value that works
+# by reducing it until it's accepted.
+max_int = sys.maxsize
+decrement = True
+while decrement:
+    decrement = False
+    try:
+        csv.field_size_limit(max_int)
+    except OverflowError:
+        max_int = int(max_int / 10)
+        decrement = True
 
 
 class RPCThreadExport(RpcThread):
@@ -46,7 +57,9 @@ class RPCThreadExport(RpcThread):
         def launch_batch_fun(ids_to_export: list[int], num: int):
             start_time = time()
             try:
-                log.debug(f"Exporting batch {num} with {len(ids_to_export)} records...")
+                log.debug(
+                    f"Exporting batch {num} with {len(ids_to_export)} records..."
+                )
                 # The actual RPC call to Odoo
                 datas = self.model.export_data(
                     ids_to_export, self.header, context=self.context
@@ -54,7 +67,7 @@ class RPCThreadExport(RpcThread):
                 self.results[num] = datas
                 log.debug(
                     f"Batch {num} finished in {time() - start_time:.2f}s. "
-                    "Fetched {len(datas)} records."
+                    f"Fetched {len(datas)} records."
                 )
             except Exception as e:
                 log.error(f"Export for batch {num} failed: {e}", exc_info=True)
@@ -132,7 +145,9 @@ def export_data(
         log.info(f"Writing exported data to file: {output}")
         try:
             with open(output, "w", newline="", encoding=encoding) as f:
-                writer = csv.writer(f, separator=separator, quoting=csv.QUOTE_ALL)
+                writer = csv.writer(
+                    f, separator=separator, quoting=csv.QUOTE_ALL
+                )
                 writer.writerow(header)
                 writer.writerows(all_exported_data)
             log.info("File writing complete.")
