@@ -119,9 +119,7 @@ class Processor:
     def get_o2o_mapping(self):
         """Generates a direct 1-to-1 mapping dictionary."""
         return {
-            str(column): MapperRepr(
-                f"mapper.val('{column}')", mapper.val(column)
-            )
+            str(column): MapperRepr(f"mapper.val('{column}')", mapper.val(column))
             for column in self.header
             if column
         }
@@ -144,13 +142,9 @@ class Processor:
         if params is None:
             params = {}
         if m2m:
-            head, data = self._process_mapping_m2m(
-                mapping, null_values=null_values
-            )
+            head, data = self._process_mapping_m2m(mapping, null_values=null_values)
         else:
-            head, data = self._process_mapping(
-                mapping, t=t, null_values=null_values
-            )
+            head, data = self._process_mapping(mapping, t=t, null_values=null_values)
 
         self._add_data(head, data, filename_out, params)
         return head, data
@@ -196,9 +190,7 @@ class Processor:
 
         Joins data from a secondary file into the processor's main data.
         """
-        child_header, child_data = self._read_file(
-            filename, separator, encoding
-        )
+        child_header, child_data = self._read_file(filename, separator, encoding)
 
         try:
             child_key_pos = child_header.index(child_key)
@@ -222,9 +214,7 @@ class Processor:
 
     def _add_data(self, head, data, filename_out, params):
         params = params.copy()
-        params["filename"] = (
-            os.path.abspath(filename_out) if filename_out else False
-        )
+        params["filename"] = os.path.abspath(filename_out) if filename_out else False
         params["header"] = head
         params["data"] = data
         self.file_to_write[filename_out] = params
@@ -237,16 +227,13 @@ class Processor:
         for i, line in enumerate(self.data):
             # Clean up null values
             cleaned_line = [
-                s.strip() if s and s.strip() not in null_values else ""
-                for s in line
+                s.strip() if s and s.strip() not in null_values else "" for s in line
             ]
             line_dict = dict(zip(self.header, cleaned_line))
 
             try:
                 # Pass the state dictionary to each mapper call
-                line_out = [
-                    mapping[k](line_dict, state) for k in mapping.keys()
-                ]
+                line_out = [mapping[k](line_dict, state) for k in mapping.keys()]
             except SkippingError as e:
                 log.debug(f"Skipping line {i}: {e.message}")
                 continue
@@ -402,9 +389,7 @@ class ProductProcessorV9(Processor):
         )
         line_aggregator = AttributeLineDict(attr_data, id_gen_fun)
         for row_dict in processed_rows:
-            values_lines = [
-                line_mapping[k](row_dict) for k in line_mapping.keys()
-            ]
+            values_lines = [line_mapping[k](row_dict) for k in line_mapping.keys()]
             line_aggregator.add_line(values_lines, list(line_mapping.keys()))
         line_header, line_data = line_aggregator.generate_line()
 
