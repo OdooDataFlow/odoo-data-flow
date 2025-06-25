@@ -1,6 +1,7 @@
 """This module contains the core logic for importing data into Odoo."""
 
 import ast
+import os
 from typing import Any, Optional
 
 from . import import_threaded
@@ -10,7 +11,7 @@ from .logging_config import log
 def run_import(
     config: str,
     filename: str,
-    model: str,
+    model: Optional[str] = None,
     worker: int = 1,
     batch_size: int = 10,
     skip: int = 0,
@@ -28,7 +29,8 @@ def run_import(
     Args:
         config: Path to the connection configuration file.
         filename: Path to the source CSV file to import.
-        model: The Odoo model to import data into.
+        model: The Odoo model to import data into. If not provided, it's inferred
+               from the filename.
         worker: The number of simultaneous connections to use.
         batch_size: The number of records to process in each batch.
         skip: The number of initial lines to skip in the source file.
@@ -42,6 +44,19 @@ def run_import(
         encoding: The file encoding of the source file.
     """
     log.info("Starting data import process from file...")
+
+    final_model = model
+    if not final_model:
+        # Infer model from filename if not provided
+        base_name = os.path.basename(filename)
+        final_model = os.path.splitext(base_name)[0].replace("_", ".")
+        log.info(f"No model provided. Inferred model '{final_model}' from filename.")
+
+    if not final_model:
+        log.error(
+            "Model not specified and could not be inferred from filename. Aborting."
+        )
+        return
 
     file_csv = filename
     fail_file = file_csv + ".fail"
@@ -69,12 +84,12 @@ def run_import(
         max_connection_run = int(worker)
 
     log.info(f"Importing file: {file_csv}")
-    log.info(f"Target model: {model}")
+    log.info(f"Target model: {final_model}")
     log.info(f"Workers: {max_connection_run}, Batch Size: {batch_size_run}")
 
     import_threaded.import_data(
         config,
-        model,
+        final_model,
         file_csv=file_csv,
         context=parsed_context,
         fail_file=fail_file,

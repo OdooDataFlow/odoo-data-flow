@@ -40,7 +40,9 @@ def workflow_group() -> None:
 # --- Invoice v9 Workflow Sub-command ---
 # This command is now correctly nested under the 'workflow' group.
 @workflow_group.command(name="invoice-v9")
-@click.option("-c", "--config", required=True, help="Path to the connection.conf file.")
+@click.option(
+    "-c", "--config", required=True, help="Path to the connection.conf file."
+)
 @click.option(
     "--action",
     "actions",
@@ -93,7 +95,14 @@ def invoice_v9_cmd(**kwargs: Any) -> None:
     help="Configuration file for connection parameters.",
 )
 @click.option("--file", "filename", required=True, help="File to import.")
-@click.option("--model", required=True, help="Odoo model to import into.")
+@click.option(
+    "--model",
+    required=False,
+    default=None,
+    help="Odoo model to import into. If not provided, "
+    "it will be inferred from the filename "
+    "(e.g., 'res_partner.csv' -> 'res.partner').",
+)
 @click.option(
     "--worker", default=1, type=int, help="Number of simultaneous connections."
 )
@@ -104,14 +113,18 @@ def invoice_v9_cmd(**kwargs: Any) -> None:
     type=int,
     help="Number of lines to import per connection.",
 )
-@click.option("--skip", default=0, type=int, help="Number of initial lines to skip.")
+@click.option(
+    "--skip", default=0, type=int, help="Number of initial lines to skip."
+)
 @click.option(
     "--fail",
     is_flag=True,
     default=False,
     help="Run in fail mode, retrying records from the .fail file.",
 )
-@click.option("-s", "--sep", "separator", default=";", help="CSV separator character.")
+@click.option(
+    "-s", "--sep", "separator", default=";", help="CSV separator character."
+)
 @click.option(
     "--groupby",
     "split",
@@ -157,7 +170,9 @@ def import_cmd(**kwargs: Any) -> None:
 @click.option(
     "--fields", required=True, help="Comma-separated list of fields to export."
 )
-@click.option("--domain", default="[]", help="Odoo domain filter as a list string.")
+@click.option(
+    "--domain", default="[]", help="Odoo domain filter as a list string."
+)
 @click.option(
     "--worker", default=1, type=int, help="Number of simultaneous connections."
 )
@@ -168,7 +183,9 @@ def import_cmd(**kwargs: Any) -> None:
     type=int,
     help="Number of records to process per batch.",
 )
-@click.option("-s", "--sep", "separator", default=";", help="CSV separator character.")
+@click.option(
+    "-s", "--sep", "separator", default=";", help="CSV separator character."
+)
 @click.option(
     "--context",
     default="{'tracking_disable': True}",
@@ -194,7 +211,9 @@ def export_cmd(**kwargs: Any) -> None:
     default=None,
     help="Image path prefix. Defaults to the current working directory.",
 )
-@click.option("--out", default="out.csv", help="Name of the resulting output file.")
+@click.option(
+    "--out", default="out.csv", help="Name of the resulting output file."
+)
 def path_to_image_cmd(**kwargs: Any) -> None:
     """Converts columns with local file paths into base64 strings."""
     run_path_to_image(**kwargs)
@@ -209,7 +228,9 @@ def path_to_image_cmd(**kwargs: Any) -> None:
     required=True,
     help="Comma-separated list of fields with URLs to convert to base64.",
 )
-@click.option("--out", default="out.csv", help="Name of the resulting output file.")
+@click.option(
+    "--out", default="out.csv", help="Name of the resulting output file."
+)
 def url_to_image_cmd(**kwargs: Any) -> None:
     """Downloads content from URLs in columns and converts to base64."""
     run_url_to_image(**kwargs)
