@@ -144,7 +144,9 @@ def mypy(session: nox.Session) -> None:
     session.install("-e", ".")
     session.run("mypy", *args)
     if not session.posargs:
-        session.run("mypy", f"--python-executable={sys.executable}", "noxfile.py")
+        session.run(
+            "mypy", f"--python-executable={sys.executable}", "noxfile.py"
+        )
 
 
 @nox.session(python=python_versions)
@@ -238,16 +240,18 @@ def docs_build(session: nox.Session) -> None:
     if not session.posargs and "FORCE_COLOR" in os.environ:
         args.insert(0, "--color")
 
-    session.run(
-        "uv",
-        "sync",
-        "--group",
-        "docs",
-        "--group",
-        "dev",
-        env={"UV_PROJECT_ENVIRONMENT": session.virtualenv.location},
-        external=True,
-    )
+    # session.run(
+    #     "uv",
+    #     "sync",
+    #     "--group",
+    #     "docs",
+    #     "--group",
+    #     "dev",
+    #     env={"UV_PROJECT_ENVIRONMENT": session.virtualenv.location},
+    #     external=True,
+    # )
+    session.install("--group", "dev", "--group", "docs")
+    session.install("-e", ".")
 
     build_dir = Path("docs", "_build")
     if build_dir.exists():
