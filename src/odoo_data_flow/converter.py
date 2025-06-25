@@ -6,7 +6,7 @@ or URLs to base64 strings, for use in Odoo imports.
 
 import base64
 import os
-from typing import Optional
+from typing import Any, Callable, Optional
 
 from .lib import mapper
 from .lib.transform import Processor
@@ -38,19 +38,24 @@ def run_path_to_image(
     processor = Processor(file)
     mapping = processor.get_o2o_mapping()
 
+    # Create a new mapping with the correct value type for the 'process' method
+    callable_mapping: dict[str, Callable[..., Any]] = {
+        k: v.func for k, v in mapping.items()
+    }
+
     for f in fields.split(","):
         field_name = f.strip()
-        if field_name not in mapping:
+        if field_name not in callable_mapping:
             log.warning(f"Field '{field_name}' not found in source file. Skipping.")
             continue
 
         log.info(f"Setting up conversion for column: '{field_name}'")
-        mapping[field_name] = mapper.val(
+        callable_mapping[field_name] = mapper.val(
             field_name,
             postprocess=lambda x: to_base64(os.path.join(base_path, x)) if x else "",
         )
 
-    processor.process(mapping, out, {}, "list")
+    processor.process(callable_mapping, out, t="list")
     processor.write_to_file("")
     log.info(f"Conversion complete. Output written to '{out}'.")
 
@@ -66,17 +71,19 @@ def run_url_to_image(file: str, fields: str, out: str = "out.csv") -> None:
     processor = Processor(file)
     mapping = processor.get_o2o_mapping()
 
+    callable_mapping: dict[str, Callable[..., Any]] = {
+        k: v.func for k, v in mapping.items()
+    }
+
     for f in fields.split(","):
         field_name = f.strip()
-        if field_name not in mapping:
+        if field_name not in callable_mapping:
             log.warning(f"Field '{field_name}' not found in source file. Skipping.")
             continue
 
         log.info(f"Setting up URL download and conversion for column: '{field_name}'")
-        # Use the binary_url_map mapper to download
-        # and encode the content from the URL
-        mapping[field_name] = mapper.binary_url_map(field_name)
+        callable_mapping[field_name] = mapper.binary_url_map(field_name)
 
-    processor.process(mapping, out, {}, "list")
+    processor.process(callable_mapping, out, t="list")
     processor.write_to_file("")
     log.info(f"Conversion complete. Output written to '{out}'.")
