@@ -88,9 +88,7 @@ def concat(separator: str, *fields: Any, skip: bool = False) -> MapperFunc:
         # Filter out empty strings before joining
         result = separator.join([v for v in values if v])
         if not result and skip:
-            raise SkippingError(
-                f"Concatenated value for fields {fields} is empty."
-            )
+            raise SkippingError(f"Concatenated value for fields {fields} is empty.")
         return result
 
     return concat_fun
@@ -162,9 +160,7 @@ def m2o_map(
     def m2o_fun(line: LineDict, state: StateDict) -> str:
         value = concat_mapper(line, state)
         if not value and skip:
-            raise SkippingError(
-                f"Missing value for m2o_map with prefix '{prefix}'"
-            )
+            raise SkippingError(f"Missing value for m2o_map with prefix '{prefix}'")
         return to_m2o(prefix, value, default=default)
 
     return m2o_fun
@@ -189,9 +185,7 @@ def m2m(prefix: str, *fields: Any, sep: str = ",") -> MapperFunc:
             field = fields[0]
             value = _get_field_value(line, field)
             if value:
-                all_values.extend(
-                    to_m2o(prefix, v.strip()) for v in value.split(sep)
-                )
+                all_values.extend(to_m2o(prefix, v.strip()) for v in value.split(sep))
 
         return ",".join(all_values)
 
@@ -278,10 +272,7 @@ def record(mapping: dict) -> MapperFunc:
     def record_fun(line: LineDict, state: StateDict) -> dict:
         # This function returns a dictionary that the Processor will understand
         # as a related record to be created.
-        return {
-            key: mapper_func(line, state)
-            for key, mapper_func in mapping.items()
-        }
+        return {key: mapper_func(line, state) for key, mapper_func in mapping.items()}
 
     return record_fun
 
@@ -332,9 +323,7 @@ def binary_url_map(field: str, skip: bool = False) -> MapperFunc:
             return base64.b64encode(res.content).decode("utf-8")
         except requests.exceptions.RequestException as e:
             if skip:
-                raise SkippingError(
-                    f"Cannot fetch file at URL '{url}': {e}"
-                ) from e
+                raise SkippingError(f"Cannot fetch file at URL '{url}': {e}") from e
             log.warning(f"Cannot fetch file at URL '{url}': {e}")
             return ""
 

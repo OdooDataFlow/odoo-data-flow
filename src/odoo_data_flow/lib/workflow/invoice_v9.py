@@ -40,9 +40,7 @@ class InvoiceWorkflowV9:
         self.connection = connection
         self.invoice_obj = connection.get_model("account.invoice")
         self.payment_obj = connection.get_model("account.payment")
-        self.account_invoice_tax = self.connection.get_model(
-            "account.invoice.tax"
-        )
+        self.account_invoice_tax = self.connection.get_model("account.invoice.tax")
         self.field = field
         self.status_map = status_map
         self.paid_date = paid_date_field
@@ -83,9 +81,9 @@ class InvoiceWorkflowV9:
 
     def validate_invoice(self):
         """Finds and validates invoices that should be open or paid."""
-        statuses_to_validate = self.status_map.get(
-            "open", []
-        ) + self.status_map.get("paid", [])
+        statuses_to_validate = self.status_map.get("open", []) + self.status_map.get(
+            "paid", []
+        )
         invoice_to_validate = self.invoice_obj.search(
             [
                 (self.field, "in", statuses_to_validate),
@@ -168,9 +166,7 @@ class InvoiceWorkflowV9:
                 "amount",
                 "payment_type",
             ]
-            data = self.payment_obj.default_get(
-                fields_to_get, context=wizard_context
-            )
+            data = self.payment_obj.default_get(fields_to_get, context=wizard_context)
             data.update(data_update)
             wizard_id = self.payment_obj.create(data, context=wizard_context)
             try:
