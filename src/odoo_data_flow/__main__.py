@@ -29,8 +29,17 @@ def cli(ctx: click.Context, verbose: bool) -> None:
         click.echo(ctx.get_help())
 
 
-# --- Workflow Command ---
-@cli.command(name="workflow-invoice-v9")
+# --- Workflow Command Group ---
+# This defines 'workflow' as a subcommand of 'cli'.
+@cli.group(name="workflow")
+def workflow_group() -> None:
+    """Run post-import processing workflows."""
+    pass
+
+
+# --- Invoice v9 Workflow Sub-command ---
+# This command is now correctly nested under the 'workflow' group.
+@workflow_group.command(name="invoice-v9")
 @click.option("-c", "--config", required=True, help="Path to the connection.conf file.")
 @click.option(
     "--action",
@@ -75,6 +84,7 @@ def invoice_v9_cmd(**kwargs: Any) -> None:
 
 
 # --- Import Command ---
+# This command is attached directly to the main 'cli' group.
 @cli.command(name="import")
 @click.option(
     "-c",
