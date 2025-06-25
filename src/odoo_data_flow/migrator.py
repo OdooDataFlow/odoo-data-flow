@@ -55,7 +55,8 @@ def run_migration(
     final_mapping: dict[str, Callable[..., Any]]
     if not mapping:
         log.info("No mapping provided, using 1-to-1 mapping.")
-        final_mapping = processor.get_o2o_mapping()
+        # Convert the MapperRepr dict to a callable dict for the process method
+        final_mapping = {k: v.func for k, v in processor.get_o2o_mapping().items()}
     else:
         final_mapping = mapping
 
