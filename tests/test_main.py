@@ -48,4 +48,4 @@ def test_import_fails_without_options(runner: CliRunner) -> None:
     assert result.exit_code != 0
     # Click's error message should mention the missing options.
     assert "Missing option" in result.output
-    assert "--config" in result.output
+    assert "--file" in result.output
