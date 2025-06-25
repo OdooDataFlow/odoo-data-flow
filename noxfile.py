@@ -143,7 +143,9 @@ def mypy(session: nox.Session) -> None:
     session.install("-e", ".")
     session.run("mypy", *args)
     if not session.posargs:
-        session.run("mypy", f"--python-executable={sys.executable}", "noxfile.py")
+        session.run(
+            "mypy", f"--python-executable={sys.executable}", "noxfile.py"
+        )
 
 
 @nox.session(python=python_versions)
@@ -171,7 +173,7 @@ def coverage(session: nox.Session) -> None:
     session.install("pytest", "coverage[toml]", "pytest-cov")
     session.install("-e", ".")
     session.log("Running pytest with coverage...")
-    session.run("pytest", "--cov=src", "--cov-report=xml", *session.posargs)
+    session.run("pytest", "--cov=src", "--cov-report=xml")
 
     if not session.posargs and any(Path().glob(".coverage.*")):
         session.run("coverage", "combine")
@@ -236,7 +238,9 @@ def docs_build(session: nox.Session) -> None:
         "docs",
         external=True,
     )
-    session.install("sphinx", "sphinx-mermaid", "sphinx-click", "myst_parser", "furo")
+    session.install(
+        "sphinx", "sphinx-mermaid", "sphinx-click", "myst_parser", "furo"
+    )
     session.install("-e", ".")
 
     build_dir = Path("docs", "_build")
