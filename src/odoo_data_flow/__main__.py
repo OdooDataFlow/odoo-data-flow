@@ -1,7 +1,7 @@
 """Command-line interface for odoo-data-flow."""
 
 import ast
-from typing import Any
+from typing import Any, Optional
 
 import click
 
@@ -21,15 +21,22 @@ from .workflow_runner import run_invoice_v9_workflow
 @click.option(
     "-v", "--verbose", is_flag=True, help="Enable verbose, debug-level logging."
 )
+@click.option(
+    "--log-file",
+    default=None,
+    type=click.Path(),
+    help="Path to a file to write logs to, in addition to the console.",
+)
 @click.pass_context
-def cli(ctx: click.Context, verbose: bool) -> None:
+def cli(ctx: click.Context, verbose: bool, log_file: Optional[str]) -> None:
     """Odoo Data Flow: A tool for importing, exporting, and processing data."""
-    setup_logging(verbose)
+    setup_logging(verbose, log_file)
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())
 
 
 # --- Workflow Command Group ---
+# This defines 'workflow' as a subcommand of 'cli'.
 @cli.group(name="workflow")
 def workflow_group() -> None:
     """Run post-import processing workflows."""
@@ -37,6 +44,7 @@ def workflow_group() -> None:
 
 
 # --- Invoice v9 Workflow Sub-command ---
+# This command is now correctly nested under the 'workflow' group.
 @workflow_group.command(name="invoice-v9")
 @click.option(
     "-c",
@@ -88,6 +96,7 @@ def invoice_v9_cmd(**kwargs: Any) -> None:
 
 
 # --- Import Command ---
+# This command is attached directly to the main 'cli' group.
 @cli.command(name="import")
 @click.option(
     "-c",
@@ -117,7 +126,7 @@ def invoice_v9_cmd(**kwargs: Any) -> None:
     "--fail",
     is_flag=True,
     default=False,
-    help="Run in fail mode, retrying records from the .fail file.",
+    help="Run in fail mode, retrying records from the .fail.csv file.",
 )
 @click.option("-s", "--sep", "separator", default=";", help="CSV separator character.")
 @click.option(
