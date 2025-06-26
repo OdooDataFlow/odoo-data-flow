@@ -9,7 +9,7 @@ import csv
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 from odoo_data_flow.converter import run_path_to_image, run_url_to_image
 
@@ -69,10 +69,14 @@ def test_run_path_to_image(tmp_path: Path) -> None:
     assert result_data[0]["image_path"] == expected_base64
 
     assert result_data[1]["name"] == "Product B"
-    assert result_data[1]["image_path"] == "", "Path for missing file should be empty"
+    assert result_data[1]["image_path"] == "", (
+        "Path for missing file should be empty"
+    )
 
     assert result_data[2]["name"] == "Product C"
-    assert result_data[2]["image_path"] == "", "Empty path should result in empty"
+    assert result_data[2]["image_path"] == "", (
+        "Empty path should result in empty"
+    )
 
 
 # Patch the target where it is looked up: in the mapper module
@@ -137,4 +141,6 @@ def test_run_url_to_image(mock_requests_get: MagicMock, tmp_path: Path) -> None:
     assert result_data[0]["image_url"] == expected_base64
 
     assert result_data[1]["name"] == "Product E"
-    assert result_data[1]["image_url"] == "", "URL for failed download should be empty"
+    assert result_data[1]["image_url"] == "", (
+        "URL for failed download should be empty"
+    )
