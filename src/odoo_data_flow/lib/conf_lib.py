@@ -32,10 +32,16 @@ def get_connection_from_config(config_file: str) -> Any:
         raise FileNotFoundError(f"Configuration file not found: {config_file}")
 
     try:
-        # Define conn_details to hold both strings and integers.
         conn_details: dict[str, Any] = dict(config["Connection"])
 
-        # Ensure port and uid are integers
+        # Explicitly check for required keys before proceeding.
+        # This loop is the crucial fix.
+        required_keys = ["hostname", "database", "login", "password"]
+        for key in required_keys:
+            if key not in conn_details:
+                raise KeyError(f"Required key '{key}' not found in config file.")
+
+        # Ensure port and uid are integers if they exist
         if "port" in conn_details:
             conn_details["port"] = int(conn_details["port"])
         if "uid" in conn_details:
