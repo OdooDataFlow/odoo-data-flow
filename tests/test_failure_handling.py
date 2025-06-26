@@ -40,9 +40,7 @@ def test_two_step_failure_handling(tmp_path: Path) -> None:
     mock_model_load = MagicMock()
 
     # Define the behavior for the mock `load` method
-    def load_side_effect(
-        header: list[str], data: list[list[Any]], **kwargs: Any
-    ):
+    def load_side_effect(header: list[str], data: list[list[Any]], **kwargs: Any):
         # First pass: fail if it's a batch import
         if len(data) > 1:
             return {"messages": [{"message": "Generic batch import error"}]}
@@ -85,9 +83,7 @@ def test_two_step_failure_handling(tmp_path: Path) -> None:
         )
 
     # --- Assertions for the First Pass ---
-    assert intermediate_fail_file.exists(), (
-        "Intermediate .fail.csv was not created"
-    )
+    assert intermediate_fail_file.exists(), "Intermediate .fail.csv was not created"
 
     with open(intermediate_fail_file, encoding="utf-8") as f:
         reader = csv.reader(f)
@@ -98,9 +94,7 @@ def test_two_step_failure_handling(tmp_path: Path) -> None:
     assert len(data_fail1) == 3, (
         "The entire failed batch should be in the .fail.csv file"
     )
-    assert (
-        data_fail1[1][1] == "Record 2 (will fail again)"
-    )  # Check content integrity
+    assert data_fail1[1][1] == "Record 2 (will fail again)"  # Check content integrity
 
     # --- 3. Second Pass: Run the import with the --fail flag ---
 
@@ -131,9 +125,7 @@ def test_two_step_failure_handling(tmp_path: Path) -> None:
         header_fail2 = next(reader)
         data_fail2 = list(reader)
 
-    assert "_ERROR_REASON" in header_fail2, (
-        "The _ERROR_REASON column is missing"
-    )
+    assert "_ERROR_REASON" in header_fail2, "The _ERROR_REASON column is missing"
     assert len(data_fail2) == 1, (
         "Only the single permanently failing record should be in the final file"
     )
