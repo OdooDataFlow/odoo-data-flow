@@ -24,7 +24,7 @@ def test_two_step_failure_handling(tmp_path: Path) -> None:
     intermediate_fail_file = tmp_path / f"{model_name}.fail.csv"
 
     header = ["id", "name", "value"]
-    # We will make the record with id='REC-02' fail on the second pass
+    # We will make the record with id='my_import.rec_02' fail on the second pass
     source_data = [
         ["my_import.rec_01", "Record 1", "100"],
         ["my_import.rec_02", "Record 2 (will fail again)", "200"],
@@ -40,7 +40,9 @@ def test_two_step_failure_handling(tmp_path: Path) -> None:
     mock_model_load = MagicMock()
 
     # Define the behavior for the mock `load` method
-    def load_side_effect(header: list[str], data: list[list[Any]], **kwargs: Any):
+    def load_side_effect(
+        header: list[str], data: list[list[Any]], **kwargs: Any
+    ) -> dict[str, Any]:
         # First pass: fail if it's a batch import
         if len(data) > 1:
             return {"messages": [{"message": "Generic batch import error"}]}
