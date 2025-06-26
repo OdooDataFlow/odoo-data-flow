@@ -1,5 +1,7 @@
 """Test the IO Handling functionalities."""
 
+# tests/test_io.py
+
 import shlex
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -28,10 +30,7 @@ def test_write_csv_oserror(mock_log_error: MagicMock, mock_open: MagicMock) -> N
 
 
 def test_write_file_writes_csv_data(tmp_path: Path) -> None:
-    """Test the csv writer.
-
-    Tests that write_file correctly calls write_csv to create the data file.
-    """
+    """Tests that write_file correctly calls write_csv to create the data file."""
     data_file = tmp_path / "data.csv"
 
     with patch("odoo_data_flow.lib.internal.io.write_csv") as mock_write_csv:
@@ -39,7 +38,7 @@ def test_write_file_writes_csv_data(tmp_path: Path) -> None:
             filename=str(data_file),
             header=["id", "name"],
             data=[["1", "test"]],
-            launchfile=None,  # Explicitly no launchfile
+            launchfile="",  # Correctly pass an empty string instead of None
         )
         mock_write_csv.assert_called_once_with(
             str(data_file), ["id", "name"], [["1", "test"]], encoding="utf-8"
@@ -85,7 +84,7 @@ def test_write_file_full_script_generation(tmp_path: Path) -> None:
         batch_size=50,
         groupby="parent_id/id",
         ignore="field_to_ignore",
-        context="{'active_test': False}",
+        context={"active_test": False},  # Correctly pass a dict instead of a string
         conf_file="conf/custom.conf",
     )
 
@@ -135,7 +134,7 @@ def test_write_file_auto_model_name(tmp_path: Path) -> None:
 def test_write_file_oserror(
     mock_log_error: MagicMock, mock_open: MagicMock, mock_write_csv: MagicMock
 ) -> None:
-    """Test the error while writing.
+    """Test write fle os error.
 
     Tests that write_file logs an error if an OSError occurs during script writing.
     """
