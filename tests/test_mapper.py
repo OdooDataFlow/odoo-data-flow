@@ -1,9 +1,9 @@
-"""Test The mapper functions."""
+"""Test the core mapper functions."""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
-import requests
+import requests  # type: ignore[import-untyped]
 
 from odoo_data_flow.lib import mapper
 from odoo_data_flow.lib.internal.exceptions import SkippingError
@@ -37,13 +37,14 @@ def test_val_postprocess_fallback() -> None:
     This simulates a callable that doesn't accept the 'state' argument.
     """
 
-    def one_arg_lambda(x):
+    def one_arg_lambda(x: str) -> str:
         return x.lower()
 
     # Force the two-argument call to ensure the fallback to one argument is tested
     with patch("inspect.signature") as mock_signature:
-        # Pretend the signature check passed, forcing a TypeError on the call
-        mock_signature.return_value.parameters = [1, 2]
+        # Pretend the signature check passed, forcing a TypeError on the call.
+        # The parameters attribute must be a dictionary-like object.
+        mock_signature.return_value.parameters = {"arg1": None, "arg2": None}
         mapper_func = mapper.val("col1", postprocess=one_arg_lambda)
         assert mapper_func(LINE_SIMPLE, {}) == "a"
 
