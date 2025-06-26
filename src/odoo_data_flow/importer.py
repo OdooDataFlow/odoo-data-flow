@@ -2,6 +2,7 @@
 
 import ast
 import os
+from datetime import datetime
 from typing import Any, Optional
 
 from . import import_threaded
@@ -58,9 +59,6 @@ def run_import(
         )
         return
 
-    file_csv = filename
-    fail_file = file_csv + ".fail"
-
     try:
         parsed_context = ast.literal_eval(context)
         if not isinstance(parsed_context, dict):
@@ -73,26 +71,43 @@ def run_import(
 
     ignore_list = ignore.split(",") if ignore else []
 
+    file_dir = os.path.dirname(filename)
+
+    file_to_process: str
+    fail_output_file: str
+    is_fail_run: bool
+    batch_size_run: int
+    max_connection_run: int
+
     if fail:
         log.info("Running in --fail mode. Retrying failed records...")
-        file_csv = fail_file
-        fail_file = fail_file + ".bis"
+        file_to_process = os.path.join(file_dir, f"{final_model}.fail.csv")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        original_basename = os.path.splitext(os.path.basename(filename))[0]
+        fail_output_file = os.path.join(
+            file_dir, f"{original_basename}_{timestamp}_failed.csv"
+        )
         batch_size_run = 1
         max_connection_run = 1
+        is_fail_run = True
     else:
+        file_to_process = filename
+        fail_output_file = os.path.join(file_dir, f"{final_model}.fail.csv")
         batch_size_run = int(batch_size)
         max_connection_run = int(worker)
+        is_fail_run = False
 
-    log.info(f"Importing file: {file_csv}")
+    log.info(f"Importing file: {file_to_process}")
     log.info(f"Target model: {final_model}")
     log.info(f"Workers: {max_connection_run}, Batch Size: {batch_size_run}")
+    log.info(f"Failed records will be saved to: {fail_output_file}")
 
     import_threaded.import_data(
         config,
         final_model,
-        file_csv=file_csv,
+        file_csv=file_to_process,
         context=parsed_context,
-        fail_file=fail_file,
+        fail_file=fail_output_file,
         encoding=encoding,
         separator=separator,
         ignore=ignore_list,
@@ -102,6 +117,7 @@ def run_import(
         batch_size=batch_size_run,
         skip=int(skip),
         o2m=o2m,
+        is_fail_run=is_fail_run,
     )
 
     log.info("Import process finished.")

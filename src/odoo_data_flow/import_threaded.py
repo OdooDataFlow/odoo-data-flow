@@ -46,6 +46,7 @@ class RPCThreadImport(RpcThread):
         header: list[str],
         writer: Optional[Any] = None,  # csv.writer is not a type, use Any
         context: Optional[dict[str, Any]] = None,
+        add_error_reason: bool = False,
     ) -> None:
         """Initializes the import thread handler."""
         super().__init__(max_connection)
@@ -53,6 +54,56 @@ class RPCThreadImport(RpcThread):
         self.header = header
         self.writer = writer
         self.context = context or {}
+        self.add_error_reason = add_error_reason
+
+    def _handle_odoo_messages(
+        self, messages: list[dict[str, Any]], original_lines: list[list[Any]]
+    ) -> list[list[Any]]:
+        """Processes error messages from an Odoo load response."""
+        failed_lines = []
+        full_error_message = ""
+        for msg in messages:
+            message = msg.get("message", "Unknown Odoo error")
+            full_error_message += message + "\n"
+            record_index = msg.get("record", -1)
+            if record_index >= 0 and record_index < len(original_lines):
+                failed_line = original_lines[record_index]
+                if self.add_error_reason:
+                    failed_line.append(message.replace("\n", " | "))
+                failed_lines.append(failed_line)
+
+        # If Odoo sends a generic message without record details, assume all failed.
+        if not failed_lines:
+            if self.add_error_reason:
+                for line in original_lines:
+                    line.append(full_error_message.replace("\n", " | "))
+            failed_lines.extend(original_lines)
+        return failed_lines
+
+    def _handle_rpc_error(
+        self, error: Exception, lines: list[list[Any]]
+    ) -> list[list[Any]]:
+        """Handles a general RPC exception, marking all lines as failed."""
+        error_message = str(error).replace("\n", " | ")
+        if self.add_error_reason:
+            for line in lines:
+                line.append(error_message)
+        return lines
+
+    def _handle_record_mismatch(
+        self, response: dict[str, Any], lines: list[list[Any]]
+    ) -> list[list[Any]]:
+        """Handles the case where imported records don't match sent lines."""
+        error_message = (
+            f"Record count mismatch. Expected {len(lines)}, "
+            f"got {len(response.get('ids', []))}. "
+            "Probably a duplicate XML ID."
+        )
+        log.error(error_message)
+        if self.add_error_reason:
+            for line in lines:
+                line.append(error_message)
+        return lines
 
     def launch_batch(
         self,
@@ -63,44 +114,26 @@ class RPCThreadImport(RpcThread):
         """Submits a batch of data lines to be imported by a worker thread."""
 
         def launch_batch_fun(lines: list[list[Any]], num: Any, do_check: bool) -> None:
+            """The actual function executed by the worker thread."""
             start_time = time()
-            success = False
+            failed_lines = []
             try:
                 log.debug(f"Importing batch {num} with {len(lines)} records...")
                 res = self.model.load(self.header, lines, context=self.context)
 
                 if res.get("messages"):
-                    for msg in res["messages"]:
-                        record_index = msg.get("record", -1)
-                        failed_line = (
-                            lines[record_index]
-                            if record_index >= 0 and record_index < len(lines)
-                            else "N/A"
-                        )
-                        log.error(
-                            f"Odoo message for batch {num}: "
-                            f"{msg.get('message', 'Unknown error')}. "
-                            f"Record data: {failed_line}"
-                        )
-                    success = False
+                    failed_lines = self._handle_odoo_messages(res["messages"], lines)
                 elif do_check and len(res.get("ids", [])) != len(lines):
-                    log.error(
-                        f"Record count mismatch for batch {num}. "
-                        f"Expected {len(lines)}, "
-                        f"got {len(res.get('ids', []))}. "
-                        "Probably a duplicate XML ID."
-                    )
-                    success = False
-                else:
-                    success = True
+                    failed_lines = self._handle_record_mismatch(res, lines)
 
             except Exception as e:
                 log.error(f"RPC call for batch {num} failed: {e}", exc_info=True)
-                success = False
+                failed_lines = self._handle_rpc_error(e, lines)
 
-            if not success and self.writer:
-                self.writer.writerows(lines)
+            if failed_lines and self.writer:
+                self.writer.writerows(failed_lines)
 
+            success = not bool(failed_lines)
             log.info(
                 f"Time for batch {num}: {time() - start_time:.2f}s. Success: {success}"
             )
@@ -224,6 +257,7 @@ def import_data(
     batch_size: int = 10,
     skip: int = 0,
     o2m: bool = False,
+    is_fail_run: bool = False,
 ) -> None:
     """Main function to orchestrate the import process.
 
@@ -236,8 +270,6 @@ def import_data(
         header, data = _read_data_file(file_csv, separator, encoding, skip)
         if not data:
             return  # Stop if file reading failed
-        if not fail_file:  # Only set default if not provided
-            fail_file = file_csv + ".fail"
 
     if header is None or data is None:
         raise ValueError(
@@ -245,7 +277,7 @@ def import_data(
         )
 
     # Filter out ignored columns from both header and data
-    header, data = _filter_ignored_columns(_ignore, header, data)
+    final_header, final_data = _filter_ignored_columns(_ignore, header, data)
 
     try:
         connection = conf_lib.get_connection_from_config(config_file)
@@ -263,19 +295,28 @@ def import_data(
             fail_file_writer = csv.writer(
                 fail_file_handle, delimiter=separator, quoting=csv.QUOTE_ALL
             )
-            fail_file_writer.writerow(header)
+            # Add the error reason column to the header only for the second failure file
+            header_to_write = list(final_header)
+            if is_fail_run:
+                header_to_write.append("_ERROR_REASON")
+            fail_file_writer.writerow(header_to_write)
         except OSError as e:
             log.error(f"Could not open fail file for writing: {fail_file}. Error: {e}")
             return
 
     rpc_thread = RPCThreadImport(
-        max_connection, model_obj, header, fail_file_writer, _context
+        max_connection,
+        model_obj,
+        final_header,
+        fail_file_writer,
+        _context,
+        add_error_reason=is_fail_run,
     )
     start_time = time()
 
     # Create batches and launch them in threads
     for batch_number, lines_batch in _create_batches(
-        data, split, header, batch_size, o2m
+        final_data, split, final_header, batch_size, o2m
     ):
         rpc_thread.launch_batch(lines_batch, batch_number, check)
 
@@ -286,6 +327,6 @@ def import_data(
         fail_file_handle.close()
 
     log.info(
-        f"{len(data)} records processed for model '{model}'. "
+        f"{len(final_data)} records processed for model '{model}'. "
         f"Total time: {time() - start_time:.2f}s."
     )
