@@ -48,16 +48,17 @@ def run_import(
 
     final_model = model
     if not final_model:
-        # Infer model from filename if not provided
         base_name = os.path.basename(filename)
-        final_model = os.path.splitext(base_name)[0].replace("_", ".")
+        inferred_model = os.path.splitext(base_name)[0].replace("_", ".")
+        # Add a check for invalid inferred names (like hidden files)
+        if not inferred_model or inferred_model.startswith("."):
+            log.error(
+                "Model not specified and could not be inferred from filename "
+                f"'{base_name}'. Please use the --model option."
+            )
+            return
+        final_model = inferred_model
         log.info(f"No model provided. Inferred model '{final_model}' from filename.")
-
-    if not final_model:
-        log.error(
-            "Model not specified and could not be inferred from filename. Aborting."
-        )
-        return
 
     try:
         parsed_context = ast.literal_eval(context)
