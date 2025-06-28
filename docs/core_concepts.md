@@ -6,7 +6,8 @@ The `odoo-data-flow` library is built on a few key concepts that enable robust a
 
 For importing data, the library promotes a two-phase workflow to separate data manipulation from the actual loading process.
 
-1.  **Transform Phase**: This phase focuses purely on data manipulation. A Python script reads your raw source files, applies cleaning and transformation rules using **mappers**, and produces clean, structured CSV files that are perfectly formatted for Odoo.
+1. **Transform Phase**: This phase focuses purely on data manipulation. A Python script reads your raw source files, applies cleaning and transformation rules using **mappers**, and produces clean, structured CSV files that are perfectly formatted for Odoo.
+
 
 ```{mermaid}
 ---
@@ -27,7 +28,8 @@ flowchart TD
     style D fill:#FFF9C4
 ```
 
-2.  **Load Phase**: This phase focuses purely on data import. A generated shell script takes the clean CSV files and uses the efficient `odoo-data-flow import` command to load them into Odoo.
+2. **Load Phase**: This phase focuses purely on data import. The generated shell script or the direct `odoo-data-flow import` command takes the clean CSV files and loads them into Odoo.
+
 
 ```{mermaid}
 ---
@@ -53,9 +55,9 @@ flowchart TD
 
 This separation provides several key advantages:
 
-- **Debugging**: If there's a problem, you can easily tell if it's a data transformation issue or an Odoo connection issue.
-- **Reusability**: You can run the time-consuming transformation once and then use the resulting clean data to load into multiple Odoo instances (e.g., testing, staging, and production).
-- **Simplicity**: Each script has a single, clear responsibility.
+* **Debugging**: If there's a problem, you can easily tell if it's a data transformation issue or an Odoo connection issue.
+* **Reusability**: You can run the time-consuming transformation once and then use the resulting clean data to load into multiple Odoo instances (e.g., testing, staging, and production).
+* **Simplicity**: Each script has a single, clear responsibility.
 
 ## The Import Strategy: One File, One Model
 
@@ -120,9 +122,10 @@ The `Processor` is the engine of the library. You initialize it with your source
 
 ### 2. The `mapper` Functions
 
-Mappers are the individual building blocks for your transformations. They are simple, reusable functions that define _how_ to create the value for a single column in your destination file. The library provides a rich set of mappers for concatenation, direct value mapping, static values, and handling complex relationships.
+Mappers are the individual building blocks for your transformations. They are simple, reusable functions that define *how* to create the value for a single column in your destination file. The library provides a rich set of mappers for concatenation, direct value mapping, static values, and handling complex relationships.
 
-> For a complete list of all available mappers and their options, see the [Data Transformations Guide](guides/03_data_transformations.md).
+> For a complete list of all available mappers and their options, see the [Data Transformations Guide](guides/data_transformations.md).
+
 
 ### 3. The Mapping Dictionary
 
@@ -130,22 +133,23 @@ This standard Python `dict` ties everything together. The keys are the column na
 
 ## Understanding the Load Phase and Error Handling
 
-A key strength of this library is its robust error handling, which ensures that a few bad records won't cause an entire import to fail. This is managed through a clever two-pass system orchestrated by the generated `load.sh` script.
+A key strength of this library is its robust error handling, which ensures that a few bad records won't cause an entire import to fail. This is managed through a clever two-pass system.
 
 ### The Two-Pass Load Sequence
 
 The generated `load.sh` script contains two commands designed to maximize both speed and accuracy.
 
 ```bash
-# First pass: Fast, parallel import. Writes recoverable errors to a .fail file.
+# First pass (Normal Mode): Fast, parallel import. Writes recoverable errors to a .fail file.
 odoo-data-flow import --config conf/connection.conf --file data/res_partner.csv --model res.partner
 # Second pass: Slower, precise import of the failed records.
 odoo-data-flow import --config conf/connection.conf --fail --file data/res_partner.csv --model res.partner
 ```
 
-1.  **First Pass (Normal Mode)**: The command runs in its default, high-speed mode. If a record is rejected for any reason, it is written to a `res_partner.csv.fail` file, and the process continues.
+1. **First Pass (Normal Mode)**: The command runs in its default, high-speed mode, importing records in batches. If an entire batch is rejected for any reason, the original records from that batch are written to an intermediate failure file named **`<model_name>.fail.csv`** (e.g., `res.partner.fail.csv`).
 
-2.  **Second Pass (`--fail` Mode)**: The command is invoked again with the `--fail` flag. In this mode, it automatically targets the `.fail` file and retries each failed record individually with a single worker. Records that still fail are written to a final `.fail.bis` file, which contains only the items needing manual review.
+2. **Second Pass (`--fail` Mode)**: The command is invoked again with the `--fail` flag. In this mode, it automatically targets the `.fail.csv` file and retries each failed record individually. Records that still fail are written to a final, timestamped error file: **`<original_filename>_YYYYMMDD_HHMMSS_failed.csv`**. This file includes an additional **`_ERROR_REASON`** column to explain why each record failed, making it easy to identify and fix the problematic data manually.
+
 
 ### Error Handling Flow Diagram
 
@@ -159,10 +163,10 @@ config:
 flowchart TD
     A["data.csv<br>(100 records)"] --> B{"First Pass<br>odoo-data-flow import"}
     B -- 95 successful records --> C["Odoo Database"]
-    B -- 5 failed records --> D["data.csv.fail<br>(5 records)"]
+    B -- 5 failed records --> D["data.fail.csv<br>(5 records)"]
     D --> E{"Second Pass<br>odoo-data-flow import --fail"}
     E -- 3 recovered records --> C
-    E -- 2 true errors --> F["fa:fa-user-edit data.csv.fail.bis<br>(2 records to fix)"]
+    E -- 2 true errors --> F["fa:fa-user-edit data_YYMMDD_failed.csv<br>(2 records to fix)"]
 
     A@{ shape: doc}
     C@{ shape: cyl}
@@ -200,4 +204,4 @@ flowchart TD
 
 ```
 
-> For detailed instructions, see the [Exporting Data Guide](guides/02_exporting_data.md).
+> For detailed instructions, see the [Exporting Data Guide](guides/exporting_data.md).

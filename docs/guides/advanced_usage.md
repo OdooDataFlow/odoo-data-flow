@@ -2,6 +2,7 @@
 
 This guide covers more complex scenarios and advanced features of the library that can help you solve specific data transformation challenges.
 
+
 ## Processing XML Files
 
 While CSV is common, you may have source data in XML format. The `Processor` can handle XML files with a couple of extra configuration arguments.
@@ -9,7 +10,39 @@ While CSV is common, you may have source data in XML format. The `Processor` can
 - **`xml_root_tag` (str)**: The name of the root tag in your XML document that contains the collection of records.
 - **`xml_record_tag` (str)**: The name of the tag that represents a single record.
 
-### Example: Importing Partners from an XML File
+### Example XML Input (`origin/clients.xml`)
+
+Here is an example of an XML file that the `Processor` can parse. Note the `<ClientList>` container tag and the repeating `<Client>` tags for each record. The processor can also handle nested tags like `<Contact>`.
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<ClientList>
+    <Client>
+        <ClientID>C1001</ClientID>
+        <Name>The World Company</Name>
+        <Contact>
+            <Email>contact@worldco.com</Email>
+            <Phone>111-222-3333</Phone>
+        </Contact>
+    </Client>
+    <Client>
+        <ClientID>C1002</ClientID>
+        <Name>The Famous Company</Name>
+        <Contact>
+            <Email>info@famous.com</Email>
+            <Phone>444-555-6666</Phone>
+        </Contact>
+    </Client>
+</ClientList>
+```
+
+### Example Transformation Code
+To process this XML, you provide an XPath expression to the xml_root_tag argument. This tells the Processor which nodes in the XML tree represent the individual records (rows) you want to process. The tags inside each record are then treated as columns.
+
+xml_root_tag: An XPath expression to select the list of records. For the example above, './Client' tells the processor to find every <Client> tag within the document.
+
+The Processor automatically flattens the nested structure, so you can access tags like <Email> and <Phone> directly in your mapping.
+
 
 ```python
 from odoo_data_flow.lib.transform import Processor
@@ -96,7 +129,7 @@ The process involves two steps:
 
 **Source File (`product_template.csv`):**
 
-```csv
+```text
 id;name;price
 my_module.product_wallet;Wallet;10.0
 my_module.product_bicyle;Bicycle;400.0
@@ -109,7 +142,7 @@ You would import this file normally. The `id` column provides the stable externa
 **Source File (`product_template_FR.csv`):**
 This file only needs to contain the external ID and the fields that are being translated.
 
-```csv
+```text
 id;name
 my_module.product_wallet;Portefeuille
 my_module.product_bicyle;Bicyclette
@@ -144,7 +177,7 @@ For a significant performance boost when importing large, pre-validated accounti
 
 **Source File: `invoices.csv`**
 
-```csv
+```text
 Journal,Reference,Date,Account,Label,Debit,Credit
 INV,INV2023/12/001,2023-12-31,,,
 ,,"Customer Invoices",600,"Customer Debtor",250.00,
@@ -184,7 +217,7 @@ This mode is designed for files structured like this, where a master record has 
 
 **Source File (`master_with_children.csv`)**
 
-```csv
+```text
 MasterID,MasterName,Child1_SKU,Child2_Ref
 M01,Master Record 1,field_value1_of_child1,field_value1_of_child2
 , , , field_value2_of_child1,field_value2_of_child2
@@ -224,7 +257,7 @@ The `--check` flag provides an extra layer of validation during the import proce
 
 If these numbers do not match, an error message is printed. This is an extremely useful tool for catching silent errors. The most common cause for a mismatch is having records with duplicate XML_IDs within the same batch.
 
-For more details on why this might happen, see the [Record Count Mismatch](../../faq.md#record-count-mismatch) section in the FAQ.
+For more details on why this might happen, see the [Record Count Mismatch](../faq.md) section in the FAQ.
 
 ### Usage
 
@@ -321,7 +354,7 @@ order_mapping = {
 # The processor now contains the merged data and can be processed as usual
 processor.process(
     mapping=order_mapping,
-    target_file='data/orders_with_details.csv',
+    filename_out='data/orders_with_details.csv',
     params={'model': 'sale.order'}
 )
 ```
@@ -363,7 +396,7 @@ for index, chunk_processor in split_processors.items():
     output_filename = f"data/products_chunk_{index}.csv"
     chunk_processor.process(
         mapping=product_mapping,
-        target_file=output_filename,
+        filename_out=output_filename,
         params={'model': 'product.product'}
     )
 ```

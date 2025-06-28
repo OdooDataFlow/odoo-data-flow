@@ -92,7 +92,7 @@ params = {
 # 4. Run the process.
 processor.process(
     mapping=res_partner_mapping,
-    target_file='data/res_partner.csv',
+    filename_out='data/res_partner.csv',
     params=params
 )
 
@@ -116,7 +116,7 @@ Let's look at what was created.
 
 **File: `data/res_partner.csv` (Transformed & Clean Data)**
 
-```csv
+```text
 id,name,email,is_company
 example_client_C001,"John Doe",john.doe@test.com,False
 example_client_C002,"Jane Smith",jane.s@test.com,False

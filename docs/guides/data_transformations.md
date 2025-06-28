@@ -75,8 +75,8 @@ Fills a column with a fixed, constant `value` for every row.
 **Input Data (`source.csv`)**
 | AnyColumn |
 | --------- |
-| a |
-| b |
+| a         |
+| b         |
 
 **Transformation Code**
 
@@ -87,8 +87,8 @@ Fills a column with a fixed, constant `value` for every row.
 **Output Data**
 | sale_type |
 | --------- |
-| service |
-| service |
+| service   |
+| service   |
 
 ---
 
@@ -119,10 +119,10 @@ Checks if the value in the source column `field` exists within the `true_values`
 #### How it works
 
 **Input Data (`source.csv`)**
-| Status |
-| ------ |
-| Active |
-| Done |
+| Status        |
+| ------------- |
+| Active        |
+| Done          |
 
 **Transformation Code**
 
@@ -133,8 +133,8 @@ Checks if the value in the source column `field` exists within the `true_values`
 **Output Data**
 | is_active |
 | --------- |
-| True |
-| False |
+| True      |
+| False     |
 
 ---
 
@@ -152,9 +152,9 @@ Takes the numeric value of the source column `field`. It automatically transform
 **Input Data (`source.csv`)**
 | my_column |
 | --------- |
-| 01 |
-| 2,3 |
-| |
+| 01        |
+| 2,3       |
+|           |
 
 **Transformation Code**
 
@@ -166,9 +166,9 @@ Takes the numeric value of the source column `field`. It automatically transform
 **Output Data**
 | my_field | my_field_with_default |
 | -------- | --------------------- |
-| 1 | 1 |
-| 2.3 | 2.3 |
-| 0.0 | -1.0 |
+| 1        | 1                     |
+| 2.3      | 2.3                   |
+| 0.0      | -1.0                  |
 
 ---
 
@@ -176,44 +176,73 @@ Takes the numeric value of the source column `field`. It automatically transform
 
 ### `mapper.m2o_map(prefix, *fields)`
 
-A specialized `concat` for creating external IDs for **Many2one** relationship fields (e.g., `partner_id`).
+A specialized `concat` for creating external IDs for **Many2one** relationship fields (e.g., `partner_id`). This is useful when the unique ID for a record is spread across multiple columns.
 
-### `mapper.relation(model, search_field, value, raise_if_not_found=False, skip=False)`
+---
+## Many-to-Many Relationships
 
-Finds a single record in Odoo and returns its database ID. **Note:** This can be slow as it performs a search for each row.
+Handling many-to-many relationships often requires a two-step process:
+1.  **Extract and Create Related Records**: First, you need to identify all the unique values for the related records (e.g., all unique "Tags" or "Categories"), create a separate CSV file for them, and assign each one a unique external ID.
+2.  **Link to Main Records**: In the main record file (e.g., partners), you create a comma-separated list of the external IDs of the related records.
 
-- **`model` (str)**: The Odoo model to search in.
-- **`search_field` (str)**: The field to search on.
-- **`value` (mapper)**: A mapper that provides the value to search for.
-- **`raise_if_not_found` (bool, optional)**: If `True`, the process will stop if no record is found. Defaults to `False`.
-- **`skip` (bool, optional)**: If `True` and the record is not found, the entire source row will be skipped. Defaults to `False`.
+The library provides special mappers and a processing flag (`m2m=True`) to make this easy.
 
-### Many-to-Many Mappers
+### Example: Importing Partners with Categories
 
-These mappers create a comma-separated list of external IDs or database ID command tuples for **Many2many** fields.
+Let's assume you have a source file where partner categories are listed in a single column, separated by commas.
 
-#### `mapper.m2m(*args, **kwargs)`
+**Input Data (`client_file.csv`)**
+| Company             | Firstname | Lastname | Birthdate  | Category            |
+| ------------------- | --------- | -------- | ---------- | ------------------- |
+| The World Company   | John      | Doe      | 31/12/1980 | Premium             |
+| The Famous Company  | David     | Smith    | 28/02/1985 | Normal, Bad Payer   |
 
-Has two modes:
+#### Step 1: Extract and Create Unique Categories
 
-1.  **Multiple Columns**: Joins non-empty values from multiple source columns. `mapper.m2m('Tag1', 'Tag2')`
-2.  **Single Column with Separator**: Splits a single column by a separator. `mapper.m2m('Tags', sep=';')`
+We need to create a `res.partner.category.csv` file. The key is to use `mapper.m2m_id_list` and `mapper.m2m_value_list` combined with the `m2m=True` flag in the `.process()` method. This tells the processor to automatically find all unique values in the 'Category' column, split them, and create one row for each.
 
-#### `mapper.m2m_map(prefix, field, sep)`
+**Transformation Code**
+```python
+# This mapping is specifically for extracting unique categories.
+partner_category_mapping = {
+   'id': mapper.m2m_id_list('res_partner_category', 'Category'),
+   'name':  mapper.m2m_value_list('Category'),
+}
 
-Splits a single source column `field` by `sep` and prepends a `prefix` to each value.
+# The m2m=True flag activates the special processing mode.
+processor.process(partner_category_mapping, 'res.partner.category.csv', m2m=True)
+```
 
-#### `mapper.m2m_id_list(field, sep=',')`
+**Output File (`res.partner.category.csv`)**
+This file will contain one row for each unique category found across all partner records.
+| id                            | name       |
+| ----------------------------- | ---------- |
+| res_partner_category.Premium  | Premium    |
+| res_partner_category.Normal   | Normal     |
+| res_partner_category.Bad_Payer| Bad Payer  |
 
-Takes a source column `field` containing a list of database IDs and formats them for Odoo's `(6, 0, [IDs])` command, which replaces all existing relations with the new list.
+#### Step 2: Create the Partner File with M2M Links
 
-#### `mapper.m2m_value_list(model, field, sep=',')`
+Now that the categories have their own external IDs, you can create the partner records and link them using the `mapper.m2m` function. This mapper will create the required comma-separated list of external IDs for Odoo.
 
-Takes a source column `field` containing a list of values (e.g., names). For each value, it finds the corresponding record in the specified `model` (by searching on the `name` field) and returns a list of their database IDs, formatted as a command tuple.
+**Transformation Code**
+```python
+res_partner_mapping = {
+    'id': mapper.m2o_map('my_import_res_partner', 'Firstname', 'Lastname', 'Birthdate'),
+    'name': mapper.concat(' ', 'Firstname', 'Lastname'),
+    'parent_id/id': mapper.m2o_map('my_import_res_partner', 'Company'),
+    # Use mapper.m2m to create the comma-separated list of external IDs
+    'category_id/id': mapper.m2m('res_partner_category', 'Category', sep=','),
+}
 
-#### `mapper.m2m_template_attribute_value(field, sep=',')`
+processor.process(res_partner_mapping, 'res.partner.csv')
+```
 
-A highly specialized mapper for product template attributes. It takes a list of attribute values from the source column `field`, finds or creates them (`product.attribute.value`), and returns them formatted for the `attribute_line_ids` field.
+**Output File (`res.partner.csv`)**
+| id                                     | parent_id/id                             | name        | category_id/id                                                  |
+| -------------------------------------- | ---------------------------------------- | ----------- | --------------------------------------------------------------- |
+| my_import_res_partner.John_Doe_31/12/1980 | my_import_res_partner.The_World_Company | John Doe    | res_partner_category.Premium                                    |
+| my_import_res_partner.David_Smith_28/02/1985| my_import_res_partner.The_Famous_Company| David Smith | res_partner_category.Normal,res_partner_category.Bad_Payer |
 
 ---
 
@@ -231,7 +260,6 @@ Looks up a `key` in a `map_dict` and returns the corresponding value. This is ex
 #### Example: Advanced Country Mapping
 
 **Transformation Code**
-
 ```python
 # The mapping dictionary translates source codes to Odoo external IDs.
 country_map = {
@@ -257,19 +285,18 @@ Reads a local file path from the source column `field` and converts the file con
 #### How it works
 
 **Input Data (`images.csv`)**
-| ImagePath |
+| ImagePath             |
 | --------------------- |
-| images/product_a.png |
+| images/product_a.png  |
 
 **Transformation Code**
-
 ```python
 # Reads the file at the path and encodes it for Odoo
 'image_1920': mapper.binary('ImagePath')
 ```
 
 **Output Data**
-| image_1920 |
+| image_1920                         |
 | ---------------------------------- |
 | iVBORw0KGgoAAAANSUhEUg... (etc.) |
 
@@ -282,19 +309,18 @@ Reads a URL from the source column `field`, downloads the content from that URL,
 #### How it works
 
 **Input Data (`image_urls.csv`)**
-| ImageURL |
+| ImageURL                               |
 | -------------------------------------- |
-| https://www.example.com/logo.png |
+| https://www.example.com/logo.png       |
 
 **Transformation Code**
-
 ```python
 # Downloads the image from the URL and encodes it
 'image_1920': mapper.binary_url_map('ImageURL')
 ```
 
 **Output Data**
-| image_1920 |
+| image_1920                         |
 | ---------------------------------- |
 | iVBORw0KGgoAAAANSUhEUg... (etc.) |
 
@@ -302,31 +328,79 @@ Reads a URL from the source column `field`, downloads the content from that URL,
 
 ## Advanced Techniques
 
+(pre-processing-data)=
 ### Pre-processing Data
 
-For complex manipulations before the mapping starts, you can pass a `preprocessor` function to the `Processor`. This function receives the CSV header and data and must return them after modification.
+For complex manipulations before the mapping starts, you can pass a `preprocess` function to the `Processor` constructor. This function receives the CSV header and data and must return them after modification.
 
 #### Adding Columns
 
 ```python
-def myPreprocessor(header, data):
+def my_preprocessor(header, data):
     header.append('NEW_COLUMN')
     for i, j in enumerate(data):
         data[i].append('NEW_VALUE')
     return header, data
+
+processor = Processor('source.csv', preprocess=my_preprocessor)
 ```
 
 #### Removing Lines
 
 ```python
-def myPreprocessor(header, data):
+def my_preprocessor(header, data):
     data_new = []
     for i, j in enumerate(data):
         line = dict(zip(header, j))
         if line['Firstname'] != 'John':
             data_new.append(j)
     return header, data_new
+
+processor = Processor('source.csv', preprocess=my_preprocessor)
 ```
+
+### Sharing Data Between Mappers (The `state` Dictionary)
+
+For complex, stateful transformations, every mapper function receives a `state` dictionary as its second argument. This dictionary is persistent and shared across the entire processing of a file, allowing you to "remember" values from one row to the next.
+
+This is essential for handling hierarchical data, like sales orders and their lines.
+
+#### Example: Remembering the Current Order ID
+
+```python
+def get_order_id(val, state):
+    # When we see a new Order ID, save it to the state
+    if val:
+        state['current_order_id'] = val
+    return val
+
+sales_order_mapping = {
+    'id': mapper.val('OrderID', postprocess=get_order_id),
+    'order_line/product_id/id': mapper.m2o_map('prod_', 'SKU'),
+    'order_line/order_id/id': lambda line, state: state.get('current_order_id')
+}
+```
+
+### Conditionally Skipping Rows (`_filter`)
+
+You can filter out rows from your source data by adding a special `_filter` key to your mapping dictionary. The mapper for this key should return `True` for any row that you want to **skip**.
+
+**Input Data (`source.csv`)**
+| Name  | Status    |
+| ----- | --------- |
+| John  | Active    |
+| Jane  | Cancelled |
+|       |           |
+
+**Transformation Code**
+```python
+my_mapping = {
+    '_filter': mapper.val('Status', postprocess=lambda x: x == 'Cancelled' or not x),
+    'name': mapper.val('Name'),
+    # ... other fields
+}
+```
+In this example, the rows for "Jane" and the blank line will be skipped, and only the row for "John" will be processed.
 
 ### Creating Custom Mappers
 
@@ -352,14 +426,13 @@ This special mapper takes a full mapping dictionary to create related records (e
 #### Example: Importing Sales Orders and their Lines
 
 **Input Data (`orders.csv`)**
-| OrderID | Warehouse | SKU | Qty |
-| ------- | --------- | ------ | --- |
-| SO001 | MAIN | | |
-| | | PROD_A | 2 |
-| | | PROD_B | 5 |
+| OrderID | Warehouse | SKU      | Qty |
+| ------- | --------- | -------- | --- |
+| SO001   | MAIN      |          |     |
+|         |           | PROD_A   | 2   |
+|         |           | PROD_B   | 5   |
 
 **Transformation Code**
-
 ```python
 from odoo_data_flow.lib import mapper
 
@@ -377,18 +450,15 @@ def remember_value(key):
     return postprocess
 
 order_line_mapping = {
-    'order_id/id': lambda state: state.get('current_order_id'),
+    'order_id/id': lambda line, state: state.get('current_order_id'),
     'product_id/id': mapper.m2o_map('prod_', 'SKU'),
     'product_uom_qty': mapper.num('Qty'),
-    'warehouse_id/id': lambda state: state.get('current_warehouse_id')
+    'warehouse_id/id': lambda line, state: state.get('current_warehouse_id')
 }
 
 sales_order_mapping = {
-    # Using a postprocess on val() is a flexible way to filter
-    '_filter': mapper.val('OrderID', postprocess=lambda x: not x),
-    'id': mapper.val('OrderID'),
-    'name': mapper.val('OrderID', postprocess=get_order_id),
+    'id': mapper.val('OrderID', postprocess=get_order_id),
+    'name': mapper.val('OrderID'),
     'warehouse_id/id': mapper.m2o_map('wh_', 'Warehouse', postprocess=remember_value('current_warehouse_id')),
     'order_line': mapper.cond('SKU', mapper.record(order_line_mapping))
 }
-```

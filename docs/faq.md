@@ -12,9 +12,14 @@ It is a powerful Python library designed to handle the import and export of data
 
 While Odoo's built-in import is great for simple tasks, `odoo-data-flow` offers several key advantages for complex or large-scale migrations:
 
-- **Separation of Concerns**: It cleanly separates the data **transformation** logic (cleaning your source data) from the data **loading** logic (importing into Odoo).
+- **Separation of Concerns**: It cleanly separates the data **transformation** logic (cleaning your source data) from the data
+
+**loading** logic (importing into Odoo).
+
 - **Robust Error Handling**: Its two-pass import system intelligently handles errors, ensuring that one bad record doesn't stop the entire process.
+
 - **Powerful Transformations**: You can use the full power of Python and a rich set of built-in `mapper` functions to handle almost any data transformation challenge.
+
 - **Repeatability and Version Control**: Since your transformation logic is code, it can be version-controlled (with Git), tested, and reused across multiple environments (like staging and production) with confidence.
 
 ### Can I use this for both importing and exporting?
@@ -25,7 +30,7 @@ Yes. The library provides tools for both workflows. The `Processor` and `mapper`
 
 Yes. The library includes a powerful `odoo-data-flow migrate` command that performs a complete export, transform, and import from one Odoo instance to another in a single step, without creating intermediate files. This is ideal for migrating data from a staging server to production.
 
-> For detailed instructions, see the [Server-to-Server Migration Guide](guides/07_server_to_server_migration.md).
+> For detailed instructions, see the [Server-to-Server Migration Guide](guides/server_to_server_migration.md).
 
 ### How do I process a CSV file that has no header?
 
@@ -61,36 +66,112 @@ A full example project, demonstrating a realistic data migration workflow with m
 
 - **[Odoo Data Flow Example Repository](https://github.com/OdooDataFlow/odoo-data-flow-example/tree/18.0)**
 
+### Can `odoo-data-flow` connect directly to Google Sheets?
+
+No, the `odoo-data-flow` library cannot connect directly to Google Sheets to read data.
+
+The tool is designed to read data from local files on your computer, specifically in either **CSV** or **XML** format. It does not have the built-in functionality to authenticate with Google's services and pull data directly from a spreadsheet URL.
+
+#### Recommended Workflow
+
+The standard and easiest way to use your data from Google Sheets is to first download the sheet as a CSV file and then use that local file with the tool.
+
+1.  Open your spreadsheet in Google Sheets.
+2.  From the top menu, select **File** -> **Download**.
+3.  Choose the **Comma-separated values (.csv)** option.
+
+
+4.  This will save the current sheet as a `.csv` file to your computer's "Downloads" folder.
+5.  You can then use that downloaded file with the `odoo-data-flow` command:
+
+    ```bash
+    odoo-data-flow import --file /path/to/your/downloaded-sheet.csv
+    ```
+
+This workflow ensures that you have a local copy of the data at the time of import and allows you to use all the powerful transformation features of the library on your spreadsheet data.
+
+
+## I can't connect to my cloud-hosted Odoo instance (e.g., Odoo.sh). What should I do?
+
+This is a common issue. When connecting to a cloud-hosted Odoo instance, you often need to use a secure connection protocol.
+
+The solution is typically to set the `protocol` in your `conf/connection.conf` file to **`jsonrpcs`** (note the `s` at the end for "secure").
+
+While Odoo's external API has historically used XML-RPC, modern cloud instances often require the secure JSON-RPC protocol for integrations.
+
+### Example Configuration for a Cloud Instance
+
+Your `conf/connection.conf` should look something like this:
+
+```ini
+[Connection]
+hostname = my-project.odoo.com
+port = 443
+database = my-project-production
+login = admin
+password = xxxxxxxxxx
+uid = 2
+protocol = jsonrpcs
+```
+
+### Key things to check:
+
+1.  **Protocol**: Ensure it is set to `jsonrpcs`.
+2.  **Port**: Secure connections almost always use port `443`.
+3.  **Hostname & Database**: Make sure you are using the correct hostname and database name provided by your cloud hosting platform (e.g., from your Odoo.sh dashboard). These are often different from the simple names used for local instances.
+
+
 ---
 
 ## Troubleshooting Common Errors
 
 When an import fails, understanding why is key. Here are some of the most common issues and how to solve them.
 
-### Understanding the `.fail` and `.fail.bis` Files
+### Understanding the Failure Files
 
-The two-pass import process is designed to isolate errors effectively.
+The two-pass import process is designed to isolate errors effectively and generates two different types of failure files for two different purposes.
 
-- **`my_file.csv.fail`**: This file is created during the **first pass** of the import. It contains every record that failed for _any_ reason. This can include genuine data errors or temporary database issues like deadlocks.
+* **`<model_name>.fail.csv` (e.g., `res.partner.fail.csv`)**:
 
-- **`my_file.csv.fail.bis`**: This file is created during the **second pass** (the `--fail` run), which retries the records from the `.fail` file using a single worker. The `.fail.bis` file contains only the records that _still_ failed. These are almost always genuine data errors that you need to investigate and fix manually.
+  * **When it's created**: During the **first pass** (a normal import).
 
-**Your workflow should be:**
+  * **What it contains**: If a batch of records fails to import, this file will contain the *entire original, unmodified batch* that failed.
 
-1. Run your `load.sh` script (which contains the `odoo-data-flow import` commands).
-2. If a `.fail.bis` file is created, open it to identify the data issue.
-3. Fix the issue in your original source file or your `transform.py` script.
-4. Rerun the transformation and load process.
+  * **Purpose**: This file is for **automated processing**. It's the input for the second pass (`--fail` mode).
+
+* `<original_filename>_YYYYMMDD_HHMMSS_failed.csv` (e.g., **`data_20250626_095500_failed.csv`)**:
+
+  * **When it's created**: During the **second pass** (when you run with the `--fail` flag).
+
+  * **What it contains**: This file contains only the individual records that *still* failed during the record-by-record retry. Crucially, it includes an extra **`_ERROR_REASON`** column explaining exactly why each record failed.
+
+  * **Purpose**: This file is for **human review**. The error messages help you find and fix the specific data problems.
+
+**Your recommended workflow should be:**
+
+1. Run your `load.sh` script or the `odoo-data-flow import` command.
+
+2. If a `<model_name>.fail.csv` file is created, run the command again with the `--fail` flag.
+
+3. If a timestamped `..._failed.csv` file is created, open it to identify the data issues using the `_ERROR_REASON` column.
+
+4. Fix the issues in your original source file or your `transform.py` script.
+
+5. Delete the `.fail.csv` and `_failed.csv` files and rerun the entire process from the beginning.
+
 
 ### Record Count Mismatch
 
-Sometimes, the number of records in your source file doesn't match the number of records created in Odoo, even if there are no errors in the `.fail.bis` file.
+Sometimes, the number of records in your source file doesn't match the number of records created in Odoo, even if there are no errors in the final failure file.
 
-- **Cause:** This usually happens when your mapping logic unintentionally filters out rows. For example, using a `postprocess` function that can return an empty value for an external ID (`id` field). If the external ID is empty, the entire record is skipped without error.
+* **Cause:** This usually happens when your mapping logic unintentionally filters out rows. For example, using a `postprocess` function that can return an empty value for an external ID (`id` field). If the external ID is empty, the entire record is skipped without error.
 
-- **Solution:**
-  1.  **Check your `id` field**: The most common culprit is the mapping for the `id` field. Ensure it _always_ returns a non-empty, unique value for every row you intend to import.
-  2.  **Use a `preprocessor`**: For complex debugging, you can use a [preprocessor function](guides/03_data_transformations.md#pre-processing-data) to add a unique line number to each row. Import this line number into a custom field in Odoo (`x_studio_import_line_number`). After the import, you can easily compare the line numbers in your source file with those in Odoo to find exactly which rows were skipped.
+* **Solution:**
+
+  1. **Check your `id` field**: The most common culprit is the mapping for the `id` field. Ensure it *always* returns a non-empty, unique value for every row you intend to import.
+
+  2. **Use a `preprocessor`**: For complex debugging, you can use a [preprocessor function](guides/data_transformations.md) to add a unique line number to each row. Import this line number into a custom field in Odoo (`x_studio_import_line_number`). After the import, you can easily compare the line numbers in your source file with those in Odoo to find exactly which rows were skipped.
+
 
 ### Connection Errors
 
@@ -127,11 +208,12 @@ These errors come directly from Odoo when the data is not valid enough to save.
 
 A very common reason for the `No matching record found` error is that you are trying to import records in the wrong order.
 
-- **The Rule:** You must always import "parent" records **before** you import the "child" records that refer to them.
-- **Example:** Imagine you are importing Contacts (`res.partner`) and assigning them to Contact Tags (`res.partner.category`). Odoo cannot assign a contact to the "VIP" tag if that "VIP" tag doesn't exist in the database yet.
+* **The Rule:** You must always import "parent" records **before** you import the "child" records that refer to them.
 
-- **Correct Import Sequence:**
-  1.  **First, import `res.partner.category`**: Run a transformation and load process for your contact tags. This creates the tags and their external IDs in Odoo.
-  2.  **Then, import `res.partner`**: Run a separate process for your contacts. The mapping for the `category_id/id` field can now successfully use `mapper.m2o_map` to look up the external IDs of the tags you created in the first step.
+* **Example:** Imagine you are importing Contacts (`res.partner`) and assigning them to Contact Tags (`res.partner.category`). Odoo cannot assign a contact to the "VIP" tag if that "VIP" tag doesn't exist in the database yet.
 
-- **General Advice:** Always map out the dependencies in your data. If Model B has a Many2one field pointing to Model A, you must always import Model A first.
+* **Correct Import Sequence**:
+
+  1. **First, import `res.partner.category`**: Run a transformation and load process for your contact tags. This creates the tags and their external IDs in Odoo.
+
+  2. **Then, import `res.partner`**: Run a separate process for your contacts. The mapping for the `category_id/id` field can now successfully use `mapper.m2o_map` to look up the external IDs of the tags you created in the first step.

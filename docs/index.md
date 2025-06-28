@@ -20,7 +20,7 @@ config:
 ---
 flowchart TD
  subgraph subGraph0["External Data"]
-        A["CSV / XLSX File"]
+        A["CSV / XML File"]
   end
  subgraph s1["odoo-data-flow"]
         B{"Model Definition in Python"}
@@ -46,16 +46,6 @@ flowchart TD
 
 ```
 
-## Key Features
-
-- **Declarative Python Configuration**: Define your entire data flow using clear and readable Python objects. This "configuration-as-code" approach allows for powerful, dynamic, and easily debugged setups. Making complex data operations manageable and repeatable.
-- **Multiple Data Sources**: Natively supports CSV, JSON, and XML files. Easily extendable to support other sources like databases or APIs.
-- **Built-in Data Transformation:** Clean, modify, and format data on the fly using simple `lambda` functions or your own custom python code.
-- **Relational Field Handling:** Easily import and export `Many2one`, `One2many`, and `Many2many` relationships.
-- **Data Validation:** Ensure data integrity before it even reaches Odoo.
-- **Extensible and Customizable:** Write your own custom methods to handle unique or complex data-processing requirements.
-- **Support for CSV and Excel:** Works seamlessly with the most common file formats for business data exchange.
-- **Robust Error Handling**: Provides clear logging and error reports to help you debug your data flows quickly.
 
 ## Getting Started
 
@@ -81,6 +71,7 @@ installation
 quickstart
 usage
 core_concepts
+comparison_with_other_tools
 guides/index
 reference
 faq

@@ -24,6 +24,5 @@ This document outlines the planned future enhancements and major refactoring eff
 
 - **Goal:** Increase unit and integration test coverage to improve reliability.
 - **Tasks:**
-  - Add specific tests for each `mapper` function to validate its behavior with edge cases.
-  - Add unit and integration tests for the workflow_runner and the legacy InvoiceWorkflowV9 module.
-  - Create integration tests that run against a live, containerized Odoo instance as part of the CI/CD pipeline.
+  - Add E2E test which perform an actual import /export.
+  * **On Pull Requests to `main` / After Merging:** Run the slow E2E integration tests. This ensures that only fully validated code gets into your main branch, without slowing down the development process for every small change.

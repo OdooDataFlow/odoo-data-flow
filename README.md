@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/OdooDataFlow/odoo-data-flow/master/docs/_static/icon.png" width="200">
+</p>
+
 # Odoo Data Flow
 
 [![PyPI](https://img.shields.io/pypi/v/odoo-data-flow.svg)][pypi status]
@@ -34,6 +38,9 @@ A powerful Python library for defining robust, repeatable, and high-performance 
 - **Direct Server-to-Server Migration:** Perform a complete export, transform, and import from one Odoo instance to another in a single, in-memory step with the `migrate` command.
 - **Post-Import Workflows:** Run automated actions on your data _after_ it has been imported (e.g., validating invoices, registering payments) using the powerful `workflow` command.
 - **export data from Odoo** into CSV format. While specific details on export parameters are not extensively documented in the provided text, this capability complements the import functionality, offering a complete solution for Odoo data management.
+- **Multiple Data Sources**: Natively supports CSV and XML files. Easily extendable to support other sources like databases or APIs.
+- **Data Validation:** Ensure data integrity before it even reaches Odoo.
+
 
 ## Installation
 

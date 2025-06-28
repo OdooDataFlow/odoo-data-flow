@@ -31,7 +31,7 @@ import_params = {
 
 processor.process(
     mapping=my_mapping,
-    target_file='data/sale_order.csv',
+    filename_out='data/sale_order.csv',
     params=import_params
 )
 ```
@@ -51,7 +51,7 @@ The `--groupby` option is a powerful feature designed to solve the "race conditi
 - **`params` Key**: `'split'` (Note: the internal key is `split`)
 - **Default**: `None`
 
-#### The Problem: A Race Condition
+### The Problem: A Race Condition
 
 Imagine you are using multiple workers to import contacts that all link to the _same_ parent company.
 
@@ -68,7 +68,7 @@ This guarantees that two different workers will never try to update the same par
 
 #### Visualizing the Difference
 
-```mermaid
+```{mermaid}
 graph TD
     subgraph "Without --groupby (High Risk of Error)"
         A["Records:<br>C1 (Parent A)<br>C2 (Parent B)<br>C3 (Parent A)"] --> B{Random Distribution};
@@ -114,7 +114,7 @@ The `--size` option is one of the most critical parameters for controlling the p
 
 To understand why this is so important, think of it like going through a checkout at a grocery store.
 
-#### The Default Odoo Behavior: One Big Basket
+### The Default Odoo Behavior: One Big Basket
 
 When you use Odoo's standard import wizard, it's like putting all of your items (every single row in your file) into **one giant shopping basket**. This "all-or-nothing" approach has two major problems:
 
@@ -132,7 +132,7 @@ This solves both problems:
 
 #### Visualizing the Difference
 
-```mermaid
+```{mermaid}
 flowchart TD
   subgraph subGraph0["Default Odoo Import (One Big Basket)"]
           B{"One Large Transaction<br>Size=1000"}
@@ -172,6 +172,20 @@ flowchart TD
 - **Larger Batch Size**: Can be faster as it reduces the overhead of creating database transactions, but consumes more memory. If one record in a large batch fails, Odoo may reject the entire batch.
 - **Smaller Batch Size**: More resilient to individual record errors and consumes less memory, but can be slower due to increased network overhead.
 - **WAN Performance:** For slow networks, sending smaller chunks of data is often more stable than sending one massive payload.
+
+
+### Handling Server Timeouts (`limit-time-real`)
+
+A common source of import failures, especially with large or complex data, is the Odoo server's built-in request timeout.
+
+- **What it is**: Odoo servers have a configuration parameter called `limit-time-real` which defines the maximum time (in seconds) a worker process is allowed to run before it is automatically terminated. The default value is **120 seconds (2 minutes)**.
+
+- **The Problem**: If a single batch of records takes longer than this limit to process (due to complex computations, custom logic, or a very large batch size), the server will kill the process, and your import will fail for that batch.
+
+- **The Solution**: The solution is to reduce the batch size using the `--size` option. By sending fewer records in each transaction, you ensure that each individual transaction can be completed well within the server's time limit.
+
+> **Tip:** If your imports are failing with "timeout" or "connection closed" errors, the first thing you should try is reducing the `--size` value (e.g., from `1000` down to `200` or `100`).
+
 
 ## Mapper Performance
 
@@ -230,7 +244,7 @@ import_params = {
 
 processor.process(
     mapping=my_mapping,
-    target_file='data/contacts.csv',
+    filename_out='data/contacts.csv',
     params=import_params
 )
 ```

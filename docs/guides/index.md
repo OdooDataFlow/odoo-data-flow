@@ -6,11 +6,15 @@ This section provides detailed, step-by-step guides for common tasks and advance
 :maxdepth: 1
 :caption: "Guides"
 
-01_importing_data
-02_exporting_data
-03_data_transformations
-04_advanced_usage
-05_performance_tuning
-06_post_import_workflows
-07_server_to_server_migration
+importing_data
+exporting_data
+exporting_data_for_modules
+data_transformations
+configuration
+advanced_usage
+performance_tuning
+field_mapping_workflow
+post_import_workflows
+server_to_server_migration
+
 ```
