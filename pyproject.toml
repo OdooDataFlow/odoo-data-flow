@@ -57,10 +57,14 @@ tests = ["tests", "*/tests"]
 [tool.coverage.run]
 branch = true
 source = ["odoo_data_flow", "tests"]
+omit = [
+    # Exclude the legacy v9 workflow from coverage reports
+    "src/odoo_data_flow/lib/workflow/invoice_v9.py",
+]
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 45
+fail_under = 85
 exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
 
 [tool.mypy]
@@ -104,7 +108,6 @@ ignore = [
     "Q003",
     "W191",
 ]
-
 
 
 [tool.ruff.lint.per-file-ignores]
