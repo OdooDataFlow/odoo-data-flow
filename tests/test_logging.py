@@ -36,9 +36,7 @@ def test_setup_logging_with_file(tmp_path: Path) -> None:
     setup_logging(verbose=True, log_file=str(log_file))
 
     # 3. Assertions
-    assert len(log.handlers) == 2, (
-        "There should be two handlers: console and file."
-    )
+    assert len(log.handlers) == 2, "There should be two handlers: console and file."
 
     # Check that we have one of each type of handler
     handler_types = [type(h) for h in log.handlers]

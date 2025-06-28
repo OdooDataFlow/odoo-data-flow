@@ -1,7 +1,5 @@
 """Test The Exporter Orchestrator."""
 
-# tests/test_exporter.py
-
 from unittest.mock import MagicMock, patch
 
 from odoo_data_flow.exporter import run_export, run_export_for_migration
@@ -80,7 +78,7 @@ def test_run_export_for_migration(mock_export_data: MagicMock) -> None:
 
     assert pos_args[0] == "conf/test.conf"
     assert pos_args[1] == "res.partner"
-    assert pos_args[3] == fields_list
+    assert pos_args[3] == fields_list  # Correctly check positional argument
 
     assert kw_args.get("output") is None, "Output should be None for in-memory return"
 
@@ -120,3 +118,32 @@ def test_run_export_invalid_context(mock_log_error: MagicMock) -> None:
     # 2. Assertions
     mock_log_error.assert_called_once()
     assert "Invalid context provided" in mock_log_error.call_args[0][0]
+
+
+@patch("odoo_data_flow.exporter.export_threaded.export_data")
+def test_run_export_for_migration_bad_domain(
+    mock_export_data: MagicMock,
+) -> None:
+    """Tests that `run_export_for_migration` handles a bad domain string."""
+    mock_export_data.return_value = ([], [])
+    run_export_for_migration(
+        config="dummy.conf",
+        model="res.partner",
+        fields=["id"],
+        domain="bad-domain",
+    )
+    # Assert that the domain passed to the core function is an empty list
+    assert mock_export_data.call_args.args[2] == []
+
+
+@patch("odoo_data_flow.exporter.export_threaded.export_data")
+def test_run_export_for_migration_no_data(mock_export_data: MagicMock) -> None:
+    """Tests that `run_export_for_migration`.
+
+    These handles the case where no data is returned.
+    """
+    mock_export_data.return_value = (["id"], None)
+    _header, data = run_export_for_migration(
+        config="dummy.conf", model="res.partner", fields=["id"]
+    )
+    assert data is None
