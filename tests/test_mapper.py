@@ -1,5 +1,8 @@
 """Test the core mapper functions."""
 
+# tests/test_mapper.py
+
+import inspect
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -43,8 +46,11 @@ def test_val_postprocess_fallback() -> None:
     # Force the two-argument call to ensure the fallback to one argument is tested
     with patch("inspect.signature") as mock_signature:
         # Pretend the signature check passed, forcing a TypeError on the call.
-        # The parameters attribute must be a dictionary-like object.
-        mock_signature.return_value.parameters = {"arg1": None, "arg2": None}
+        # The parameters' values must be mock objects with a 'kind' attribute.
+        mock_signature.return_value.parameters = {
+            "arg1": MagicMock(kind=inspect.Parameter.POSITIONAL_OR_KEYWORD),
+            "arg2": MagicMock(kind=inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        }
         mapper_func = mapper.val("col1", postprocess=one_arg_lambda)
         assert mapper_func(LINE_SIMPLE, {}) == "a"
 
