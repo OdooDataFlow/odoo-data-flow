@@ -108,6 +108,22 @@ ignore = [
     "Q003",
     "W191",
 ]
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".nox",
+    ".pytest_cache",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "build",
+    "dist",
+    "docs/conf.py",
+    # Add the file you want to ignore to this list
+    "pydoclint-baseLine.txt",
+    "pydoclint-baseline.txt",
+    "uv.lock",
+]
 
 
 [tool.ruff.lint.per-file-ignores]
