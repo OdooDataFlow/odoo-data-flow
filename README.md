@@ -111,8 +111,10 @@ please [file an issue] along with a detailed description.
 
 ## Credits
 
+This development of project is financially supported by [stefcy.com].
 This project was generated from [@bosd]'s [uv hypermodern python cookiecutter] template.
 
+[stefcy.com]: https://stefcy.com
 [@bosd]: https://github.com/bosd
 [pypi]: https://pypi.org/
 [uv hypermodern python cookiecutter]: https://github.com/bosd/cookiecutter-uv-hypermodern-python
