@@ -15,22 +15,24 @@ from .internal.tools import AttributeLineDict
 
 
 class MapperRepr:
-    """Mapper representation.
-
-    A wrapper to provide a useful string representation for mapper functions.
-    """
+    """A wrapper to provide a useful string representation for mapper functions."""
 
     def __init__(self, repr_string: str, func: Callable[..., Any]) -> None:
-        """Initializes the MapperRepr."""
+        """Initializes the MapperRepr.
+
+        Args:
+            repr_string: The string representation to use for the mapper.
+            func: The actual callable mapper function.
+        """
         self._repr_string = repr_string
         self.func = func
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        """Call the wrapped function."""
+        """Calls the wrapped mapper function."""
         return self.func(*args, **kwargs)
 
     def __repr__(self) -> str:
-        """Return the string representation."""
+        """Returns the custom string representation."""
         return self._repr_string
 
 
@@ -49,7 +51,21 @@ class Processor:
         ] = lambda h, d: (h, d),
         **kwargs: Any,
     ) -> None:
-        """Initializes the Processor."""
+        """Initializes the Processor.
+
+        The Processor can be initialized either by providing a `filename` to read
+        from disk, or by providing `header` and `data` lists to work with
+        in-memory data.
+
+        Args:
+            filename: The path to the source CSV or XML file.
+            separator: The column delimiter for CSV files.
+            encoding: The character encoding of the source file.
+            header: A list of strings for the header row (for in-memory data).
+            data: A list of lists representing the data rows (for in-memory data).
+            preprocess: A function to modify the raw data before mapping begins.
+            **kwargs: Catches other arguments, primarily for XML processing.
+        """
         self.file_to_write: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self.header: list[str]
         self.data: list[list[Any]]
@@ -97,20 +113,20 @@ class Processor:
                 data = []
                 for node in nodes:
                     row = [
-                        (child.text if child is not None else "")
-                        for child in (node.find(col) for col in header)
+                        (node.find(col).text if node.find(col) is not None else "")
+                        for col in header
                     ]
                     data.append(row)
                 return header, data
-
             except etree.XMLSyntaxError as e:
                 log.error(f"Failed to parse XML file {filename}: {e}")
+                return [], []
             except Exception as e:
                 log.error(
                     "An unexpected error occurred while reading XML file "
                     f"{filename}: {e}"
                 )
-            return [], []
+                return [], []
         else:
             log.info(f"Reading CSV file: {filename}")
             try:
@@ -121,6 +137,7 @@ class Processor:
                     return header, data
             except FileNotFoundError:
                 log.error(f"Source file not found at: {filename}")
+                return [], []
             except Exception as e:
                 log.error(f"Failed to read file {filename}: {e}")
         return [], []
@@ -128,7 +145,15 @@ class Processor:
     def check(
         self, check_fun: Callable[..., bool], message: Optional[str] = None
     ) -> bool:
-        """Runs a data quality check function against the loaded data."""
+        """Runs a data quality check function against the loaded data.
+
+        Args:
+            check_fun: The checker function to execute.
+            message: An optional custom error message to display on failure.
+
+        Returns:
+            True if the check passes, False otherwise.
+        """
         res = check_fun(self.header, self.data)
         if not res:
             error_message = (
@@ -138,7 +163,16 @@ class Processor:
         return res
 
     def split(self, split_fun: Callable[..., Any]) -> dict[Any, "Processor"]:
-        """Splits the processor's data into multiple new Processor objects."""
+        """Splits the processor's data into multiple new Processor objects.
+
+        Args:
+            split_fun: A function that takes a row dictionary and index, and
+                returns a key to group the row by.
+
+        Returns:
+            A dictionary where keys are the grouping keys and values are new
+            Processor instances containing the grouped data.
+        """
         grouped_data: OrderedDict[Any, list[list[Any]]] = OrderedDict()
         for i, row in enumerate(self.data):
             row_dict = dict(zip(self.header, row))
@@ -168,10 +202,23 @@ class Processor:
         t: str = "list",
         null_values: Optional[list[Any]] = None,
         m2m: bool = False,
+        dry_run: bool = False,
     ) -> tuple[list[str], Union[list[Any], set[tuple[Any, ...]]]]:
-        """Main processor.
+        """Processes the data using a mapping and prepares it for writing.
 
-        Processes the data using a mapping and prepares it for writing.
+        Args:
+            mapping: The mapping dictionary defining the transformation rules.
+            filename_out: The path where the output CSV file will be saved.
+            params: A dictionary of parameters for the `odoo-data-flow import`
+                command, used when generating the load script.
+            t: The type of collection to return data in ('list' or 'set').
+            null_values: A list of values to be treated as empty.
+            m2m: If True, activates special processing for many-to-many data.
+            dry_run: If True, prints a sample of the output to the console
+                instead of writing files.
+
+        Returns:
+            A tuple containing the header list and the transformed data.
         """
         if null_values is None:
             null_values = ["NULL", False]
@@ -185,6 +232,17 @@ class Processor:
         else:
             head, data = self._process_mapping(mapping, t=t, null_values=null_values)
 
+        if dry_run:
+            log.info("--- DRY RUN MODE ---")
+            log.info("No files will be written.")
+            log.info(f"Header: {head}")
+            data_list = list(data)
+            log.info(f"Total rows that would be generated: {len(data_list)}")
+            log.info("Sample of first 5 rows:")
+            for row in data_list[:5]:
+                log.info(row)
+            return head, data
+
         self._add_data(head, data, filename_out, params)
         return head, data
 
@@ -196,9 +254,14 @@ class Processor:
         python_exe: str = "python",
         path: str = "",
     ) -> None:
-        """Write bash script.
+        """Generates the .sh script for the import.
 
-        Generates the .sh script for the import.
+        Args:
+            script_filename: The path where the shell script will be saved.
+            fail: If True, includes a second command with the --fail flag.
+            append: If True, appends to the script file instead of overwriting.
+            python_exe: The python executable to use in the script.
+            path: The path to prepend to the odoo-data-flow command.
         """
         init = not append
         for _, info in self.file_to_write.items():
@@ -225,9 +288,15 @@ class Processor:
         separator: str = ";",
         encoding: str = "utf-8",
     ) -> None:
-        """File joiner.
+        """Joins data from a secondary file into the processor's main data.
 
-        Joins data from a secondary file into the processor's main data.
+        Args:
+            filename: The path to the secondary file to join.
+            master_key: The column name in the main data to join on.
+            child_key: The column name in the secondary data to join on.
+            header_prefix: A prefix to add to the headers from the child file.
+            separator: The column separator for the child CSV file.
+            encoding: The character encoding of the child file.
         """
         child_header, child_data = self._read_file(filename, separator, encoding)
 
@@ -258,7 +327,7 @@ class Processor:
         filename_out: str,
         params: dict[str, Any],
     ) -> None:
-        """Adds data to the write queue."""
+        """Adds data to the internal write queue."""
         params_copy = params.copy()
         params_copy["filename"] = (
             os.path.abspath(filename_out) if filename_out else False
@@ -302,12 +371,14 @@ class Processor:
         mapping: dict[str, Callable[..., Any]],
         null_values: list[Any],
     ) -> tuple[list[str], list[Any]]:
-        """m2m process mapping.
-
-        Handles special m2m mapping by expanding list values into unique rows.
-        """
+        """Handles special m2m mapping by expanding list values into unique rows."""
         head, data_unioned = self._process_mapping(mapping, "list", null_values)
-        data = list(data_unioned)  # Ensure data is a list
+        data: list[Any]
+        if isinstance(data_unioned, set):
+            data = list(data_unioned)
+        else:
+            data = data_unioned
+
         lines_out: list[Any] = []
 
         for line_out in data:
@@ -334,7 +405,7 @@ class Processor:
 
 
 class ProductProcessorV10(Processor):
-    """Processor for generating a 'product.attribute' file."""
+    """Processor for the modern (Odoo v13+) product attribute model."""
 
     def process_attribute_data(
         self,
@@ -343,7 +414,14 @@ class ProductProcessorV10(Processor):
         filename_out: str,
         import_args: dict[str, Any],
     ) -> None:
-        """Creates and registers the 'product.attribute.csv' file."""
+        """Creates and registers the `product.attribute.csv` file.
+
+        Args:
+            attributes_list: A list of attribute names (e.g., ['Color', 'Size']).
+            attribute_prefix: The prefix for generating external IDs.
+            filename_out: The output path for the CSV file.
+            import_args: A dictionary of parameters for the import script.
+        """
         attr_header = ["id", "name", "create_variant"]
         attr_data = [
             [mapper.to_m2o(attribute_prefix, att), att, "Dynamically"]
@@ -353,13 +431,7 @@ class ProductProcessorV10(Processor):
 
 
 class ProductProcessorV9(Processor):
-    """Processor to generate variant data from a flat file.
-
-    Creates three CSV files:
-    1. product.attribute.csv: The attributes themselves.
-    2. product.attribute.value.csv: The specific values for each attribute.
-    3. product.attribute.line.csv: Links attributes to product templates.
-    """
+    """Processor for the legacy (Odoo v9-v12) product attribute model."""
 
     def _generate_attribute_file_data(
         self, attributes_list: list[str], prefix: str
@@ -412,7 +484,10 @@ class ProductProcessorV9(Processor):
         id_gen_fun: Optional[Callable[..., str]] = None,
         null_values: Optional[list[str]] = None,
     ) -> None:
-        """Orchestrates the processing of product attributes and variants."""
+        """Orchestrates the processing of legacy product attributes.
+
+        This method generates three CSV files required for the legacy workflow.
+        """
         _null_values = null_values if null_values is not None else ["NULL"]
         attr_header, attr_data = self._generate_attribute_file_data(
             attributes_list, attribute_prefix

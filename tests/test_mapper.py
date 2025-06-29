@@ -46,7 +46,7 @@ def test_val_postprocess_fallback() -> None:
     # Force the two-argument call to ensure the fallback to one argument is tested
     with patch("inspect.signature") as mock_signature:
         # Pretend the signature check passed, forcing a TypeError on the call.
-        # The parameters' values must be mock objects with a 'kind' attribute.
+        # The parameters attribute must be a dictionary-like object.
         mock_signature.return_value.parameters = {
             "arg1": MagicMock(kind=inspect.Parameter.POSITIONAL_OR_KEYWORD),
             "arg2": MagicMock(kind=inspect.Parameter.POSITIONAL_OR_KEYWORD),
@@ -230,8 +230,17 @@ def test_legacy_mappers() -> None:
     assert "PREFIX.Color_Blue" in m2m_att_val_mapper(line, {})
     assert "PREFIX.Size_L" in m2m_att_val_mapper(line, {})
 
-    m2m_template_mapper = mapper.m2m_template_attribute_value("PREFIX", "Finish")
-    assert m2m_template_mapper(line, {}) == ""
+
+def test_modern_template_attribute_mapper() -> None:
+    """Tests the m2m_template_attribute_value mapper for modern Odoo versions."""
+    # Case 1: template_id exists, should return concatenated values
+    line_with_template = {"template_id": "TPL1", "Color": "Blue", "Size": "L"}
+    mapper_func = mapper.m2m_template_attribute_value("PREFIX", "Color", "Size")
+    assert mapper_func(line_with_template, {}) == "Blue,L"
+
+    # Case 2: template_id is missing, should return an empty string
+    line_without_template = {"Color": "Blue", "Size": "L"}
+    assert mapper_func(line_without_template, {}) == ""
 
 
 def test_split_mappers() -> None:

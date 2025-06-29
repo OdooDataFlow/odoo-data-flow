@@ -20,7 +20,7 @@ def test_mapper_repr() -> None:
 
 
 def test_processor_init_fails_without_args() -> None:
-    """Tests that the Processor raises a ValueError if initialized with no args."""
+    """Tests that the Processor raises a ValueError if initialized without args."""
     with pytest.raises(
         ValueError, match="must be initialized with either a 'filename' or both"
     ):
@@ -107,8 +107,10 @@ def test_v9_extract_attribute_value_data_malformed_mapping() -> None:
     """
     processor = ProductProcessorV9(header=["col1"], data=[["val1"]])
 
-    # Create a malformed mapping where the 'name' mapper returns a string, not a dict
-    # The lambda is defined to accept an optional state to handle the fallback logic.
+    # Create a malformed mapping where the 'name' mapper returns a string,
+    #  not a dict
+    # The lambda is defined to accept an optional state to handle the fallback
+    # logic.
     # Explicitly type the dictionary to satisfy mypy.
     malformed_mapping: dict[str, Callable[..., Any]] = {
         "name": mapper.val("col1"),
