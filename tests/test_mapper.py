@@ -1,7 +1,5 @@
 """Test the core mapper functions."""
 
-# tests/test_mapper.py
-
 import inspect
 from unittest.mock import MagicMock, patch
 
@@ -191,7 +189,9 @@ def test_binary_url_map_empty() -> None:
 @patch("odoo_data_flow.lib.mapper.requests.get")
 def test_binary_url_map_skip_on_not_found(mock_requests_get: MagicMock) -> None:
     """Tests that binary_url_map raises SkippingError when request fails."""
-    mock_requests_get.side_effect = requests.exceptions.RequestException("Timeout")
+    mock_requests_get.side_effect = requests.exceptions.RequestException(
+        "Timeout"
+    )
     mapper_func = mapper.binary_url_map("col1", skip=True)
     with pytest.raises(SkippingError):
         mapper_func(LINE_SIMPLE, {})
@@ -203,7 +203,9 @@ def test_binary_url_map_request_exception(
     mock_log_warning: MagicMock, mock_requests_get: MagicMock
 ) -> None:
     """Tests that a warning is logged when a URL request fails and skip=False."""
-    mock_requests_get.side_effect = requests.exceptions.RequestException("Timeout")
+    mock_requests_get.side_effect = requests.exceptions.RequestException(
+        "Timeout"
+    )
     mapper_func = mapper.binary_url_map("col1", skip=False)
     assert mapper_func(LINE_SIMPLE, {}) == ""
     mock_log_warning.assert_called_once()
