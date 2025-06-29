@@ -69,8 +69,12 @@ This guarantees that two different workers will never try to update the same par
 #### Visualizing the Difference
 
 ```{mermaid}
+---
+config:
+  theme: redux
+---
 graph TD
-    subgraph "Without --groupby (High Risk of Error)"
+    subgraph subGraph0["Without --groupby (High Risk of Error)"]
         A["Records:<br>C1 (Parent A)<br>C2 (Parent B)<br>C3 (Parent A)"] --> B{Random Distribution};
         B --> W1["Worker 1 gets C1"];
         B --> W2["Worker 2 gets C3"];
@@ -81,7 +85,7 @@ graph TD
         P_A --> X["<font color=red><b>ERROR</b></font><br>Concurrent Update"];
     end
 
-    subgraph "With --groupby=parent_id/id (Safe)"
+    subgraph subGraph1["With --groupby=parent_id/id (Safe)"]
         C["Records:<br>C1 (Parent A)<br>C2 (Parent B)<br>C3 (Parent A)"] --> D{Smart Distribution};
         D -- "parent_id = A" --> W3b["Worker 1 gets C1, C3"];
         D -- "parent_id = B" --> W4b["Worker 2 gets C2"];
@@ -89,6 +93,16 @@ graph TD
         W4b --> S2[("Update Parent B")];
         S1 & S2 --> Y(["<font color=green><b>SUCCESS</b></font>"]);
     end
+    style W1 fill:#FFF9C4
+    style W2 fill:#C8E6C9
+    style W3 fill:#FFE0B2
+    style W3b fill:#FFF9C4
+    style W4b fill:#C8E6C9
+    style D fill:#BBDEFB
+    style B fill:#BBDEFB
+    style subGraph0 fill:transparent
+    style subGraph1 fill:transparent
+    style Y stroke:#00C853
 ```
 
 ### Example
@@ -133,11 +147,15 @@ This solves both problems:
 #### Visualizing the Difference
 
 ```{mermaid}
+---
+config:
+  theme: redux
+---
 flowchart TD
   subgraph subGraph0["Default Odoo Import (One Big Basket)"]
           B{"One Large Transaction<br>Size=1000"}
           A["1000 Records"]
-          D@{ label: "<font color=\"red\"><b>FAIL</b></font><br>All 1000 records rejected" }
+          D@{ label: "<font color="red"><b>FAIL</b></font><br>All 1000 records rejected" }
           C["Odoo Database"]
     end
   subgraph subGraph1["odoo-data-flow with --size=100 (Multiple Small Baskets)"]
@@ -145,7 +163,7 @@ flowchart TD
           E["1000 Records"]
           G["Odoo Database"]
           H{"Transaction 2<br>100 records"}
-          I@{ label: "<font color=\"red\"><b>FAIL</b></font><br>Only 100 records rejected" }
+          I@{ label: "<font color="red"><b>FAIL</b></font><br>Only 100 records rejected" }
           J["...continues with Transaction 3"]
     end
       A --> B
@@ -164,6 +182,8 @@ flowchart TD
       I@{ shape: rect}
       style C fill:#AA00FF
       style G fill:#AA00FF
+      style subGraph0 fill:transparent
+      style subGraph1 fill:transparent
 
 ```
 

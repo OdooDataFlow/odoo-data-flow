@@ -39,9 +39,9 @@ config:
 flowchart TD
     A["Odoo-Data-Flow"] -- Import --- B["odoo-client lib"]
     B --- C["Transformed CSV Files"]
-    B --> D["odoo"]
+    B L_B_D_0@--> D["odoo"]
     n1["Configuration File"] --> B
-    A@{ shape: doc}
+    A@{ shape: proc}
     B@{ shape: proc}
     C@{ shape: docs}
     D@{ shape: cyl}
@@ -51,6 +51,7 @@ flowchart TD
     style C fill:#FFF9C4
     style D fill:#AA00FF
     style n1 fill:#C8E6C9
+    L_B_D_0@{ animation: slow }
 ```
 
 This separation provides several key advantages:
@@ -193,15 +194,16 @@ config:
   theme: redux
 ---
 flowchart TD
-    ExportA["Odoo Instance"] --> ExportB{"odoo-data-flow export"}
+    ExportA["Odoo Instance"] L_ExportA_ExportB_0@--> ExportB{"odoo-data-flow export"}
     ExportC["Configuration<br>(CLI Options)"] --> ExportB
-    ExportB --> ExportD["Output File<br>(e.g., exported_partners.csv)"]
+    ExportB L_ExportB_ExportD_0@--> ExportD["Output File<br>(e.g., exported_partners.csv)"]
     ExportA@{ shape: cyl}
     ExportD@{ shape: doc}
     style ExportA fill:#AA00FF
     style ExportB fill:#BBDEFB
     style ExportD fill:#FFF9C4
-
+    L_ExportA_ExportB_0@{ animation: slow }
+    L_ExportB_ExportD_0@{ animation: slow }
 ```
 
 > For detailed instructions, see the [Exporting Data Guide](guides/exporting_data.md).

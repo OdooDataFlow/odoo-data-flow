@@ -103,7 +103,8 @@ While Odoo's external API has historically used XML-RPC, modern cloud instances 
 
 Your `conf/connection.conf` should look something like this:
 
-```ini
+```{code-block} ini
+:caption: conf/connection.conf
 [Connection]
 hostname = my-project.odoo.com
 port = 443

@@ -14,7 +14,8 @@ While CSV is common, you may have source data in XML format. The `Processor` can
 
 Here is an example of an XML file that the `Processor` can parse. Note the `<ClientList>` container tag and the repeating `<Client>` tags for each record. The processor can also handle nested tags like `<Contact>`.
 
-```xml
+```{code-block} xml
+:caption: origin/clients.xml
 <?xml version="1.0" encoding="UTF-8"?>
 <ClientList>
     <Client>
@@ -331,7 +332,8 @@ You first initialize a `Processor` with your primary file. Then, you call `.join
 
 **Transformation Script (`transform_merge.py`)**
 
-```python
+```{code-block} python
+:caption: transform_merge.py
 from odoo_data_flow.lib.transform import Processor
 from odoo_data_flow.lib import mapper
 
@@ -375,7 +377,8 @@ You can then iterate over this dictionary to process each chunk independently.
 
 **Transformation Script (`transform_split.py`)**
 
-```python
+```{code-block} python
+:caption: transform_split.py
 from odoo_data_flow.lib.transform import Processor
 from odoo_data_flow.lib import mapper
 

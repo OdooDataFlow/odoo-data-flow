@@ -12,8 +12,9 @@ By default, the tool looks for this file at `conf/connection.conf`, but you can 
 
 The configuration file must contain a `[Connection]` section with the necessary key-value pairs.
 
-**Example `conf/connection.conf`:**
-```ini
+
+```{code-block} ini
+:caption: conf/connection.conf
 [Connection]
 hostname = localhost
 port = 8069
@@ -78,8 +79,8 @@ On premise, it's advised to use a dedicated API user with the minimal access rig
 
 Below is a real world example of connection to a cloud hosted odoo instance on [opaas](https://www.opaas.cloud/).
 
-**Example `conf/connection.conf`:**
-```ini
+```{code-block} ini
+:caption: conf/connection.conf
 [Connection]
 hostname = test.yourinstance.opa.as
 database = bvnem-test

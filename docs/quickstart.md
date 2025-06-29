@@ -32,9 +32,10 @@ First, create the recommended directory structure for a data flow project.
 
 Create the `conf/connection.conf` file. The section header `[Connection]` and the keys (`database`, `login`) must match this example, as they are used by the import client.
 
-**File: `conf/connection.conf`**
 
-```ini
+```{code-block} ini
+:caption: conf/connection.conf
+
 [Connection]
 hostname = my-odoo-instance.odoo.com
 database = my_odoo_db
@@ -45,13 +46,13 @@ port = 443
 uid = 2
 ```
 
+
 ## Step 3: The Raw Data (`origin/clients.csv`)
 
 Create a raw data file in `origin/clients.csv`.
 
-**File: `origin/clients.csv`**
-
-```text
+```{code-block} text
+:caption: origin/clients.csv
 ID,Firstname,Lastname,EmailAddress
 C001,John,Doe,john.doe@test.com
 C002,Jane,Smith,jane.s@test.com
@@ -63,9 +64,8 @@ This script is the core of our logic. It uses the `Processor` to read the source
 
 Create the file `transform.py`:
 
-**File: `transform.py`**
-
-```python
+```{code-block} python
+:caption: transform.py
 from odoo_data_flow.lib.transform import Processor
 from odoo_data_flow.lib import mapper
 
@@ -116,7 +116,8 @@ Let's look at what was created.
 
 **File: `data/res_partner.csv` (Transformed & Clean Data)**
 
-```text
+```{code-block} text
+:caption: data/res_partner.csv
 id,name,email,is_company
 example_client_C001,"John Doe",john.doe@test.com,False
 example_client_C002,"Jane Smith",jane.s@test.com,False
@@ -125,7 +126,8 @@ example_client_C002,"Jane Smith",jane.s@test.com,False
 **File: `load.sh` (The Loading Script)**
 This file now contains commands that use the new, clean `odoo-data-flow` command-line interface.
 
-```bash
+```{code-block} bash
+:caption: load.sh
 #!/bin/bash
 odoo-data-flow import --config conf/connection.conf --file data/res_partner.csv --model res.partner --context "{'tracking_disable': True}"
 odoo-data-flow import --config conf/connection.conf --fail --file data/res_partner.csv --model res.partner --context "{'tracking_disable': True}"

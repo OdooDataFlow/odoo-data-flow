@@ -9,9 +9,10 @@ extensions = [
     "sphinxmermaid",
     "sphinx_click",
     "myst_parser",
+    "sphinx_copybutton",
 ]
 autodoc_typehints = "description"
-html_theme = "furo"
+html_theme = "shibuya"
 
 # The name of an image file (relative to this directory) to place at the top
 # of the sidebar.

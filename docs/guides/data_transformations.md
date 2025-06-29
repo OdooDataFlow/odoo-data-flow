@@ -16,7 +16,8 @@ You can call `.check()` multiple times with different "checker" functions to val
 
 In your `transform.py` script, after initializing the `Processor` but before calling `.process()`, you can add your checks:
 
-```python
+```{code-block} python
+:caption: transform.py
 from odoo_data_flow.lib import checker
 from odoo_data_flow.lib.transform import Processor
 
@@ -243,6 +244,88 @@ processor.process(res_partner_mapping, 'res.partner.csv')
 | -------------------------------------- | ---------------------------------------- | ----------- | --------------------------------------------------------------- |
 | my_import_res_partner.John_Doe_31/12/1980 | my_import_res_partner.The_World_Company | John Doe    | res_partner_category.Premium                                    |
 | my_import_res_partner.David_Smith_28/02/1985| my_import_res_partner.The_Famous_Company| David Smith | res_partner_category.Normal,res_partner_category.Bad_Payer |
+
+---
+
+## Importing Product Variants: Legacy (v9-v12) vs. Modern (v13+)
+
+Importing product variants (e.g., a T-shirt that comes in different colors and sizes) is a common but complex task. The data model for product attributes changed significantly in Odoo 13. The library provides two distinct workflows to handle both the old and new systems.
+
+### Modern Approach (Odoo v13+)
+
+This is the recommended approach for all modern Odoo versions. Odoo can now automatically create product variants if you provide the attribute values directly.
+
+* **Processor Class**: `ProductProcessorV10`
+* **Key Mapper**: `mapper.m2m_template_attribute_value`
+
+**How it Works:**
+You provide the attribute values (e.g., "Blue", "L") as a comma-separated string. The `ProductProcessorV10` sets `create_variant: 'Dynamically'` on the attribute, telling Odoo to find or create the corresponding `product.attribute.value` records and link them to the product template automatically.
+
+#### Example Transformation Script (Modern)
+```python
+# In your transform.py
+from odoo_data_flow.lib import mapper
+from odoo_data_flow.lib.transform import ProductProcessorV10
+
+# Initialize the modern processor
+processor = ProductProcessorV10('origin/products.csv')
+
+# --- 1. Create the product.attribute records ---
+# This step tells Odoo which attributes can create variants
+attributes = ['Color', 'Size']
+processor.process_attribute_data(
+    attributes, 'prod_attrib', 'data/product.attribute.csv', {}
+)
+
+# --- 2. Create the product.template records ---
+# The key is to map the raw values to the attribute's technical name
+template_mapping = {
+    'id': mapper.m2o_map('prod_template_', 'template_id'),
+    'name': mapper.val('Product Name'),
+    'attribute_line_ids/Color/value_ids': mapper.val('Color'),
+    'attribute_line_ids/Size/value_ids': mapper.val('Size'),
+}
+processor.process(template_mapping, 'data/product.template.csv')
+```
+
+### Legacy Approach (Odoo v9-v12)
+
+This approach is for older Odoo versions and requires a more manual, three-file process. You must create the attributes, then the attribute values with their own external IDs, and finally link them to the product template.
+
+* **Processor Class**: `ProductProcessorV9`
+* **Key Mappers**: `mapper.m2m_attribute_value`, `mapper.val_att`, `mapper.m2o_att`
+
+#### Example Transformation Script (Legacy)
+```python
+# In your transform.py
+from odoo_data_flow.lib import mapper
+from odoo_data_flow.lib.transform import ProductProcessorV9
+
+# Initialize the legacy processor
+processor = ProductProcessorV9('origin/products.csv')
+
+# --- This single call creates all three required files ---
+attributes = ['Color', 'Size']
+attribute_prefix = 'prod_attrib'
+
+# Mapping for product.attribute.value file
+value_mapping = {
+    'id': mapper.m2m_attribute_value(attribute_prefix, *attributes),
+    'name': mapper.val_att(attributes),
+    'attribute_id/id': mapper.m2o_att_name(attribute_prefix, attributes),
+}
+
+# Mapping for product.template.attribute.line file
+line_mapping = {
+    'product_tmpl_id/id': mapper.m2o_map('prod_template_', 'template_id'),
+    'attribute_id/id': mapper.m2o_att_name(attribute_prefix, attributes),
+    'value_ids/id': mapper.m2o_att(attribute_prefix, attributes),
+}
+
+processor.process_attribute_mapping(
+    value_mapping, line_mapping, attributes, attribute_prefix, 'data/', {}
+)
+```
 
 ---
 

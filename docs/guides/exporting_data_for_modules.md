@@ -6,6 +6,43 @@ While `odoo-data-flow` does not export directly to Odoo's XML format, it is the 
 
 This guide provides a standard workflow for exporting data to a CSV file and then converting that file into a properly formatted Odoo XML data file.
 
+```{mermaid}
+---
+config:
+  theme: redux
+---
+flowchart LR
+ subgraph subGraph0["Step 1: Export from Odoo"]
+        B{"odoo-data-flow export"}
+        A[("Odoo Database")]
+        C["temp_data.csv"]
+  end
+ subgraph subGraph1["Step 2: Convert on Local Machine"]
+        D{"Python Script<br>(create_data_file.py)"}
+        E["my_module/data/my_data.xml"]
+  end
+ subgraph subGraph2["Step 3: Update Custom Module"]
+        F{"Your Custom Module"}
+        G["__manifest__.py"]
+  end
+    A L_A_B_0@--> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    G --> F
+    style B fill:#BBDEFB
+    style A fill:#AA00FF
+    style C fill:#FFF9C4
+    style D fill:#FFE0B2
+    style E fill:#FFF9C4
+    style F fill:#C8E6C9,stroke:#388E3C
+    style G fill:#E1F5FE
+    style subGraph0 fill:transparent
+    style subGraph1 fill:transparent
+    L_A_B_0@{ animation: slow }
+```
+
 ## The Workflow
 
 The process involves two simple steps:
@@ -28,8 +65,9 @@ odoo-data-flow export \
 
 This command will create a file named `temp_us_states.csv` that looks something like this:
 
-**`temp_us_states.csv`**
-```text
+
+```{code-block} text
+:caption: temp_us_states.csv
 name;code;country_id/id
 Alabama;AL;base.us
 Alaska;AK;base.us
@@ -46,8 +84,8 @@ The script below will:
 - Automatically generate a unique XML ID for each record (e.g., `state_us_al`).
 - Create `<field>` tags for each column.
 
-**`create_data_file.py`**
-```python
+```{code-block} python
+:caption: create_data_file.py
 import csv
 from lxml import etree
 
@@ -99,8 +137,8 @@ print(f"Successfully generated Odoo XML data file at: {XML_OUTPUT_PATH}")
 
 Running this script will produce the following XML file, perfectly formatted for Odoo.
 
-**`my_awesome_module/data/res_country_state_data.xml`**
-```xml
+```{code-block} xml
+:caption: my_awesome_module/data/res_country_state_data.xml
 <?xml version='1.0' encoding='utf-8'?>
 <odoo noupdate="1">
     <record id="state_us_al" model="res.country.state">
@@ -124,8 +162,8 @@ The final step is to tell Odoo to load this file when your module is installed o
 1.  Move the generated XML file to your module's `data/` directory.
 2.  Add the path to the `data` key in your module's `__manifest__.py` file.
 
-**`my_awesome_module/__manifest__.py`**
-```python
+```{code-block} python
+:caption: my_awesome_module/__manifest__.py
 {
     'name': 'My Awesome Module',
     'version': '1.0',

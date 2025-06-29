@@ -177,7 +177,8 @@ This method takes a single argument: the path where the `load.sh` script should 
 
 Here is a complete `transform.py` script that ties everything together.
 
-```python
+```{code-block} python
+:caption: transform.py
 from odoo_data_flow.lib.transform import Processor
 from odoo_data_flow.lib import mapper
 

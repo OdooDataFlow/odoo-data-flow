@@ -2,6 +2,41 @@
 
 The `odoo-data-flow` library includes a powerful `migrate` command designed to perform a direct, in-memory data migration from one Odoo database to another. This is an advanced feature that chains together the export, transform, and import processes into a single step, without needing to create intermediate CSV files on your local machine.
 
+```{mermaid}
+---
+config:
+  theme: redux
+---
+flowchart LR
+ subgraph subGraph0["Source Environment"]
+        A[("Source Odoo DB")]
+  end
+ subgraph subGraph1["Destination Environment"]
+        F[("Destination Odoo DB")]
+  end
+ subgraph subGraph2["Migration Process (In-Memory)"]
+        B["odoo-data-flow migrate"]
+        C{"Exporter"}
+        D{"Processor & Mappers"}
+        E{"Importer"}
+  end
+    B -- 1 Connect & Export --> A
+    A -- 2 Data Stream --> C
+    C -- Raw Data (Header & Rows) --> D
+    D -- Transformed Data --> E
+    E -- 3 Load Data --> F
+    style A fill:#AA00FF
+    style F fill:#AA00FF
+    style B fill:#BBDEFB,stroke:#1976D2
+    style C fill:#FFE0B2
+    style D fill:#FFCC80
+    style E fill:#FFE0B2
+    style subGraph2 fill:transparent
+    style subGraph0 fill:transparent
+    style subGraph1 fill:transparent
+
+```
+
 ## Use Case
 
 This command is ideal for scenarios such as:

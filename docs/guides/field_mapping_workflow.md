@@ -14,6 +14,50 @@ The objective is to produce two CSV files: one listing all the fields for a spec
 
 The entire process is done using the `odoo-data-flow export` command, which we will use to query Odoo's internal data dictionary.
 
+```{mermaid}
+---
+config:
+  theme: redux
+---
+flowchart TD
+ subgraph subGraph0["Source Database"]
+        A[("Source Odoo DB")]
+  end
+ subgraph subGraph1["Destination Database"]
+        B[("Destination Odoo DB")]
+  end
+ subgraph Analysis["Analysis"]
+        G["Diff Tool<br>(e.g., VS Code)"]
+        E["source_fields.csv"]
+        F["destination_fields.csv"]
+  end
+ subgraph subGraph3["Developer's Local Machine"]
+    direction LR
+        C{"odoo-data-flow export<br>--model ir.model.fields"}
+        D{"odoo-data-flow export<br>--model ir.model.fields"}
+        Analysis
+        H["Developer / LLM<br>(fa:fa-user-edit)"]
+        I["transform.py<br>(mapping dictionary)"]
+  end
+    C --> A & E
+    D --> B & F
+    E --> G
+    F --> G
+    G -- List of<br>Renamed/Removed<br>Fields --> H
+    H -- Writes the mapping logic --> I
+    style A fill:#AA00FF
+    style B fill:#C8E6C9,stroke:#388E3C
+    style G fill:#FFE0B2
+    style E fill:#FFF9C4
+    style F fill:#FFF9C4
+    style C fill:#BBDEFB
+    style D fill:#BBDEFB
+    style I fill:#E1F5FE
+    style subGraph3 fill:transparent
+    L_C_E_0@{ animation: slow }
+    L_D_F_0@{ animation: slow }
+```
+
 ### Step 1: Export Field Definitions from the Source Database
 
 First, run the `export` command pointed at your **source** database configuration. This command targets the `ir.model.fields` model, which is Odoo's internal dictionary of all model fields.

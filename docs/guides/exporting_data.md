@@ -2,6 +2,25 @@
 
 In addition to importing, `odoo-data-flow` provides a powerful command-line utility for exporting data directly from Odoo into a structured CSV file. This is ideal for creating backups, feeding data into other systems, or for analysis.
 
+```{mermaid}
+---
+config:
+  theme: redux
+---
+flowchart TD
+    ExportA["Odoo Instance"] L_ExportA_ExportB_0@--> ExportB{"odoo-data-flow export"}
+    ExportC["Configuration<br>(CLI Options)"] --> ExportB
+    ExportB L_ExportB_ExportD_0@--> ExportD["Output File<br>(e.g., exported_partners.csv)"]
+    ExportA@{ shape: cyl}
+    ExportD@{ shape: doc}
+    style ExportA fill:#AA00FF
+    style ExportB fill:#BBDEFB
+    style ExportD fill:#FFF9C4
+    L_ExportA_ExportB_0@{ animation: slow }
+    L_ExportB_ExportD_0@{ animation: slow }
+```
+
+
 ## The `odoo-data-flow export` Command
 
 The export process is handled by the `export` sub-command of the main `odoo-data-flow` tool. Unlike the import workflow, exporting is a single-step operation where you execute one command with the right parameters to pull data from your Odoo database.
