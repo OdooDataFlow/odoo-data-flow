@@ -23,3 +23,10 @@ html_logo = "_static/icon.png"
 # the docs.  This file should be a Windows icon file (.ico) being 16x16 or 32x32
 # pixels large.
 html_favicon = "_static/favicon.ico"
+
+# -- Logic to disable mermaid for LaTeX output -----------------------------
+# The 'tags' object is automatically provided by Sphinx.
+tags = globals().get("tags")
+if tags and tags.has("latex"):
+    # The sphinx-mermaid extension is not compatible with the LaTeX builder
+    extensions.remove("sphinx_mermaid")
