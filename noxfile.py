@@ -236,7 +236,14 @@ def docs_build(session: nox.Session) -> None:
         "docs",
         external=True,
     )
-    session.install("sphinx", "sphinx-mermaid", "sphinx-click", "myst_parser", "furo")
+    session.install(
+        "sphinx",
+        "sphinx-mermaid",
+        "sphinx-click",
+        "myst_parser",
+        "shibuya",
+        "sphinx-copybutton",
+    )
     session.install("-e", ".")
 
     build_dir = Path("docs", "_build")
