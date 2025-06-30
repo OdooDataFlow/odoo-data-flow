@@ -159,7 +159,7 @@ def tests(session: nox.Session) -> None:
         external=True,
     )
 
-    session.install("pytest", "coverage")
+    session.install("pytest", "coverage", "pytest-mock")
     session.install("-e", ".")
     session.run("pytest", *session.posargs)
 
@@ -168,7 +168,7 @@ def tests(session: nox.Session) -> None:
 def coverage(session: nox.Session) -> None:
     """Produce the coverage report."""
     args = session.posargs or ["report"]
-    session.install("pytest", "coverage[toml]", "pytest-cov")
+    session.install("pytest", "coverage[toml]", "pytest-cov", "pytest-mock")
     session.install("-e", ".")
     session.log("Running pytest with coverage...")
     session.run("pytest", "--cov=src", "--cov-report=xml")
@@ -192,7 +192,7 @@ def typeguard_tests(session: nox.Session) -> None:
         external=True,
     )
 
-    session.install("typeguard", "pytest")
+    session.install("typeguard", "pytest", "pytest-mock")
     session.install("-e", ".")
     session.run("pytest", "--typeguard-packages", package, *session.posargs)
 

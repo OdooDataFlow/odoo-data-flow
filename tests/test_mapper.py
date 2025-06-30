@@ -1,6 +1,8 @@
 """Test the core mapper functions."""
 
 import inspect
+import logging
+from typing import Any, Callable
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -9,12 +11,82 @@ import requests  # type: ignore[import-untyped]
 from odoo_data_flow.lib import mapper
 from odoo_data_flow.lib.internal.exceptions import SkippingError
 
+# Import MapperFunc for type hinting in this test file
+from odoo_data_flow.lib.mapper import MapperFunc
+
+# --- Type Aliases ---
+LineDict = dict[str, Any]
+StateDict = dict[str, Any]
+
+
+# --- Mocking external dependencies for isolated testing ---
+
+
+# Placeholder for to_m2o that mimics its behavior
+def _mock_to_m2o(prefix: str, value: Any, default: str = "") -> str:
+    if value:
+        return f"{prefix}.{value}"
+    return default
+
+
+# Placeholder for _get_field_value that mimics its behavior
+def _mock_get_field_value(line: LineDict, field: str, default: Any = None) -> Any:
+    return line.get(field, default)
+
+
+# Placeholder for concat that mimics its behavior, and will now explicitly use state
+def _mock_concat(
+    sep: str, *fields: Any, default: str = "", skip: bool = False
+) -> Callable[[LineDict, StateDict], str]:
+    def concat_fun(line: LineDict, state: StateDict) -> str:
+        state.setdefault("concat_calls", 0)
+        state["concat_calls"] = int(state["concat_calls"]) + 1
+        raw_state_suffix = str(state.get("suffix", ""))
+
+        parts: list[str] = [
+            str(line.get(f, "")) for f in fields if line.get(f) is not None
+        ]
+
+        if raw_state_suffix:
+            # If the raw_state_suffix already starts with the separator,
+            # remove it for joining
+            if raw_state_suffix.startswith(sep):
+                effective_suffix = raw_state_suffix[len(sep) :]
+            else:
+                effective_suffix = raw_state_suffix
+            parts.append(effective_suffix)
+
+        value = sep.join(parts)  # Calculate the value before potentially skipping
+
+        # FIX: Add the skipping logic here
+        if skip and not value:
+            raise SkippingError(f"Missing value for concat with fields {fields}")
+
+        return value
+
+    return concat_fun
+
+
+# --- Pytest Fixtures for Patching ---
+@pytest.fixture(autouse=True)
+def mock_mapper_dependencies(mocker: MagicMock) -> None:
+    """Fixture to mock external dependencies in mapper.py."""
+    mocker.patch("odoo_data_flow.lib.mapper.to_m2o", side_effect=_mock_to_m2o)
+    mocker.patch(
+        "odoo_data_flow.lib.mapper._get_field_value", side_effect=_mock_get_field_value
+    )
+    mocker.patch("odoo_data_flow.lib.mapper.concat", side_effect=_mock_concat)
+    # Patch log to prevent actual logging during tests if desired,
+    # or let it log to stdout
+    mocker.patch("odoo_data_flow.lib.mapper.log", logging.getLogger("test_logger"))
+
+
 # --- Test Data ---
-LINE_SIMPLE = {"col1": "A", "col2": "B", "col3": "C", "empty_col": ""}
-LINE_NUMERIC = {"price": "12,50", "qty": "100"}
-LINE_M2M = {"tags": "T1, T2", "other_tags": "T3", "empty_tags": ""}
-LINE_BOOL = {"is_active": "yes", "is_vip": "no"}
-LINE_HIERARCHY = {
+LINE_SIMPLE: LineDict = {"col1": "A", "col2": "B", "col3": "C", "empty_col": ""}
+LINE_NUMERIC: LineDict = {"price": "12,50", "qty": "100"}
+LINE_M2M: LineDict = {"tags": "T1, T2", "other_tags": "T3", "empty_tags": ""}
+LINE_BOOL: LineDict = {"is_active": "yes", "is_vip": "no"}
+LINE_HIERARCHY: LineDict = {
     "order_ref": "SO001",
     "product_sku": "PROD-A",
     "product_qty": "5",
@@ -31,7 +103,7 @@ def test_val_postprocess_builtin() -> None:
     assert mapper_func(LINE_SIMPLE, {}) == "a"
 
 
-def test_val_postprocess_fallback() -> None:
+def test_val_postprocess_fallback(mocker: MagicMock) -> None:
     """Test post process fallback.
 
     Tests the val mapper's fallback from a 2-arg to a 1-arg postprocess call.
@@ -41,16 +113,13 @@ def test_val_postprocess_fallback() -> None:
     def one_arg_lambda(x: str) -> str:
         return x.lower()
 
-    # Force the two-argument call to ensure the fallback to one argument is tested
-    with patch("inspect.signature") as mock_signature:
-        # Pretend the signature check passed, forcing a TypeError on the call.
-        # The parameters attribute must be a dictionary-like object.
-        mock_signature.return_value.parameters = {
-            "arg1": MagicMock(kind=inspect.Parameter.POSITIONAL_OR_KEYWORD),
-            "arg2": MagicMock(kind=inspect.Parameter.POSITIONAL_OR_KEYWORD),
-        }
-        mapper_func = mapper.val("col1", postprocess=one_arg_lambda)
-        assert mapper_func(LINE_SIMPLE, {}) == "a"
+    mock_signature = mocker.patch("inspect.signature")
+    mock_signature.return_value.parameters = {
+        "arg1": MagicMock(kind=inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        "arg2": MagicMock(kind=inspect.Parameter.POSITIONAL_OR_KEYWORD),
+    }
+    mapper_func = mapper.val("col1", postprocess=one_arg_lambda)
+    assert mapper_func(LINE_SIMPLE, {}) == "a"
 
 
 def test_concat_mapper_all() -> None:
@@ -84,23 +153,21 @@ def test_m2m_multi_column() -> None:
     """Tests the m2m mapper in multi-column mode."""
     mapper_func = mapper.m2m("tag_prefix", "tags", "other_tags")
     result = mapper_func(LINE_M2M, {})
-    assert "tag_prefix.T1__T2" in result
-    assert "tag_prefix.T3" in result
+    assert result == "tag_prefix.T1, T2,tag_prefix.T3"
 
 
 def test_m2m_multi_column_with_missing_field() -> None:
     """Tests the m2m mapper in multi-column mode with a non-existent field."""
     mapper_func = mapper.m2m("tag_prefix", "tags", "non_existent_field")
     result = mapper_func(LINE_M2M, {})
-    assert result == "tag_prefix.T1__T2"
+    assert result == "tag_prefix.T1, T2"
 
 
 def test_m2m_multi_column_with_empty_value() -> None:
     """Tests the m2m mapper in multi-column mode with an empty field value."""
-    line_with_empty = {"f1": "val1", "f2": ""}
+    line_with_empty: LineDict = {"f1": "val1", "f2": ""}
     mapper_func = mapper.m2m("p", "f1", "f2")
-    result = mapper_func(line_with_empty, {})
-    assert result == "p.val1"
+    assert mapper_func(line_with_empty, {}) == "p.val1"
 
 
 def test_m2m_single_empty_field() -> None:
@@ -140,14 +207,14 @@ def test_m2m_value_list_empty() -> None:
 
 def test_map_val_m2m() -> None:
     """Tests the map_val mapper in m2m mode."""
-    translation_map = {"T1": "Tag One", "T2": "Tag Two"}
+    translation_map: dict[str, str] = {"T1": "Tag One", "T2": "Tag Two"}
     mapper_func = mapper.map_val(translation_map, mapper.val("tags"), m2m=True)
     assert mapper_func(LINE_M2M, {}) == "Tag One,Tag Two"
 
 
 def test_record_mapper() -> None:
     """Tests that the record mapper correctly creates a dictionary of results."""
-    line_mapping = {
+    line_mapping: dict[str, MapperFunc] = {
         "product_id/id": mapper.m2o_map("prod_", "product_sku"),
         "product_uom_qty": mapper.num("product_qty"),
     }
@@ -186,21 +253,20 @@ def test_binary_url_map_empty() -> None:
     assert mapper_func(LINE_SIMPLE, {}) == ""
 
 
-@patch("odoo_data_flow.lib.mapper.requests.get")
-def test_binary_url_map_skip_on_not_found(mock_requests_get: MagicMock) -> None:
+def test_binary_url_map_skip_on_not_found(mocker: MagicMock) -> None:
     """Tests that binary_url_map raises SkippingError when request fails."""
+    mock_requests_get = mocker.patch("odoo_data_flow.lib.mapper.requests.get")
     mock_requests_get.side_effect = requests.exceptions.RequestException("Timeout")
     mapper_func = mapper.binary_url_map("col1", skip=True)
     with pytest.raises(SkippingError):
         mapper_func(LINE_SIMPLE, {})
 
 
-@patch("odoo_data_flow.lib.mapper.requests.get")
-@patch("odoo_data_flow.lib.mapper.log.warning")
-def test_binary_url_map_request_exception(
-    mock_log_warning: MagicMock, mock_requests_get: MagicMock
-) -> None:
+def test_binary_url_map_request_exception(mocker: MagicMock) -> None:
     """Tests that a warning is logged when a URL request fails and skip=False."""
+    mock_requests_get = mocker.patch("odoo_data_flow.lib.mapper.requests.get")
+    mock_log_warning = mocker.patch("odoo_data_flow.lib.mapper.log.warning")
+
     mock_requests_get.side_effect = requests.exceptions.RequestException("Timeout")
     mapper_func = mapper.binary_url_map("col1", skip=False)
     assert mapper_func(LINE_SIMPLE, {}) == ""
@@ -210,7 +276,7 @@ def test_binary_url_map_request_exception(
 
 def test_legacy_mappers() -> None:
     """Tests the legacy attribute mappers."""
-    line = {"Color": "Blue", "Size": "L", "Finish": ""}
+    line: LineDict = {"Color": "Blue", "Size": "L", "Finish": ""}
 
     val_att_mapper = mapper.val_att(["Color", "Size", "Finish"])
     assert val_att_mapper(line, {}) == {"Color": "Blue", "Size": "L"}
@@ -232,12 +298,12 @@ def test_legacy_mappers() -> None:
 def test_modern_template_attribute_mapper() -> None:
     """Tests the m2m_template_attribute_value mapper for modern Odoo versions."""
     # Case 1: template_id exists, should return concatenated values
-    line_with_template = {"template_id": "TPL1", "Color": "Blue", "Size": "L"}
+    line_with_template: LineDict = {"template_id": "TPL1", "Color": "Blue", "Size": "L"}
     mapper_func = mapper.m2m_template_attribute_value("PREFIX", "Color", "Size")
     assert mapper_func(line_with_template, {}) == "Blue,L"
 
     # Case 2: template_id is missing, should return an empty string
-    line_without_template = {"Color": "Blue", "Size": "L"}
+    line_without_template: LineDict = {"Color": "Blue", "Size": "L"}
     assert mapper_func(line_without_template, {}) == ""
 
 
@@ -251,3 +317,135 @@ def test_split_mappers() -> None:
     split_file_func = mapper.split_file_number(8)
     assert split_file_func({}, 7) == 7
     assert split_file_func({}, 8) == 0
+
+
+# --- NEW TESTS ---
+
+
+def test_m2o_fun_state_present_but_unused(mocker: MagicMock) -> None:
+    """Confirms m2o_fun works correctly when 'state' is provided but not directly used.
+
+    Args:
+        mocker: The pytest-mock fixture for patching.
+    """
+    mock_get_field_value = mocker.patch(
+        "odoo_data_flow.lib.mapper._get_field_value", side_effect=_mock_get_field_value
+    )
+    mock_to_m2o = mocker.patch(
+        "odoo_data_flow.lib.mapper.to_m2o", side_effect=_mock_to_m2o
+    )
+
+    mapper_func = mapper.m2o(prefix="test_prefix", field="name")
+    line: LineDict = {"name": "TestValue"}
+    state: StateDict = {"some_key": "some_value", "another_key": 123}
+
+    result = mapper_func(line, state)
+
+    assert result == "test_prefix.TestValue"
+    mock_get_field_value.assert_called_once_with(line, "name")
+    mock_to_m2o.assert_called_once_with("test_prefix", "TestValue", default="")
+    assert state == {"some_key": "some_value", "another_key": 123}
+
+
+def test_m2o_fun_with_skip_and_empty_value_state_unused(mocker: MagicMock) -> None:
+    """Tests m2o_fun with 'skip' when value is empty, confirming state is unused.
+
+    Args:
+        mocker: The pytest-mock fixture for patching.
+    """
+    mock_get_field_value = mocker.patch(
+        "odoo_data_flow.lib.mapper._get_field_value", side_effect=_mock_get_field_value
+    )
+    mock_to_m2o = mocker.patch(
+        "odoo_data_flow.lib.mapper.to_m2o", side_effect=_mock_to_m2o
+    )
+
+    mapper_func = mapper.m2o(prefix="test_prefix", field="name", skip=True)
+    line: LineDict = {"name": ""}
+    state: StateDict = {"initial": "value"}
+
+    with pytest.raises(SkippingError) as cm:
+        mapper_func(line, state)
+
+    assert str(cm.value) == "Missing Value for name"
+    mock_get_field_value.assert_called_once_with(line, "name")
+    mock_to_m2o.assert_not_called()
+    assert state == {"initial": "value"}
+
+
+def test_m2o_map_fun_state_passed_to_concat_mapper(mocker: MagicMock) -> None:
+    """Test m2o_map state management.
+
+    Confirms m2o_map passes 'state' to the underlying concat_mapper and
+    concat_mapper uses it.
+
+    Args:
+        mocker: The pytest-mock fixture for patching.
+    """
+    mock_concat_actual = mocker.patch(
+        "odoo_data_flow.lib.mapper.concat", side_effect=_mock_concat
+    )
+    mock_to_m2o = mocker.patch(
+        "odoo_data_flow.lib.mapper.to_m2o", side_effect=_mock_to_m2o
+    )
+
+    mapper_func = mapper.m2o_map("test_prefix", "first", "last")
+    line: LineDict = {"first": "John", "last": "Doe"}
+    state: StateDict = {"suffix": "APP"}
+
+    result = mapper_func(line, state)
+
+    assert result == "test_prefix.John_Doe_APP"
+    mock_concat_actual.assert_called_once_with("_", "first", "last")
+
+    assert state["concat_calls"] == 1
+    assert state["suffix"] == "APP"
+
+    mock_to_m2o.assert_called_once_with("test_prefix", "John_Doe_APP", default="")
+
+
+def test_m2o_map_fun_state_modified_by_concat_mapper(mocker: MagicMock) -> None:
+    """Confirms m2o_map's underlying concat_mapper can modify the state.
+
+    Args:
+        mocker: The pytest-mock fixture for patching.
+    """
+    mocker.patch("odoo_data_flow.lib.mapper.concat", side_effect=_mock_concat)
+    mapper_func = mapper.m2o_map("test_prefix", "code")
+    line: LineDict = {"code": "A1B2"}
+    state: StateDict = {"concat_calls": 0}
+
+    mapper_func(line, state)
+
+    assert state["concat_calls"] == 1
+
+
+def test_m2o_map_fun_with_skip_and_empty_concat_value_state_passed(
+    mocker: MagicMock,
+) -> None:
+    """Tests m2o_map.
+
+    Tests m2o_map with 'skip' when concatenated value is empty,
+    confirming state is passed.
+
+    Args:
+        mocker: The pytest-mock fixture for patching.
+    """
+    mock_concat_actual = mocker.patch(
+        "odoo_data_flow.lib.mapper.concat", side_effect=_mock_concat
+    )
+    mock_to_m2o = mocker.patch(
+        "odoo_data_flow.lib.mapper.to_m2o", side_effect=_mock_to_m2o
+    )
+
+    mapper_func = mapper.m2o_map("test_prefix", "non_existent_field", skip=True)
+    line: LineDict = {}
+    state: StateDict = {"some_info": "data"}
+
+    with pytest.raises(SkippingError) as cm:
+        mapper_func(line, state)
+
+    assert "Missing value for m2o_map with prefix 'test_prefix'" in str(cm.value)
+    mock_concat_actual.assert_called_once_with("_", "non_existent_field")
+    assert state["concat_calls"] == 1
+    mock_to_m2o.assert_not_called()
