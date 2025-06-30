@@ -323,38 +323,39 @@ def m2o_map(
     return m2o_fun
 
 
-def m2m(prefix: str, *fields: Any, sep: str = ",") -> MapperFunc:
+def m2m(prefix: str, *fields: Any, sep: str = ",", default: str = "") -> MapperFunc:
     """Returns a mapper that creates a comma-separated list of Many2many external IDs.
 
-    This mapper has two modes:
-    1.  **Multi-column**: If multiple fields are provided, it treats the value of
-        each field as a single ID.
-    2.  **Single-column**: If one field is provided, it splits the value of that
-        field by the separator `sep`.
+    It processes values from specified source columns, splitting them by 'sep'
+    if they contain the separator, and applies the prefix to each resulting ID.
 
     Args:
         prefix: The XML ID prefix to apply to each value.
-        *fields: One or more source column names.
-        sep: The separator to use when splitting a single field.
+        *fields: One or more source column names from which to get values.
+        sep: The separator to use when splitting values within a single field.
+        default: The value to return if no IDs are generated.
 
     Returns:
         A mapper function that returns a comma-separated string of external IDs.
     """
 
     def m2m_fun(line: LineDict, state: StateDict) -> str:
-        all_values = []
-        if len(fields) > 1:  # Mode 1: Multiple columns
-            for field_name in fields:
-                value = _get_field_value(line, field_name)
-                if value:
-                    all_values.append(to_m2o(prefix, value))
-        elif len(fields) == 1:  # Mode 2: Single column with separator
-            field_name = fields[0]
+        all_ids = []
+        for field_name in fields:
             value = _get_field_value(line, field_name)
             if value and isinstance(value, str):
-                all_values.extend(to_m2o(prefix, v.strip()) for v in value.split(sep))
+                # Always split if the value contains the separator
+                # This makes behavior consistent regardless of # of fields
+                current_field_ids = [
+                    to_m2m(prefix, v.strip()) for v in value.split(sep) if v.strip()
+                ]
+                all_ids.extend(current_field_ids)
 
-        return ",".join(all_values)
+        # If no IDs are generated and default is provided, use it
+        if not all_ids and default:
+            return default
+
+        return ",".join(all_ids)
 
     return m2m_fun
 

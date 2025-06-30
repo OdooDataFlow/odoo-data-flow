@@ -151,16 +151,23 @@ def test_m2o_map_success() -> None:
 
 def test_m2m_multi_column() -> None:
     """Tests the m2m mapper in multi-column mode."""
+    # With the new m2m logic, this should split both "tags" and "other_tags"
+    # "tags" ("T1, T2") should become "tag_prefix.T1", "tag_prefix.T2"
+    # "other_tags" ("T3") should become "tag_prefix.T3"
+    # Joined by comma: "tag_prefix.T1,tag_prefix.T2,tag_prefix.T3"
     mapper_func = mapper.m2m("tag_prefix", "tags", "other_tags")
     result = mapper_func(LINE_M2M, {})
-    assert result == "tag_prefix.T1, T2,tag_prefix.T3"
+    assert result == "tag_prefix.T1,tag_prefix.T2,tag_prefix.T3"
 
 
 def test_m2m_multi_column_with_missing_field() -> None:
     """Tests the m2m mapper in multi-column mode with a non-existent field."""
+    # "tags" ("T1, T2") should become "tag_prefix.T1", "tag_prefix.T2"
+    # "non_existent_field" will be empty/None
+    # Joined by comma: "tag_prefix.T1,tag_prefix.T2"
     mapper_func = mapper.m2m("tag_prefix", "tags", "non_existent_field")
     result = mapper_func(LINE_M2M, {})
-    assert result == "tag_prefix.T1, T2"
+    assert result == "tag_prefix.T1,tag_prefix.T2"
 
 
 def test_m2m_multi_column_with_empty_value() -> None:
@@ -172,8 +179,26 @@ def test_m2m_multi_column_with_empty_value() -> None:
 
 def test_m2m_single_empty_field() -> None:
     """Tests the m2m mapper in single-column mode with an empty field."""
+    # "empty_tags" is "", so it should return an empty string.
     mapper_func = mapper.m2m("tag_prefix", "empty_tags", sep=",")
     assert mapper_func(LINE_M2M, {}) == ""
+
+
+# Add a specific test for m2m single column with a comma-separated value
+def test_m2m_single_column_splits_value() -> None:
+    """Tests that m2m in single-column mode correctly splits the field value."""
+    line = {"products": "PROD1, PROD2,PROD3"}
+    mapper_func = mapper.m2m("prod_prefix", "products", sep=",")
+    assert (
+        mapper_func(line, {}) == "prod_prefix.PROD1,prod_prefix.PROD2,prod_prefix.PROD3"
+    )
+
+
+def test_m2m_single_column_splits_value_with_custom_sep() -> None:
+    """Tests that m2m in single-column mode correctly splits with custom separator."""
+    line = {"items": "ITEM-A; ITEM-B"}
+    mapper_func = mapper.m2m("item_prefix", "items", sep=";")
+    assert mapper_func(line, {}) == "item_prefix.ITEM-A,item_prefix.ITEM-B"
 
 
 def test_m2m_map_with_concat() -> None:
