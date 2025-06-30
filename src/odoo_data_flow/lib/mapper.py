@@ -58,7 +58,11 @@ ListMapperFunc = Callable[[LineDict, StateDict], list[str]]
 
 def _get_field_value(line: LineDict, field: str, default: Any = "") -> Any:
     """Safely retrieves a value from the current data row."""
-    return line.get(field, default) or default
+    value = line.get(field, default)
+    log.debug(
+        f"Getting field '{field}': value='{value}' from line keys: {list(line.keys())}"
+    )
+    return value
 
 
 def _str_to_mapper(field: Any) -> MapperFunc:
@@ -401,74 +405,88 @@ def m2o_att_name(prefix: str, att_list: list[str]) -> MapperFunc:
 
 
 def m2m_id_list(
-    prefix: str, *fields: Any, sep: str = ",", const_values: Optional[list[str]] = None
+    prefix: str, *args: Any, sep: str = ",", const_values: Optional[list[str]] = None
 ) -> ListMapperFunc:
     """Returns a mapper for creating a list of M2M external IDs.
 
-    This is primarily used when creating the related records for a M2M field,
-    such as creating all unique `res.partner.category` records.
-
-    Args:
-        prefix: The XML ID prefix to apply to each value.
-        *fields: One or more source fields to read values from.
-        sep: The separator to use when splitting values.
-        const_values: A list of constant XML IDs to always include.
-
-    Returns:
-        A mapper function that returns a list of individual external IDs.
+    This function can take either raw field names (str) or other mapper functions
+    as its arguments. It processes each argument to produce an individual ID.
+    If a field's value contains the separator, it will be split.
     """
     if const_values is None:
         const_values = []
 
     def m2m_id_list_fun(line: LineDict, state: StateDict) -> list[str]:
-        # Call a shared internal helper to get unique, ordered raw values
-        raw_values = _get_unique_raw_values_from_fields(
-            line, state, fields, sep, const_values
-        )
-        # Apply prefixing to each raw value
-        return [to_m2o(prefix, v) for v in raw_values if v]
+        all_ids: list[str] = []
+        for arg in args:
+            # Determine if arg is a field name or an already-created mapper
+            if isinstance(arg, str):
+                raw_value = _get_field_value(line, arg)
+            elif callable(arg):  # Assume it's a mapper function
+                try:
+                    raw_value = arg(line, state)
+                except (
+                    TypeError
+                ):  # Fallback for mappers not taking 'state' (less common now)
+                    raw_value = arg(line)
+            else:
+                raw_value = ""  # Or raise error, depending on desired strictness
+
+            if raw_value and isinstance(raw_value, str):
+                # Always split values by separator if they contain it.
+                # This ensures "Color_Black" and "Gender_Woman" are separate.
+                parts = [v.strip() for v in raw_value.split(sep) if v.strip()]
+                all_ids.extend([to_m2o(prefix, p) for p in parts])
+            elif raw_value:  # If not string but truthy (e.g., a number from mapper.num)
+                all_ids.append(to_m2o(prefix, str(raw_value)))
+
+        # Add constant values, applying prefix
+        all_ids.extend([to_m2o(prefix, cv) for cv in const_values if cv])
+
+        # Ensure uniqueness and preserve order
+        unique_ids = list(dict.fromkeys(all_ids))
+        return unique_ids
 
     return m2m_id_list_fun
 
 
 def m2m_value_list(
-    *fields: Any, sep: str = ",", const_values: Optional[list[str]] = None
-) -> ListMapperFunc:  # Changed to ListMapperFunc
-    """Returns a mapper that creates a Python list of unique values."""
+    *args: Any, sep: str = ",", const_values: Optional[list[str]] = None
+) -> ListMapperFunc:
+    """Returns a mapper that creates a Python list of unique raw values.
+
+    It processes each argument to produce an individual raw value.
+    If a field's value contains the separator, it will be split.
+    """
     if const_values is None:
         const_values = []
 
     def m2m_value_list_fun(line: LineDict, state: StateDict) -> list[str]:
-        # Call the same shared internal helper to get unique, ordered raw values
-        raw_values = _get_unique_raw_values_from_fields(
-            line, state, fields, sep, const_values
-        )
-        # Return the raw values directly
-        return [v for v in raw_values if v]
+        """Returns a mapper that creates a Python list of unique values."""
+        all_values: list[str] = []
+        for arg in args:
+            if isinstance(arg, str):
+                raw_value = _get_field_value(line, arg)
+            elif callable(arg):
+                try:
+                    raw_value = arg(line, state)
+                except TypeError:
+                    raw_value = arg(line)
+            else:
+                raw_value = ""
+
+            if raw_value and isinstance(raw_value, str):
+                parts = [v.strip() for v in raw_value.split(sep) if v.strip()]
+                all_values.extend(parts)
+            elif raw_value:  # If not string but truthy
+                all_values.append(str(raw_value))
+
+        all_values.extend([v.strip() for v in const_values if v.strip()])
+
+        unique_values = list(dict.fromkeys(all_values))
+        return unique_values
 
     return m2m_value_list_fun
-
-
-def _get_unique_raw_values_from_fields(
-    line: LineDict, state: StateDict, fields: Any, sep: str, const_values: list[str]
-) -> list[str]:
-    """Helper to get unique, ordered raw values from fields and const_values."""
-    all_raw_values: list[str] = []
-    concat_m = concat("", *fields)
-
-    value_from_fields = concat_m(line, state)
-    if value_from_fields:
-        # Split and extend with values from fields
-        all_raw_values.extend(
-            [v.strip() for v in value_from_fields.split(sep) if v.strip()]
-        )
-
-    # Extend with constant values
-    all_raw_values.extend([v.strip() for v in const_values if v.strip()])
-
-    # Preserve order and ensure uniqueness using dict.fromkeys (Python 3.7+)
-    unique_ordered_values = list(dict.fromkeys(all_raw_values))
-    return unique_ordered_values
 
 
 def map_val(

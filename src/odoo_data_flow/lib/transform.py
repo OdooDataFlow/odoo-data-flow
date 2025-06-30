@@ -3,7 +3,12 @@
 import csv
 import os
 from collections import OrderedDict
-from typing import Any, Callable, Optional, Union
+from typing import (
+    Any,
+    Callable,
+    Optional,
+    Union,
+)
 
 from lxml import etree  # type: ignore[import-untyped]
 
@@ -70,7 +75,6 @@ class Processor:
         self.header: list[str]
         self.data: list[list[Any]]
 
-        # Determine if initializing from a file or in-memory data
         if filename:
             self.header, self.data = self._read_file(
                 filename, separator, encoding, **kwargs
@@ -84,7 +88,6 @@ class Processor:
                 " 'header' and 'data'."
             )
 
-        # Apply any pre-processing hooks
         self.header, self.data = preprocess(self.header, self.data)
 
     def _read_file(
@@ -140,7 +143,7 @@ class Processor:
                 return [], []
             except Exception as e:
                 log.error(f"Failed to read file {filename}: {e}")
-        return [], []
+            return [], []
 
     def check(
         self, check_fun: Callable[..., bool], message: Optional[str] = None
@@ -428,6 +431,70 @@ class ProductProcessorV10(Processor):
             for att in attributes_list
         ]
         self._add_data(attr_header, attr_data, filename_out, import_args)
+
+    # NEW METHOD for product.attribute.value.csv
+    def process_attribute_value_data(
+        self,
+        attribute_list: list[str],
+        attribute_value_prefix: str,
+        attribute_prefix: str,
+        filename_out: str,
+        import_args: dict[str, Any],
+    ) -> None:
+        """Collects unique attribute values.
+
+        Collects unique attribute values from all product lines and prepares them
+        for product.attribute.value.csv.
+
+        Args:
+            attribute_list: List of attribute column names (e.g., ['Color', 'Size_H']).
+            attribute_value_prefix: The XML ID prefix for attribute values.
+            attribute_prefix: The XML ID prefix for attributes themselves.
+            filename_out: The output path for product.attribute.value.csv.
+            import_args: Import parameters for the script.
+        """
+        unique_attribute_values: set[tuple[str, str, str]] = set()
+
+        # Iterate over all raw data lines
+        for raw_line in self.data:
+            line_dict = dict(
+                zip(self.header, raw_line)
+            )  # Convert to dict for easy access
+
+            for attribute_field in attribute_list:
+                # Get the raw value for this specific attribute
+                # (e.g., "Black" for "Color")
+                value_raw = line_dict.get(attribute_field, "").strip()
+
+                if value_raw:
+                    # Form the ID for the attribute value
+                    # (e.g., PRODUCT_ATTRIBUTE_VALUE.Color_Black)
+                    # Using concat_field_value_m2m's logic implicitly:
+                    # AttributeName_Value
+                    attr_value_id = mapper.to_m2o(
+                        attribute_value_prefix, f"{attribute_field}_{value_raw}"
+                    )
+                    # The name is just the raw value (e.g., "Black")
+                    attr_value_name = value_raw
+                    # The attribute_id/id is just the attribute name prefixed
+                    # (e.g., PRODUCT_ATTRIBUTE.Color)
+                    attr_id = mapper.to_m2o(attribute_prefix, attribute_field)
+
+                    unique_attribute_values.add(
+                        (attr_value_id, attr_value_name, attr_id)
+                    )
+
+        # Convert the set of tuples to a list of lists for writing
+        attr_values_data: list[list[str]] = [
+            list(item) for item in unique_attribute_values
+        ]
+        attr_values_header: list[str] = [
+            "id",
+            "name",
+            "attribute_id/id",
+        ]
+
+        self._add_data(attr_values_header, attr_values_data, filename_out, import_args)
 
 
 class ProductProcessorV9(Processor):
