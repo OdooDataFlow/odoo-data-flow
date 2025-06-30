@@ -69,7 +69,9 @@ def write_file(
     if filename:
         # Determine the target model name
         if model == "auto":
-            model_name = os.path.basename(filename).replace(".csv", "")
+            model_name = (
+                os.path.basename(filename).replace(".csv", "").replace("_", ".")
+            )
         else:
             model_name = model
 
