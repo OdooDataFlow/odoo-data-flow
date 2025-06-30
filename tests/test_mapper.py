@@ -221,7 +221,7 @@ def test_m2m_map_with_empty_result() -> None:
 def test_m2m_id_list_empty() -> None:
     """Tests that m2m_id_list returns an empty string for empty input."""
     mapper_func = mapper.m2m_id_list("prefix", "empty_col")
-    assert mapper_func(LINE_SIMPLE, {}) == ""
+    assert mapper_func(LINE_SIMPLE, {}) == []
 
 
 def test_m2m_value_list_empty() -> None:

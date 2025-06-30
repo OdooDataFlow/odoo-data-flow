@@ -10,7 +10,7 @@ Processor for each row of the source data.
 import base64
 import inspect
 import os
-from typing import Any, Callable, cast
+from typing import Any, Callable, Optional, cast
 
 import requests  # type: ignore[import-untyped]
 
@@ -53,9 +53,7 @@ __all__ = [
 LineDict = dict[str, Any]
 StateDict = dict[str, Any]
 MapperFunc = Callable[[LineDict, StateDict], Any]
-
-
-# ... (rest of the file remains the same as your version) ...
+ListMapperFunc = Callable[[LineDict, StateDict], list[str]]
 
 
 def _get_field_value(line: LineDict, field: str, default: Any = "") -> Any:
@@ -402,7 +400,9 @@ def m2o_att_name(prefix: str, att_list: list[str]) -> MapperFunc:
     return m2o_att_fun
 
 
-def m2m_id_list(prefix: str, *fields: Any, sep: str = ",") -> MapperFunc:
+def m2m_id_list(
+    prefix: str, *fields: Any, sep: str = ",", const_values: Optional[list[str]] = None
+) -> ListMapperFunc:
     """Returns a mapper for creating a list of M2M external IDs.
 
     This is primarily used when creating the related records for a M2M field,
@@ -412,44 +412,63 @@ def m2m_id_list(prefix: str, *fields: Any, sep: str = ",") -> MapperFunc:
         prefix: The XML ID prefix to apply to each value.
         *fields: One or more source fields to read values from.
         sep: The separator to use when splitting values.
+        const_values: A list of constant XML IDs to always include.
 
     Returns:
-        A mapper function that returns a comma-separated string of external IDs.
+        A mapper function that returns a list of individual external IDs.
     """
-    concat_m = concat("", *fields)
+    if const_values is None:
+        const_values = []
 
-    def m2m_id_list_fun(line: LineDict, state: StateDict) -> str:
-        value = concat_m(line, state)
-        if not value:
-            return ""
-        values = [v.strip() for v in value.split(sep)]
-        return ",".join(to_m2o(prefix, v) for v in values if v)
+    def m2m_id_list_fun(line: LineDict, state: StateDict) -> list[str]:
+        # Call a shared internal helper to get unique, ordered raw values
+        raw_values = _get_unique_raw_values_from_fields(
+            line, state, fields, sep, const_values
+        )
+        # Apply prefixing to each raw value
+        return [to_m2o(prefix, v) for v in raw_values if v]
 
     return m2m_id_list_fun
 
 
-def m2m_value_list(*fields: Any, sep: str = ",") -> MapperFunc:
-    """Returns a mapper that creates a Python list of unique values.
-
-    This is used in conjunction with `m2m_id_list` when creating related
-    records for a M2M field.
-
-    Args:
-        *fields: One or more source fields to read values from.
-        sep: The separator to use when splitting values.
-
-    Returns:
-        A mapper function that returns a list of strings.
-    """
-    concat_m = concat("", *fields)
+def m2m_value_list(
+    *fields: Any, sep: str = ",", const_values: Optional[list[str]] = None
+) -> ListMapperFunc:  # Changed to ListMapperFunc
+    """Returns a mapper that creates a Python list of unique values."""
+    if const_values is None:
+        const_values = []
 
     def m2m_value_list_fun(line: LineDict, state: StateDict) -> list[str]:
-        value = concat_m(line, state)
-        if not value:
-            return []
-        return [v.strip() for v in value.split(sep) if v.strip()]
+        # Call the same shared internal helper to get unique, ordered raw values
+        raw_values = _get_unique_raw_values_from_fields(
+            line, state, fields, sep, const_values
+        )
+        # Return the raw values directly
+        return [v for v in raw_values if v]
 
     return m2m_value_list_fun
+
+
+def _get_unique_raw_values_from_fields(
+    line: LineDict, state: StateDict, fields: Any, sep: str, const_values: list[str]
+) -> list[str]:
+    """Helper to get unique, ordered raw values from fields and const_values."""
+    all_raw_values: list[str] = []
+    concat_m = concat("", *fields)
+
+    value_from_fields = concat_m(line, state)
+    if value_from_fields:
+        # Split and extend with values from fields
+        all_raw_values.extend(
+            [v.strip() for v in value_from_fields.split(sep) if v.strip()]
+        )
+
+    # Extend with constant values
+    all_raw_values.extend([v.strip() for v in const_values if v.strip()])
+
+    # Preserve order and ensure uniqueness using dict.fromkeys (Python 3.7+)
+    unique_ordered_values = list(dict.fromkeys(all_raw_values))
+    return unique_ordered_values
 
 
 def map_val(
