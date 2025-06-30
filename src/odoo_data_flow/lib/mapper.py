@@ -4,6 +4,7 @@ Mappers are the core building blocks for data transformations. Each function
 in this module is a "mapper factory" - it is a function that you call to
 configure and return another function, which will then be executed by the
 Processor for each row of the source data.
+
 """
 
 import base64
@@ -254,6 +255,23 @@ def m2o(prefix: str, field: str, default: str = "", skip: bool = False) -> Mappe
     """
 
     def m2o_fun(line: LineDict, state: StateDict) -> str:
+        """Inner function implementing the Many2one ID mapping.
+
+        Args:
+            line: A dictionary representing the current line of data.
+            state: A dictionary holding state information for the transformation
+                   process.
+                   This argument is part of the standard mapper function signature
+                   but is not directly used by this specific mapper.
+
+        Returns:
+            The formatted external ID for the Many2one field.
+
+        Raises:
+            SkippingError: If `skip` is True and the field's value is empty.
+        """
+        # 'state' is included in the signature to conform to the general mapper contract
+        # but is not directly used in this function's logic.
         value = _get_field_value(line, field)
         if skip and not value:
             raise SkippingError(f"Missing Value for {field}")
@@ -279,9 +297,24 @@ def m2o_map(
     Returns:
         A mapper function that returns the formatted external ID.
     """
+    # Assuming concat returns a callable that accepts (line: LineDict, state: StateDict)
     concat_mapper = concat("_", *fields)
 
     def m2o_fun(line: LineDict, state: StateDict) -> str:
+        """Inner function implementing the Many2one ID mapping from concatenated fields.
+
+        Args:
+            line: A dictionary representing the current line of data.
+            state: A dictionary holding state information for the transformation
+                   process.
+                   This argument is passed to the underlying concatenation mapper.
+
+        Returns:
+            The formatted external ID for the Many2one field.
+
+        Raises:
+            SkippingError: If `skip` is True and the final concatenated value is empty.
+        """
         value = concat_mapper(line, state)
         if not value and skip:
             raise SkippingError(f"Missing value for m2o_map with prefix '{prefix}'")
