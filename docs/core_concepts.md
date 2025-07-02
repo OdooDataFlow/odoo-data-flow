@@ -66,11 +66,11 @@ It is important to understand that the `odoo-data-flow import` command is design
 
 This deliberate design ensures clarity and respects Odoo's internal logic. Data is not inserted directly into the database; instead, it is loaded by calling Odoo's standard `load` method. This ensures that all the business logic, validations, and automations associated with each model are triggered correctly, just as they would be in the Odoo user interface.
 
-## Post-Import Processing (Workflows)
+## Pre- or Post-Import Processing (Workflows)
 
-In addition to transforming and loading data, the library provides a powerful **workflow** system for running automated, post-import actions on your records directly in Odoo.
+In addition to transforming and loading data, the library provides a powerful **workflow** system for running automated, actions directly in Odoo.
 
-This is an advanced feature designed for complex use cases, such as validating a large batch of imported invoices, registering payments, or triggering other specific business logic that needs to happen _after_ the initial data has been loaded.
+This is an advanced feature designed for complex use cases, such as validating a large batch of imported invoices, registering payments, or triggering other specific business logic that needs to happen _before_ or _after_ the initial data has been loaded. (e.g. installing required modules before import.)
 
 This is handled by the `odoo-data-flow workflow` command, which allows you to run predefined processes on your data.
 
@@ -93,7 +93,7 @@ flowchart TD
         D{"odoo-data-flow import"}
         E["Odoo Database"]
   end
- subgraph subGraph2["3 Workflow Phase"]
+ subgraph subGraph2["3 Post Workflow Phase"]
         F{"odoo-data-flow workflow"}
   end
     A --> B

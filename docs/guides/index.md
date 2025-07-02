@@ -14,7 +14,7 @@ configuration
 advanced_usage
 performance_tuning
 field_mapping_workflow
-post_import_workflows
+odoo_workflows
 server_to_server_migration
 
 ```
