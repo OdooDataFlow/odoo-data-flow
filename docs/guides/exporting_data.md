@@ -38,6 +38,8 @@ The command is configured using a set of options. Here are the most essential on
 | `--domain` | A filter to select which records to export, written as a string. Defaults to `[]` (export all records).   |
 | `--worker` | The number of parallel processes to use for the export. Defaults to `1`.                                  |
 | `--size`   | The number of records to fetch in a single batch. Defaults to `10`.                                       |
+| `--sep`    | The character separating columns. Defaults to a semicolon (`;`).                                          |
+
 
 ### Understanding the `--domain` Filter
 
