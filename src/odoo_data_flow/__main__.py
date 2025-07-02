@@ -36,7 +36,6 @@ def cli(ctx: click.Context, verbose: bool, log_file: Optional[str]) -> None:
 
 
 # --- Workflow Command Group ---
-# This defines 'workflow' as a subcommand of 'cli'.
 @cli.group(name="workflow")
 def workflow_group() -> None:
     """Run post-import processing workflows."""
@@ -44,7 +43,6 @@ def workflow_group() -> None:
 
 
 # --- Invoice v9 Workflow Sub-command ---
-# This command is now correctly nested under the 'workflow' group.
 @workflow_group.command(name="invoice-v9")
 @click.option(
     "-c",
@@ -96,7 +94,6 @@ def invoice_v9_cmd(**kwargs: Any) -> None:
 
 
 # --- Import Command ---
-# This command is attached directly to the main 'cli' group.
 @cli.command(name="import")
 @click.option(
     "-c",
@@ -110,6 +107,13 @@ def invoice_v9_cmd(**kwargs: Any) -> None:
     "--model",
     default=None,
     help="Odoo model to import into. If not provided, it's inferred from the filename.",
+)
+@click.option(
+    "--verify-fields",
+    is_flag=True,
+    default=False,
+    help="Connect to Odoo and verify that all CSV columns "
+    "exist on the model before importing.",
 )
 @click.option(
     "--worker", default=1, type=int, help="Number of simultaneous connections."
