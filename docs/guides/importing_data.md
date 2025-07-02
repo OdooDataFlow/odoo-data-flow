@@ -20,6 +20,18 @@ odoo-data-flow import --file path/to/res_partner.csv
 * `--skip`: The number of initial lines to skip in the source file before reading the header.
 * `--sep`: The character separating columns. Defaults to a semicolon (`;`).
 
+### Verifying Fields Before Import (`--verify-fields`)
+
+To prevent common errors, you can add the `--verify-fields` flag to your import command. This is a "pre-flight check" that connects to Odoo and verifies that every column in your CSV header exists as a field on the target model before the import begins.
+
+This is highly recommended as it allows you to "fail fast" with a clear error message, rather than waiting for a large import to fail on a single typo in a column name.
+
+**Example Usage:**
+```bash
+odoo-data-flow import --file path/to/my_data.csv --model res.partner --verify-fields
+```
+If `my_data.csv` contains a column that does not exist on the `res.partner` model, the command will abort with an error message listing the invalid fields.
+
 ## The "Upsert" Strategy: How External IDs Work
 
 A core feature of `odoo-data-flow` is its ability to safely handle both creating new records and updating existing ones in a single process. This is often called an "upsert" (update or insert) operation, and it is the default behavior of the tool.
