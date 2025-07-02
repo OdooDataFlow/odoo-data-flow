@@ -285,8 +285,11 @@ def migrate_cmd(**kwargs: Any) -> None:
     """Performs a direct server-to-server data migration."""
     if kwargs.get("mapping"):
         try:
-            kwargs["mapping"] = ast.literal_eval(kwargs["mapping"])
-        except Exception as e:
+            parsed_mapping = ast.literal_eval(kwargs["mapping"])
+            if not isinstance(parsed_mapping, dict):
+                raise TypeError("Mapping must be a dictionary.")
+            kwargs["mapping"] = parsed_mapping
+        except (ValueError, TypeError, SyntaxError) as e:
             print(
                 "Error: Invalid mapping provided. "
                 f"Must be a valid Python dictionary string. Error: {e}"

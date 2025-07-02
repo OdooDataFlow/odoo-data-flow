@@ -1,9 +1,10 @@
 """Test cases for the __main__ module."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 from click.testing import CliRunner
 
-# CORRECTED: Use an underscore for the package name in the import.
 from odoo_data_flow import __main__
 
 
@@ -19,10 +20,8 @@ def test_main_succeeds_without_command(runner: CliRunner) -> None:
     It exits with a status code of 0 when no command is provided
     and should show the main help message.
     """
-    # CORRECTED: The entry point function from our __main__.py is now 'cli'.
     result = runner.invoke(__main__.cli)
     assert result.exit_code == 0
-    # A good basic test is to ensure the main commands are listed in the help output.
     assert "import" in result.output
     assert "export" in result.output
     assert "path-to-image" in result.output
@@ -33,19 +32,189 @@ def test_main_shows_version(runner: CliRunner) -> None:
     """It shows the version of the package when --version is used."""
     result = runner.invoke(__main__.cli, ["--version"])
     assert result.exit_code == 0
-    # This checks that the command runs and that the word 'version'
-    # appears in the output, which is a robust check for the --version flag.
     assert "version" in result.output
 
 
-# You can also add more specific tests for each command.
-# For example, testing that the 'import' command fails without required options:
 def test_import_fails_without_options(runner: CliRunner) -> None:
     """The import command should fail if required options are missing."""
-    # We invoke the 'import' sub-command directly.
     result = runner.invoke(__main__.cli, ["import"])
-    # It should exit with a non-zero status code because options are missing.
     assert result.exit_code != 0
-    # Click's error message should mention the missing options.
     assert "Missing option" in result.output
     assert "--file" in result.output
+
+
+@patch("odoo_data_flow.__main__.run_import")
+def test_import_command_calls_runner(
+    mock_run_import: MagicMock, runner: CliRunner
+) -> None:
+    """Tests that the import command calls the correct runner function."""
+    result = runner.invoke(
+        __main__.cli,
+        [
+            "import",
+            "--config",
+            "my.conf",
+            "--file",
+            "my.csv",
+            "--model",
+            "res.partner",
+        ],
+    )
+    assert result.exit_code == 0
+    mock_run_import.assert_called_once()
+    call_kwargs = mock_run_import.call_args.kwargs
+    assert call_kwargs["config"] == "my.conf"
+    assert call_kwargs["filename"] == "my.csv"
+    assert call_kwargs["model"] == "res.partner"
+
+
+@patch("odoo_data_flow.__main__.run_export")
+def test_export_command_calls_runner(
+    mock_run_export: MagicMock, runner: CliRunner
+) -> None:
+    """Tests that the export command calls the correct runner function."""
+    result = runner.invoke(
+        __main__.cli,
+        [
+            "export",
+            "--config",
+            "my.conf",
+            "--file",
+            "my.csv",
+            "--model",
+            "res.partner",
+            "--fields",
+            "id,name",
+        ],
+    )
+    assert result.exit_code == 0
+    mock_run_export.assert_called_once()
+
+
+@patch("odoo_data_flow.__main__.run_path_to_image")
+def test_path_to_image_command_calls_runner(
+    mock_run_path_to_image: MagicMock, runner: CliRunner
+) -> None:
+    """Tests that the path-to-image command calls the correct runner function."""
+    result = runner.invoke(
+        __main__.cli, ["path-to-image", "my.csv", "--fields", "image"]
+    )
+    assert result.exit_code == 0
+    mock_run_path_to_image.assert_called_once()
+
+
+@patch("odoo_data_flow.__main__.run_url_to_image")
+def test_url_to_image_command_calls_runner(
+    mock_run_url_to_image: MagicMock, runner: CliRunner
+) -> None:
+    """Tests that the url-to-image command calls the correct runner function."""
+    result = runner.invoke(
+        __main__.cli, ["url-to-image", "my.csv", "--fields", "image_url"]
+    )
+    assert result.exit_code == 0
+    mock_run_url_to_image.assert_called_once()
+
+
+@patch("odoo_data_flow.__main__.run_migration")
+def test_migrate_command_calls_runner(
+    mock_run_migration: MagicMock, runner: CliRunner
+) -> None:
+    """Tests that the migrate command calls the correct runner function."""
+    result = runner.invoke(
+        __main__.cli,
+        [
+            "migrate",
+            "--config-export",
+            "src.conf",
+            "--config-import",
+            "dest.conf",
+            "--model",
+            "res.partner",
+            "--fields",
+            "id,name",
+            "--mapping",
+            "{'name': ('val', 'name')}",
+        ],
+    )
+    assert result.exit_code == 0
+    mock_run_migration.assert_called_once()
+    call_kwargs = mock_run_migration.call_args.kwargs
+    assert isinstance(call_kwargs["mapping"], dict)
+
+
+@patch("odoo_data_flow.__main__.run_migration")
+def test_migrate_command_bad_mapping_syntax(
+    mock_run_migration: MagicMock, runner: CliRunner
+) -> None:
+    """Tests that the migrate command handles a bad mapping string."""
+    result = runner.invoke(
+        __main__.cli,
+        [
+            "migrate",
+            "--config-export",
+            "src.conf",
+            "--config-import",
+            "dest.conf",
+            "--model",
+            "res.partner",
+            "--fields",
+            "id,name",
+            "--mapping",
+            "this-is-not-a-dict",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "Invalid mapping provided" in result.output
+    mock_run_migration.assert_not_called()
+
+
+@patch("odoo_data_flow.__main__.run_migration")
+def test_migrate_command_mapping_not_a_dict(
+    mock_run_migration: MagicMock, runner: CliRunner
+) -> None:
+    """Tests that migrate command handles a valid literal that is not a dict."""
+    result = runner.invoke(
+        __main__.cli,
+        [
+            "migrate",
+            "--config-export",
+            "src.conf",
+            "--config-import",
+            "dest.conf",
+            "--model",
+            "res.partner",
+            "--fields",
+            "id,name",
+            "--mapping",
+            "['this', 'is', 'a', 'list']",  # Valid literal, but not a dict
+        ],
+    )
+    assert result.exit_code == 0
+    assert "Mapping must be a dictionary" in result.output
+    mock_run_migration.assert_not_called()
+
+
+@patch("odoo_data_flow.__main__.run_invoice_v9_workflow")
+def test_workflow_command_calls_runner(
+    mock_run_workflow: MagicMock, runner: CliRunner
+) -> None:
+    """Tests that the workflow command calls the correct runner function."""
+    result = runner.invoke(
+        __main__.cli,
+        [
+            "workflow",
+            "invoice-v9",
+            "--config",
+            "my.conf",
+            "--field",
+            "x_status",
+            "--status-map",
+            "{}",
+            "--paid-date-field",
+            "x_date",
+            "--payment-journal",
+            "1",
+        ],
+    )
+    assert result.exit_code == 0
+    mock_run_workflow.assert_called_once()
