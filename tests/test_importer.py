@@ -94,9 +94,31 @@ def test_run_import_bad_context_string(
         filename=str(source_file),
         model="res.partner",
         context="this-is-not-a-dict",
+        separator=",",
     )
     mock_log_error.assert_called_once()
     assert "Invalid context provided" in mock_log_error.call_args[0][0]
+
+
+@patch("odoo_data_flow.importer.log.error")
+def test_run_import_context_not_a_dict(
+    mock_log_error: MagicMock, tmp_path: Path
+) -> None:
+    """Tests that an error is logged if the context string is not a dictionary."""
+    # Setup: Create a dummy file to get past the file-read stage
+    source_file = tmp_path / "data.csv"
+    source_file.write_text("id,name\n1,test")
+
+    # This context is a valid Python literal, but it's a list, not a dict.
+    run_import(
+        config="dummy.conf",
+        filename=str(source_file),
+        model="res.partner",
+        context="['not', 'a', 'dict']",
+        separator=",",
+    )
+    mock_log_error.assert_called_once()
+    assert "Context must be a dictionary" in mock_log_error.call_args[0][0]
 
 
 @patch("odoo_data_flow.importer.import_threaded.import_data")
