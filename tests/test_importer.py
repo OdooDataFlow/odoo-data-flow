@@ -34,7 +34,10 @@ def test_run_import_infers_model_from_filename(
 def test_run_import_no_model_fails(
     mock_log_error: MagicMock, mock_import_data: MagicMock, tmp_path: Path
 ) -> None:
-    """Tests that the import fails if no model can be inferred from the filename."""
+    """Test import with no fails.
+
+    Tests that the import fails if no model can be inferred from the filename.
+    """
     # 1. Setup: A filename starting with a dot will result in an invalid model name.
     bad_file = tmp_path / ".badfilename"
     bad_file.touch()
