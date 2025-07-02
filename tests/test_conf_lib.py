@@ -1,8 +1,4 @@
-"""Test the converter.
-
-This test script generates data for the image converter functions
-to be used in the main test suite.
-"""
+"""Test the configuration file handling."""
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -90,4 +86,28 @@ uid = 2
     config_file.write_text(config_content)
 
     with pytest.raises(ValueError):
+        get_connection_from_config(str(config_file))
+
+
+@patch("odoo_data_flow.lib.conf_lib.odoolib.get_connection")
+def test_get_connection_generic_exception(
+    mock_get_connection: MagicMock, tmp_path: Path
+) -> None:
+    """Tests that a generic Exception during connection is caught and re-raised."""
+    # 1. Setup: Create a valid config file
+    config_file = tmp_path / "connection.conf"
+    config_content = """
+[Connection]
+hostname = test-server
+database = test-db
+login = test-user
+password = test-pass
+"""
+    config_file.write_text(config_content)
+
+    # Configure the mock to raise a generic exception
+    mock_get_connection.side_effect = Exception("A generic connection error occurred")
+
+    # 2. Action & Assertions
+    with pytest.raises(Exception, match="A generic connection error occurred"):
         get_connection_from_config(str(config_file))
