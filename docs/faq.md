@@ -132,7 +132,7 @@ When an import fails, understanding why is key. Here are some of the most common
 
 The two-pass import process is designed to isolate errors effectively and generates two different types of failure files for two different purposes.
 
-* **`<model_name>.fail.csv` (e.g., `res.partner.fail.csv`)**:
+* **`<model_name>_fail.csv` (e.g., `res_partner_fail.csv`)**:
 
   * **When it's created**: During the **first pass** (a normal import).
 
@@ -152,13 +152,13 @@ The two-pass import process is designed to isolate errors effectively and genera
 
 1. Run your `load.sh` script or the `odoo-data-flow import` command.
 
-2. If a `<model_name>.fail.csv` file is created, run the command again with the `--fail` flag.
+2. If a `<model_name>_fail.csv` file is created, run the command again with the `--fail` flag.
 
 3. If a timestamped `..._failed.csv` file is created, open it to identify the data issues using the `_ERROR_REASON` column.
 
 4. Fix the issues in your original source file or your `transform.py` script.
 
-5. Delete the `.fail.csv` and `_failed.csv` files and rerun the entire process from the beginning.
+5. Delete the `_fail.csv` and `_failed.csv` files and rerun the entire process from the beginning.
 
 
 ### Record Count Mismatch

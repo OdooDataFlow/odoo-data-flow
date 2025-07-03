@@ -35,7 +35,7 @@ def run_import(
         worker: The number of simultaneous connections to use.
         batch_size: The number of records to process in each batch.
         skip: The number of initial lines to skip in the source file.
-        fail: If True, runs in fail mode, retrying records from the .fail file.
+        fail: If True, runs in fail mode, retrying records from the _fail file.
         separator: The delimiter used in the CSV file.
         split: The column name to group records by to avoid concurrent updates.
         ignore: A comma-separated string of column names to ignore.
@@ -80,20 +80,21 @@ def run_import(
     batch_size_run: int
     max_connection_run: int
 
+    model_filename_part = final_model.replace(".", "_")
+
     if fail:
         log.info("Running in --fail mode. Retrying failed records...")
-        file_to_process = os.path.join(file_dir, f"{final_model}.fail.csv")
+        file_to_process = os.path.join(file_dir, f"{model_filename_part}_fail.csv")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        original_basename = os.path.splitext(os.path.basename(filename))[0]
         fail_output_file = os.path.join(
-            file_dir, f"{original_basename}_{timestamp}_failed.csv"
+            file_dir, f"{model_filename_part}_{timestamp}_failed.csv"
         )
         batch_size_run = 1
         max_connection_run = 1
         is_fail_run = True
     else:
         file_to_process = filename
-        fail_output_file = os.path.join(file_dir, f"{final_model}.fail.csv")
+        fail_output_file = os.path.join(file_dir, f"{model_filename_part}_fail.csv")
         batch_size_run = int(batch_size)
         max_connection_run = int(worker)
         is_fail_run = False

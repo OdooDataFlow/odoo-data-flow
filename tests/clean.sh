@@ -18,7 +18,7 @@ rm -f out.csv
 
 # Remove all fail and bis files from any directory
 # The find command is robust and will search recursively.
-find . -name "*.fail.csv" -type f -delete
+find . -name "*_fail.csv" -type f -delete
 find . -name "*_failed.csv" -type f -delete
 
 echo "Cleanup complete."

@@ -73,7 +73,7 @@ def test_run_import_fail_mode(mock_import_data: MagicMock, tmp_path: Path) -> No
     call_kwargs = mock_import_data.call_args.kwargs
 
     # Check that the file paths and flags are set correctly for a fail run
-    assert call_kwargs["file_csv"].endswith("res.partner.fail.csv")
+    assert call_kwargs["file_csv"].endswith("res_partner_fail.csv")
     assert call_kwargs["fail_file"].endswith("_failed.csv")
     assert call_kwargs["is_fail_run"] is True
     assert call_kwargs["batch_size"] == 1

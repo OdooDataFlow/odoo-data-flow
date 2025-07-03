@@ -147,9 +147,9 @@ odoo-data-flow import --config conf/connection.conf --file data/res_partner.csv 
 odoo-data-flow import --config conf/connection.conf --fail --file data/res_partner.csv --model res.partner
 ```
 
-1. **First Pass (Normal Mode)**: The command runs in its default, high-speed mode, importing records in batches. If an entire batch is rejected for any reason, the original records from that batch are written to an intermediate failure file named **`<model_name>.fail.csv`** (e.g., `res.partner.fail.csv`).
+1. **First Pass (Normal Mode)**: The command runs in its default, high-speed mode, importing records in batches. If an entire batch is rejected for any reason, the original records from that batch are written to an intermediate failure file named **`<model_name>.fail.csv`** (e.g., `res_partner_fail.csv`).
 
-2. **Second Pass (`--fail` Mode)**: The command is invoked again with the `--fail` flag. In this mode, it automatically targets the `.fail.csv` file and retries each failed record individually. Records that still fail are written to a final, timestamped error file: **`<original_filename>_YYYYMMDD_HHMMSS_failed.csv`**. This file includes an additional **`_ERROR_REASON`** column to explain why each record failed, making it easy to identify and fix the problematic data manually.
+2. **Second Pass (`--fail` Mode)**: The command is invoked again with the `--fail` flag. In this mode, it automatically targets the `_fail.csv` file and retries each failed record individually. Records that still fail are written to a final, timestamped error file: **`<original_filename>_YYYYMMDD_HHMMSS_failed.csv`**. This file includes an additional **`_ERROR_REASON`** column to explain why each record failed, making it easy to identify and fix the problematic data manually.
 
 
 ### Error Handling Flow Diagram
@@ -164,7 +164,7 @@ config:
 flowchart TD
     A["data.csv<br>(100 records)"] --> B{"First Pass<br>odoo-data-flow import"}
     B -- 95 successful records --> C["Odoo Database"]
-    B -- 5 failed records --> D["data.fail.csv<br>(5 records)"]
+    B -- 5 failed records --> D["data_fail.csv<br>(5 records)"]
     D --> E{"Second Pass<br>odoo-data-flow import --fail"}
     E -- 3 recovered records --> C
     E -- 2 true errors --> F["fa:fa-user-edit data_YYMMDD_failed.csv<br>(2 records to fix)"]

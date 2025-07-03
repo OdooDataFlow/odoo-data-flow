@@ -126,7 +126,7 @@ def invoice_v9_cmd(**kwargs: Any) -> None:
     "--fail",
     is_flag=True,
     default=False,
-    help="Run in fail mode, retrying records from the .fail.csv file.",
+    help="Run in fail mode, retrying records from the _fail.csv file.",
 )
 @click.option("-s", "--sep", "separator", default=";", help="CSV separator character.")
 @click.option(

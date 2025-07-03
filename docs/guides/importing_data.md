@@ -16,7 +16,7 @@ odoo-data-flow import --file path/to/res_partner.csv
 * `--file`: **(Required)** Path to the source CSV file you want to import.
 * `--model`: **(Optional)** The target Odoo model (e.g., `res.partner`). If you omit this option, the tool will automatically infer the model name from your CSV filename. For example, a file named `res_partner.csv` will be imported into the `res.partner` model.
 * `--worker`: Number of parallel threads to use for the import.
-* `--fail`: Runs the import in "fail mode," retrying only the records from the corresponding `.fail.csv` file.
+* `--fail`: Runs the import in "fail mode," retrying only the records from the corresponding `_fail.csv` file.
 * `--skip`: The number of initial lines to skip in the source file before reading the header.
 * `--sep`: The character separating columns. Defaults to a semicolon (`;`).
 

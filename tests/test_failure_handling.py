@@ -12,8 +12,8 @@ def test_two_step_failure_handling(tmp_path: Path) -> None:
     """Tests the complete two-tier failure handling process.
 
     This test verifies that:
-    1. A normal run writes the entire failed batch to a `.fail.csv` file.
-    2. A `--fail` run processes the `.fail.csv` file.
+    1. A normal run writes the entire failed batch to a `_fail.csv` file.
+    2. A `--fail` run processes the `_fail.csv` file.
     3. Records that still fail are written to a final, timestamped `_failed.csv`
        file with an added `_ERROR_REASON` column.
     """
@@ -21,7 +21,8 @@ def test_two_step_failure_handling(tmp_path: Path) -> None:
 
     source_file = tmp_path / "source_data.csv"
     model_name = "my.test.model"
-    intermediate_fail_file = tmp_path / f"{model_name}.fail.csv"
+    model_filename = model_name.replace(".", "_")
+    intermediate_fail_file = tmp_path / f"{model_filename}_fail.csv"
 
     header = ["id", "name", "value"]
     # We will make the record with id='my_import.rec_02' fail on the second pass
@@ -85,7 +86,7 @@ def test_two_step_failure_handling(tmp_path: Path) -> None:
         )
 
     # --- Assertions for the First Pass ---
-    assert intermediate_fail_file.exists(), "Intermediate .fail.csv was not created"
+    assert intermediate_fail_file.exists(), "Intermediate _fail.csv was not created"
 
     with open(intermediate_fail_file, encoding="utf-8") as f:
         reader = csv.reader(f)
@@ -94,7 +95,7 @@ def test_two_step_failure_handling(tmp_path: Path) -> None:
 
     assert header_fail1 == header
     assert len(data_fail1) == 3, (
-        "The entire failed batch should be in the .fail.csv file"
+        "The entire failed batch should be in the _fail.csv file"
     )
     assert data_fail1[1][1] == "Record 2 (will fail again)"  # Check content integrity
 

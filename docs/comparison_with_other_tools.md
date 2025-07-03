@@ -73,7 +73,7 @@ This library is designed to be the "sweet spot" between the simplicity of the bu
 * **Pros:**
     * **Powerful Transformations:** It gives you the full power of Python through the `mapper` system, allowing you to handle any complex data transformation.
     * **Structured and Repeatable:** It enforces a clean separation between the transform and load phases, resulting in well-organized, maintainable, and easily repeatable migration projects.
-    * **Robust Error Handling Built-In:** The two-tier failure handling system (`.fail.csv` and the final `..._failed.csv` with error reasons) is provided automatically, saving you from having to build this complex logic yourself.
+    * **Robust Error Handling Built-In:** The two-tier failure handling system (`_fail.csv` and the final `..._failed.csv` with error reasons) is provided automatically, saving you from having to build this complex logic yourself.
     * **Performance Features Included:** It comes with built-in, easy-to-use features for parallel processing (`--worker`) and deadlock prevention (`--groupby`).
     * **Safe:** It exclusively uses Odoo's standard API methods, ensuring all business logic and validations are respected.
 
