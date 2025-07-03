@@ -127,7 +127,11 @@ def write_file(
 
     command_parts: list[str]
     if command == "import":
-        command_parts = _build_import_command(filename, model, **kwargs)
+        worker = kwargs.pop("worker", 1)
+        batch_size = kwargs.pop("batch_size", 10)
+        command_parts = _build_import_command(
+            filename, model, worker, batch_size, **kwargs
+        )
     elif command == "export":
         command_parts = _build_export_command(filename, model, **kwargs)
     else:
