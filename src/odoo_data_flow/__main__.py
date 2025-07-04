@@ -8,6 +8,11 @@ import click
 from .converter import run_path_to_image, run_url_to_image
 from .exporter import run_export
 from .importer import run_import
+from .lib.actions.module_manager import (
+    run_module_installation,
+    run_module_uninstallation,
+    run_update_module_list,
+)
 from .logging_config import setup_logging
 from .migrator import run_migration
 from .workflow_runner import run_invoice_v9_workflow
@@ -35,11 +40,73 @@ def cli(ctx: click.Context, verbose: bool, log_file: Optional[str]) -> None:
         click.echo(ctx.get_help())
 
 
+# --- Module Management Command Group ---
+@cli.group(name="module")
+def module_group() -> None:
+    """Commands for managing Odoo modules."""
+    pass
+
+
+@module_group.command(name="update-list")
+@click.option(
+    "-c",
+    "--config",
+    default="conf/connection.conf",
+    show_default=True,
+    help="Path to the connection configuration file.",
+)
+def update_module_list_cmd(config: str) -> None:
+    """Scans the addons path and updates the list of available modules."""
+    run_update_module_list(config=config)
+
+
+@module_group.command(name="install")
+@click.option(
+    "-c",
+    "--config",
+    default="conf/connection.conf",
+    show_default=True,
+    help="Path to the connection configuration file.",
+)
+@click.option(
+    "-m",
+    "--modules",
+    "modules_str",
+    required=True,
+    help="A comma-separated list of module names to install or upgrade.",
+)
+def install_modules_cmd(config: str, modules_str: str) -> None:
+    """Installs or upgrades a list of Odoo modules."""
+    modules_list = [mod.strip() for mod in modules_str.split(",")]
+    run_module_installation(config=config, modules=modules_list)
+
+
+@module_group.command(name="uninstall")
+@click.option(
+    "-c",
+    "--config",
+    default="conf/connection.conf",
+    show_default=True,
+    help="Path to the connection configuration file.",
+)
+@click.option(
+    "-m",
+    "--modules",
+    "modules_str",
+    required=True,
+    help="A comma-separated list of module names to uninstall.",
+)
+def uninstall_modules_cmd(config: str, modules_str: str) -> None:
+    """Uninstalls a list of Odoo modules."""
+    modules_list = [mod.strip() for mod in modules_str.split(",")]
+    run_module_uninstallation(config=config, modules=modules_list)
+
+
 # --- Workflow Command Group ---
 # This defines 'workflow' as a subcommand of 'cli'.
 @cli.group(name="workflow")
 def workflow_group() -> None:
-    """Run post-import processing workflows."""
+    """Run legacy or complex post-import processing workflows."""
     pass
 
 

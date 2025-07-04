@@ -66,15 +66,16 @@ It is important to understand that the `odoo-data-flow import` command is design
 
 This deliberate design ensures clarity and respects Odoo's internal logic. Data is not inserted directly into the database; instead, it is loaded by calling Odoo's standard `load` method. This ensures that all the business logic, validations, and automations associated with each model are triggered correctly, just as they would be in the Odoo user interface.
 
-## Pre- or Post-Import Processing (Workflows)
+## Automation: Actions and Workflows
 
-In addition to transforming and loading data, the library provides a powerful **workflow** system for running automated, actions directly in Odoo.
+In addition to transforming and loading data, the library provides a powerful system for running automated actions directly in Odoo. These are separated into two distinct categories:
 
-This is an advanced feature designed for complex use cases, such as validating a large batch of imported invoices, registering payments, or triggering other specific business logic that needs to happen _before_ or _after_ the initial data has been loaded. (e.g. installing required modules before import.)
+* **Module Management (`module` command):** For administrative tasks that prepare the Odoo environment, such as installing or uninstalling modules. These are typically run *before* a data import.
+* **Data Workflows (`workflow` command):** For running multi-step processes on records *after* they have been imported, such as validating a batch of invoices.
 
-This is handled by the `odoo-data-flow workflow` command, which allows you to run predefined processes on your data.
+### Overall Data Flow Including Automation
 
-### Overall Data Flow Including Workflows
+This diagram shows how the different automation commands fit into a complete deployment process.
 
 This diagram shows how the workflow phase fits in after the main transform and load phases.
 
@@ -84,32 +85,42 @@ config:
   theme: redux
 ---
 flowchart TD
- subgraph subGraph0["1 Transform Phase"]
-        B{"Processor"}
-        A["Raw Source Data"]
+ subgraph subGraph0["1 Environment Setup"]
+    direction LR
+        B[("Odoo Database")]
+        A{"odoo-data-flow module<br>update-list / install"}
   end
- subgraph subGraph1["2 Load Phase"]
-        C["Clean Data"]
-        D{"odoo-data-flow import"}
-        E["Odoo Database"]
+ subgraph subGraph1["2 Data Migration"]
+    direction LR
+        D{"Transform Script"}
+        C["Raw Source Data"]
+        E["Cleaned / Transformed Data"]
+        F{"odoo-data-flow import"}
   end
- subgraph subGraph2["3 Post Workflow Phase"]
-        F{"odoo-data-flow workflow"}
+ subgraph subGraph2["3 Post-Import Workflow"]
+    direction LR
+        G{"odoo-data-flow workflow<br>(e.g., invoice-v9)"}
   end
-    A --> B
-    B --> C
+    A L_A_B_0@--> B
     C --> D
     D --> E
     E --> F
-    F -- "Validate, Pay, etc." --> E
-    E@{ shape: cyl}
-    style A fill:#FFF9C4
-    style D fill:#BBDEFB
-    style E fill:#AA00FF
+    F L_F_B_0@--> B
+    B --> G
+    G -- "Validate, Pay, etc." --> B
+    C@{ shape: docs}
+    E@{ shape: docs}
+    style B fill:#AA00FF
+    style A fill:#BBDEFB
+    style C fill:#FFF9C4
+    style E fill:#FFF9C4
     style F fill:#BBDEFB
+    style G fill:#BBDEFB
+    style subGraph2 fill:transparent
     style subGraph0 fill:transparent
     style subGraph1 fill:transparent
-    style subGraph2 fill:transparent
+    L_A_B_0@{ animation: slow }
+    L_F_B_0@{ animation: slow }
 
 ```
 
@@ -155,19 +166,19 @@ odoo-data-flow import --config conf/connection.conf --fail --file data/res_partn
 ### Error Handling Flow Diagram
 
 This diagram visualizes how records flow through the two-pass system.
-
+(with res.partner model as an example.)
 ```{mermaid}
 ---
 config:
   theme: redux
 ---
 flowchart TD
-    A["data.csv<br>(100 records)"] --> B{"First Pass<br>odoo-data-flow import"}
+    A["res_partner.csv<br>(100 records)"] --> B{"First Pass<br>odoo-data-flow import"}
     B -- 95 successful records --> C["Odoo Database"]
-    B -- 5 failed records --> D["data_fail.csv<br>(5 records)"]
+    B -- 5 failed records --> D["res_partner_fail.csv<br>(5 records)"]
     D --> E{"Second Pass<br>odoo-data-flow import --fail"}
     E -- 3 recovered records --> C
-    E -- 2 true errors --> F["fa:fa-user-edit data_YYMMDD_failed.csv<br>(2 records to fix)"]
+    E -- 2 true errors --> F["fa:fa-user-edit res_partner_YYMMDD_failed.csv<br>(2 records to fix)"]
 
     A@{ shape: doc}
     C@{ shape: cyl}

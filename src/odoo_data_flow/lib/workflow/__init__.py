@@ -2,6 +2,4 @@
 
 from . import invoice_v9
 
-__all__ = [
-    "invoice_v9",
-]
+__all__ = ["invoice_v9"]

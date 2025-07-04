@@ -218,3 +218,39 @@ def test_workflow_command_calls_runner(
     )
     assert result.exit_code == 0
     mock_run_workflow.assert_called_once()
+
+
+@patch("odoo_data_flow.__main__.run_update_module_list")
+def test_module_update_list_command(
+    mock_run_update: MagicMock, runner: CliRunner
+) -> None:
+    """Tests that the 'module update-list' command calls the correct function."""
+    result = runner.invoke(
+        __main__.cli, ["module", "update-list", "--config", "c.conf"]
+    )
+    assert result.exit_code == 0
+    mock_run_update.assert_called_once_with(config="c.conf")
+
+
+@patch("odoo_data_flow.__main__.run_module_installation")
+def test_module_install_command(mock_run_install: MagicMock, runner: CliRunner) -> None:
+    """Tests that the 'module install' command calls the correct function."""
+    result = runner.invoke(__main__.cli, ["module", "install", "--modules", "sale,mrp"])
+    assert result.exit_code == 0
+    mock_run_install.assert_called_once_with(
+        config="conf/connection.conf", modules=["sale", "mrp"]
+    )
+
+
+@patch("odoo_data_flow.__main__.run_module_uninstallation")
+def test_module_uninstall_command(
+    mock_run_uninstall: MagicMock, runner: CliRunner
+) -> None:
+    """Tests that the 'module uninstall' command calls the correct function."""
+    result = runner.invoke(
+        __main__.cli, ["module", "uninstall", "--modules", "sale,purchase"]
+    )
+    assert result.exit_code == 0
+    mock_run_uninstall.assert_called_once_with(
+        config="conf/connection.conf", modules=["sale", "purchase"]
+    )

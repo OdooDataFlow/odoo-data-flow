@@ -1,22 +1,42 @@
-# Guide: Odoo Automation Workflows
+# Guide: Automation & Workflows
 
-The `odoo-data-flow` library includes a powerful system for running automated actions directly on your Odoo server. This is handled by the `odoo-data-flow workflow` command group.
+The `odoo-data-flow` library includes a powerful system for running automated actions directly on your Odoo server. These actions are split into two main categories:
 
-These workflows are designed to automate common administrative tasks that are part of a larger data migration or deployment process, such as installing modules, validating invoices, or triggering other specific business logic.
+* **Module Management (`module` command):** For administrative tasks like installing, uninstalling, or updating the list of available modules. These are typically run to prepare an Odoo environment.
+* **Data Workflows (`workflow` command):** For running multi-step processes on data that already exists in the database, such as validating a batch of imported invoices.
 
 ---
 
-## Managing Odoo Modules
+## Module Management
 
 You can automate the installation, upgrade, and uninstallation of modules directly from the command line. This is particularly useful for setting up a new database or ensuring your environments are consistent.
 
-### Installing or Upgrading Modules
+### Step 1: Updating the Apps List
 
-The `workflow install-modules` command will install new modules or upgrade them if they are already installed.
+Before you can install a new module, you must first ensure that Odoo is aware of it. The `module update-list` command scans your Odoo instance's addons path and updates the list of available modules.
+
+This is a crucial first step to run after you have added new custom modules to your server. The command will wait for the server to complete the scan before finishing, so you can safely chain it with an installation command.
 
 #### Usage
 ```bash
-odoo-data-flow workflow install-modules --modules sale_management,mrp
+odoo-data-flow module update-list
+```
+
+#### Command-Line Options
+
+| Option | Description |
+| :--- | :--- |
+| `-c`, `--config` | **(Optional)** Path to your `connection.conf` file. Defaults to `conf/connection.conf`. |
+
+
+### Step 2: Installing or Upgrading Modules
+
+
+The `module install` command will install new modules or upgrade them if they are already installed.
+
+#### Usage
+```bash
+odoo-data-flow module install --modules sale_management,mrp
 ```
 
 #### Command-Line Options
@@ -28,11 +48,11 @@ odoo-data-flow workflow install-modules --modules sale_management,mrp
 
 ### Uninstalling Modules
 
-The `workflow uninstall-modules` command will uninstall modules that are currently installed.
+The `module uninstall` command will uninstall modules that are currently installed.
 
 #### Usage
 ```bash
-odoo-data-flow workflow uninstall-modules --modules stock,account
+odoo-data-flow module uninstall --modules stock,account
 ```
 
 #### Command-Line Options
@@ -44,11 +64,13 @@ odoo-data-flow workflow uninstall-modules --modules stock,account
 
 ---
 
-## Legacy Workflows
+## Data Processing Workflows
 
-### The `invoice-v9` Workflow
+This command group is for running multi-step processes on records that are already in the database.
 
-The library also includes a built-in workflow specifically for processing customer invoices (`account.invoice`) in **Odoo version 9**.
+### The `invoice-v9` Workflow (Legacy Example)
+
+The library includes a built-in workflow specifically for processing customer invoices (`account.invoice`) in **Odoo version 9**.
 
 **Warning:** This workflow uses legacy Odoo v9 API calls and will **not** work on modern Odoo versions (10.0+). It is provided as a reference and an example of how a post-import process can be structured.
 
