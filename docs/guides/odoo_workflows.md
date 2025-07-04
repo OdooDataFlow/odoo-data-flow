@@ -2,14 +2,14 @@
 
 The `odoo-data-flow` library includes a powerful system for running automated actions directly on your Odoo server. These actions are split into two main categories:
 
-* **Module Management (`module` command):** For administrative tasks like installing, uninstalling, or updating the list of available modules. These are typically run to prepare an Odoo environment.
+* **Module Management (`module` command):** For administrative tasks like installing, uninstalling, or updating the list of available modules and languages. These are typically run to prepare an Odoo environment.
 * **Data Workflows (`workflow` command):** For running multi-step processes on data that already exists in the database, such as validating a batch of imported invoices.
 
 ---
 
 ## Module Management
 
-You can automate the installation, upgrade, and uninstallation of modules directly from the command line. This is particularly useful for setting up a new database or ensuring your environments are consistent.
+You can automate the installation, upgrade, and uninstallation of modules and languages directly from the command line. This is particularly useful for setting up a new database or ensuring your environments are consistent.
 
 ### Step 1: Updating the Apps List
 
@@ -28,8 +28,24 @@ odoo-data-flow module update-list
 | :--- | :--- |
 | `-c`, `--config` | **(Optional)** Path to your `connection.conf` file. Defaults to `conf/connection.conf`. |
 
+### Step 2: Installing Languages
 
-### Step 2: Installing or Upgrading Modules
+Before installing modules that have their own translations, you may need to install the required languages in your database.
+
+#### Usage
+```bash
+odoo-data-flow module install-languages --languages nl_BE,fr_FR
+```
+
+#### Command-Line Options
+
+| Option | Description |
+| :--- | :--- |
+| `-c`, `--config` | **(Optional)** Path to your `connection.conf` file. Defaults to `conf/connection.conf`. |
+| `-l`, `--languages`| **(Required)** A comma-separated string of language codes to install (e.g., 'nl_BE,fr_FR'). |
+
+
+### Step 3: Installing or Upgrading Modules
 
 
 The `module install` command will install new modules or upgrade them if they are already installed.
@@ -70,7 +86,7 @@ This command group is for running multi-step processes on records that are alrea
 
 ### The `invoice-v9` Workflow (Legacy Example)
 
-The library includes a built-in workflow specifically for processing customer invoices (`account.invoice`) in **Odoo version 9**.
+The library also includes a built-in workflow specifically for processing customer invoices (`account.invoice`) in **Odoo version 9**.
 
 **Warning:** This workflow uses legacy Odoo v9 API calls and will **not** work on modern Odoo versions (10.0+). It is provided as a reference and an example of how a post-import process can be structured.
 

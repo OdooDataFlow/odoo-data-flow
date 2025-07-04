@@ -8,6 +8,7 @@ import click
 from .converter import run_path_to_image, run_url_to_image
 from .exporter import run_export
 from .importer import run_import
+from .lib.actions.language_installer import run_language_installation
 from .lib.actions.module_manager import (
     run_module_installation,
     run_module_uninstallation,
@@ -100,6 +101,27 @@ def uninstall_modules_cmd(config: str, modules_str: str) -> None:
     """Uninstalls a list of Odoo modules."""
     modules_list = [mod.strip() for mod in modules_str.split(",")]
     run_module_uninstallation(config=config, modules=modules_list)
+
+
+@module_group.command(name="install-languages")
+@click.option(
+    "-c",
+    "--config",
+    default="conf/connection.conf",
+    show_default=True,
+    help="Path to the connection configuration file.",
+)
+@click.option(
+    "-l",
+    "--languages",
+    "languages_str",
+    required=True,
+    help="A comma-separated list of language codes to install (e.g., 'nl_BE,fr_FR').",
+)
+def install_languages_cmd(config: str, languages_str: str) -> None:
+    """Installs one or more languages in the Odoo database."""
+    languages_list = [lang.strip() for lang in languages_str.split(",")]
+    run_language_installation(config=config, languages=languages_list)
 
 
 # --- Workflow Command Group ---

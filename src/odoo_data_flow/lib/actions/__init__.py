@@ -1,5 +1,5 @@
 """tools for actions on odoo databases."""
 
-from . import module_manager
+from . import language_installer, module_manager
 
-__all__ = ["module_manager"]
+__all__ = ["language_installer", "module_manager"]

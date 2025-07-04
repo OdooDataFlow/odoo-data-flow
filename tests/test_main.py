@@ -254,3 +254,18 @@ def test_module_uninstall_command(
     mock_run_uninstall.assert_called_once_with(
         config="conf/connection.conf", modules=["sale", "purchase"]
     )
+
+
+@patch("odoo_data_flow.__main__.run_language_installation")
+def test_module_install_languages_command(
+    mock_run_install: MagicMock, runner: CliRunner
+) -> None:
+    """Tests that the 'module install-languages' command calls the correct function."""
+    result = runner.invoke(
+        __main__.cli,
+        ["module", "install-languages", "--languages", "en_US,fr_FR"],
+    )
+    assert result.exit_code == 0
+    mock_run_install.assert_called_once_with(
+        config="conf/connection.conf", languages=["en_US", "fr_FR"]
+    )
