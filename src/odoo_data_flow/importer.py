@@ -1,18 +1,73 @@
 """This module contains the core logic for importing data into Odoo."""
 
 import ast
+import csv
 import os
 from datetime import datetime
 from typing import Any, Optional
 
 from . import import_threaded
+from .lib import conf_lib
 from .logging_config import log
+
+
+def _verify_import_fields(
+    config: str, model: str, filename: str, separator: str, encoding: str
+) -> bool:
+    """Verify import fields.
+
+    Connects to Odoo and verifies that all columns in the CSV header
+    exist as fields on the target model.
+    """
+    log.info(f"Performing pre-flight check: Verifying fields for model '{model}'...")
+
+    # Step 1: Read the header from the local CSV file
+    try:
+        with open(filename, encoding=encoding) as f:
+            reader = csv.reader(f, delimiter=separator)
+            csv_header = next(reader)
+    except FileNotFoundError:
+        log.error(f"Pre-flight Check Failed: Input file not found at {filename}")
+        return False
+    except Exception as e:
+        log.error(f"Pre-flight Check Failed: Could not read CSV header. Error: {e}")
+        return False
+
+    # Step 2: Get the list of valid fields from the Odoo model
+    try:
+        connection: Any = conf_lib.get_connection_from_config(config_file=config)
+        model_fields_obj = connection.get_model("ir.model.fields")
+        domain = [("model", "=", model)]
+        odoo_fields_data = model_fields_obj.search_read(domain, ["name"])
+        odoo_field_names = {field["name"] for field in odoo_fields_data}
+    except Exception as e:
+        log.error(
+            f"Pre-flight Check Failed: "
+            f"Could not connect to Odoo to get model fields. Error: {e}"
+        )
+        return False
+
+    # Step 3: Compare the lists and find any missing fields
+    missing_fields = [field for field in csv_header if field not in odoo_field_names]
+
+    if missing_fields:
+        log.error(
+            "Pre-flight Check Failed: The following columns in your CSV file "
+            "do not exist on the Odoo model:"
+        )
+        for field in missing_fields:
+            log.error(f"  - '{field}' is not a valid field on model '{model}'")
+        return False
+
+    log.info("Pre-flight Check Successful: All columns are valid fields on the model.")
+    return True
 
 
 def run_import(
     config: str,
     filename: str,
     model: Optional[str] = None,
+    verify_fields: bool = False,
     worker: int = 1,
     batch_size: int = 10,
     skip: int = 0,
@@ -32,6 +87,8 @@ def run_import(
         filename: Path to the source CSV file to import.
         model: The Odoo model to import data into. If not provided, it's inferred
                from the filename.
+        verify_fields: If True, connects to Odoo to verify all CSV columns
+                       exist on the model before starting the import.
         worker: The number of simultaneous connections to use.
         batch_size: The number of records to process in each batch.
         skip: The number of initial lines to skip in the source file.
@@ -50,7 +107,6 @@ def run_import(
     if not final_model:
         base_name = os.path.basename(filename)
         inferred_model = os.path.splitext(base_name)[0].replace("_", ".")
-        # Add a check for invalid inferred names (like hidden files)
         if not inferred_model or inferred_model.startswith("."):
             log.error(
                 "Model not specified and could not be inferred from filename "
@@ -59,6 +115,14 @@ def run_import(
             return
         final_model = inferred_model
         log.info(f"No model provided. Inferred model '{final_model}' from filename.")
+
+    # --- Pre-flight Check ---
+    if verify_fields:
+        if not _verify_import_fields(
+            config, final_model, filename, separator, encoding
+        ):
+            log.error("Aborting import due to failed pre-flight check.")
+            return
 
     try:
         parsed_context = ast.literal_eval(context)
@@ -73,7 +137,6 @@ def run_import(
     ignore_list = ignore.split(",") if ignore else []
 
     file_dir = os.path.dirname(filename)
-
     file_to_process: str
     fail_output_file: str
     is_fail_run: bool
