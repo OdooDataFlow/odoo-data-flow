@@ -11,6 +11,8 @@ from typing import (
 )
 
 from lxml import etree  # type: ignore[import-untyped]
+from rich.console import Console
+from rich.table import Table
 
 from ..logging_config import log
 from . import mapper
@@ -236,14 +238,23 @@ class Processor:
             head, data = self._process_mapping(mapping, t=t, null_values=null_values)
 
         if dry_run:
-            log.info("--- DRY RUN MODE ---")
+            console = Console()
+            log.info("--- DRY RUN MODE (Outputting sample of first 10 rows) ---")
             log.info("No files will be written.")
-            log.info(f"Header: {head}")
+
+            table = Table(title="Dry Run Output Sample")
+            for column_header in head:
+                table.add_column(column_header, style="cyan")
+
             data_list = list(data)
+            for row in data_list[:10]:
+                # Ensure all row items are strings for rich table
+                str_row = [str(item) for item in row]
+                table.add_row(*str_row)
+
+            console.print(table)
             log.info(f"Total rows that would be generated: {len(data_list)}")
-            log.info("Sample of first 5 rows:")
-            for row in data_list[:5]:
-                log.info(row)
+
             return head, data
 
         self._add_data(head, data, filename_out, params)
