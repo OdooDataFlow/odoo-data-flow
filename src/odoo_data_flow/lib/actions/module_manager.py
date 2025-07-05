@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from rich.status import Status
+
 from ...lib import conf_lib
 from ...logging_config import log
 
@@ -27,18 +29,18 @@ def run_update_module_list(config: str) -> bool:
         return False
 
     try:
-        log.info("Triggering app list update. This may take a moment...")
-        # This call triggers the server-side scan of the addons path.
-        module_obj.update_list()
+        with Status("Updating apps list on the server...", spinner="dots"):
+            # This call triggers the server-side scan of the addons path.
+            module_obj.update_list()
 
-        # IMPORTANT: Clear the model's cache to ensure we get fresh data.
-        module_obj.clear_caches()
+            # IMPORTANT: Clear the model's cache to ensure we get fresh data.
+            module_obj.clear_caches()
 
-        # Perform a search to ensure the client syncs with the server state.
-        # This acts as a "wait" signal.
-        total_modules = module_obj.search_count([])
-        log.info(f"App list update complete. Found {total_modules} total modules.")
-        return True
+            # Perform a search to ensure the client syncs with the server state.
+            # This acts as a "wait" signal.
+            total_modules = module_obj.search_count([])
+            log.info(f"App list update complete. Found {total_modules} total modules.")
+            return True
     except Exception as e:
         log.error(f"An error occurred during 'Update Apps List': {e}")
         return False
@@ -81,19 +83,15 @@ def run_module_installation(
 
     try:
         if modules_to_install:
-            log.info(
-                f"Installing modules: "
-                f"{[m['name'] for m in found_modules if m['id'] in modules_to_install]}"
-            )
-            module_obj.button_immediate_install(modules_to_install)
+            names = [m["name"] for m in found_modules if m["id"] in modules_to_install]
+            with Status(f"Installing modules: {names}...", spinner="dots"):
+                module_obj.button_immediate_install(modules_to_install)
             log.info("Module installation process triggered successfully.")
 
         if modules_to_upgrade:
-            log.info(
-                f"Upgrading modules: "
-                f"{[m['name'] for m in found_modules if m['id'] in modules_to_upgrade]}"
-            )
-            module_obj.button_immediate_upgrade(modules_to_upgrade)
+            names = [m["name"] for m in found_modules if m["id"] in modules_to_upgrade]
+            with Status(f"Upgrading modules: {names}...", spinner="dots"):
+                module_obj.button_immediate_upgrade(modules_to_upgrade)
             log.info("Module upgrade process triggered successfully.")
 
     except Exception as e:
@@ -136,8 +134,8 @@ def run_module_uninstallation(
     log.info(f"Found modules to uninstall: {found_modules}")
 
     try:
-        log.info("Triggering immediate uninstallation for found modules...")
-        module_obj.button_immediate_uninstall(module_ids)
+        with Status(f"Uninstalling modules: {modules}...", spinner="dots"):
+            module_obj.button_immediate_uninstall(module_ids)
         log.info("Module uninstallation process triggered successfully.")
     except Exception as e:
         log.error(f"An error occurred during module uninstallation: {e}")

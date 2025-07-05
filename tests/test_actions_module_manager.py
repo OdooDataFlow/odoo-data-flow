@@ -9,11 +9,12 @@ from odoo_data_flow.lib.actions.module_manager import (
 )
 
 
+@patch("odoo_data_flow.lib.actions.module_manager.Status")
 @patch("odoo_data_flow.lib.actions.module_manager.conf_lib.get_connection_from_config")
-def test_run_update_module_list(mock_get_connection: MagicMock) -> None:
-    """Test the update module list action.
-
-    Tests that the 'Update Apps List' workflow calls the correct methods
+def test_run_update_module_list(
+    mock_get_connection: MagicMock, mock_status: MagicMock
+) -> None:
+    """Tests that the 'Update Apps List' workflow calls the correct methods
     in the correct order to ensure a synchronous update.
     """
     # 1. Setup
@@ -27,6 +28,9 @@ def test_run_update_module_list(mock_get_connection: MagicMock) -> None:
 
     # 3. Assertions
     assert result is True
+    mock_status.assert_called_once_with(
+        "Updating apps list on the server...", spinner="dots"
+    )
     mock_module_obj.update_list.assert_called_once()
     mock_module_obj.clear_caches.assert_called_once()
     mock_module_obj.search_count.assert_called_once_with([])
@@ -65,9 +69,11 @@ def test_run_update_module_list_api_error(
     )
 
 
+@patch("odoo_data_flow.lib.actions.module_manager.Status")
 @patch("odoo_data_flow.lib.actions.module_manager.conf_lib.get_connection_from_config")
 def test_run_module_installation_install_and_upgrade(
     mock_get_connection: MagicMock,
+    mock_status: MagicMock,
 ) -> None:
     """Test Install and upgrade mix.
 
@@ -97,6 +103,31 @@ def test_run_module_installation_install_and_upgrade(
     mock_module_obj.read.assert_called_once()
     mock_module_obj.button_immediate_install.assert_called_once_with([1])
     mock_module_obj.button_immediate_upgrade.assert_called_once_with([2, 3])
+    # Check that spinners were created
+    assert mock_status.call_count == 2
+
+
+@patch("odoo_data_flow.lib.actions.module_manager.Status")
+@patch("odoo_data_flow.lib.actions.module_manager.conf_lib.get_connection_from_config")
+def test_run_module_uninstallation(
+    mock_get_connection: MagicMock, mock_status: MagicMock
+) -> None:
+    """Tests that the uninstallation workflow correctly finds and uninstalls modules."""
+    mock_module_obj = MagicMock()
+    mock_module_obj.search.return_value = [10, 20]
+    mock_module_obj.read.return_value = [
+        {"id": 10, "name": "module_a", "state": "installed"},
+        {"id": 20, "name": "module_b", "state": "installed"},
+    ]
+    mock_connection = MagicMock()
+    mock_connection.get_model.return_value = mock_module_obj
+    mock_get_connection.return_value = mock_connection
+
+    run_module_uninstallation(config="dummy.conf", modules=["module_a", "module_b"])
+
+    mock_module_obj.search.assert_called_once()
+    mock_status.assert_called_once()
+    mock_module_obj.button_immediate_uninstall.assert_called_once_with([10, 20])
 
 
 @patch("odoo_data_flow.lib.actions.module_manager.conf_lib.get_connection_from_config")
@@ -165,19 +196,23 @@ def test_run_module_installation_api_error(
 def test_run_module_installation_upgrade_api_error(
     mock_get_connection: MagicMock, mock_log_error: MagicMock
 ) -> None:
-    """Tests error handling when the Odoo API call for upgrading fails."""
+    """Tests the case where install works but the subsequent upgrade fails."""
     mock_module_obj = MagicMock()
-    mock_module_obj.search.return_value = [1]
+    mock_module_obj.search.return_value = [1, 2]
     mock_module_obj.read.return_value = [
-        {"id": 1, "name": "module_a", "state": "installed"}
+        {"id": 1, "name": "module_to_install", "state": "uninstalled"},
+        {"id": 2, "name": "module_to_upgrade", "state": "installed"},
     ]
-    mock_module_obj.button_immediate_upgrade.side_effect = Exception("API Error")
+    mock_module_obj.button_immediate_upgrade.side_effect = Exception(
+        "Upgrade API Error"
+    )
     mock_connection = MagicMock()
     mock_connection.get_model.return_value = mock_module_obj
     mock_get_connection.return_value = mock_connection
 
-    run_module_installation(config="dummy.conf", modules=["module_a"])
+    run_module_installation(config="dummy.conf", modules=["module_a", "module_b"])
 
+    mock_module_obj.button_immediate_install.assert_called_once()
     mock_log_error.assert_called_once()
     assert "An error occurred during module operation" in mock_log_error.call_args[0][0]
 
