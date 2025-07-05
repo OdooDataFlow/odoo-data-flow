@@ -5,10 +5,13 @@ from unittest.mock import MagicMock, patch
 from odoo_data_flow.lib.actions.language_installer import run_language_installation
 
 
+@patch("odoo_data_flow.lib.actions.language_installer.Status")
 @patch(
     "odoo_data_flow.lib.actions.language_installer.conf_lib.get_connection_from_config"
 )
-def test_run_language_installation_success(mock_get_connection: MagicMock) -> None:
+def test_run_language_installation_success(
+    mock_get_connection: MagicMock, mock_status: MagicMock
+) -> None:
     """Test Succesfull language installation.
 
     Tests that the language installation workflow calls the correct
@@ -32,6 +35,11 @@ def test_run_language_installation_success(mock_get_connection: MagicMock) -> No
     # 3. Assertions
     mock_get_connection.assert_called_once_with(config_file="dummy.conf")
     mock_connection.get_model.assert_called_once_with("base.language.install")
+
+    # Verify that the spinner was called with the correct text
+    mock_status.assert_called_once_with(
+        "Installing languages: [bold cyan]nl_BE, fr_FR[/bold cyan]...", spinner="dots"
+    )
 
     # Verify that the wizard was created with the correct language string
     expected_create_data = {"lang": "nl_BE,fr_FR"}

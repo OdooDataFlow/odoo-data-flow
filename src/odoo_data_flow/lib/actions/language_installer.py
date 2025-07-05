@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from rich.status import Status
+
 from ...lib import conf_lib
 from ...logging_config import log
 
@@ -22,12 +24,16 @@ def run_language_installation(config: str, languages: list[str]) -> None:
         return
 
     try:
-        log.info(f"Preparing to install languages: {languages}")
-        # The wizard expects a dictionary with a 'lang' key
-        wizard_data = {"lang": ",".join(languages)}
-        wizard_id = wizard_obj.create(wizard_data)
-        # The wizard's method is confusingly named but this is correct
-        wizard_obj.lang_install([wizard_id])
+        lang_str = ", ".join(languages)
+        with Status(
+            f"Installing languages: [bold cyan]{lang_str}[/bold cyan]...",
+            spinner="dots",
+        ):
+            # The wizard expects a dictionary with a 'lang' key
+            wizard_data = {"lang": ",".join(languages)}
+            wizard_id = wizard_obj.create(wizard_data)
+            # The wizard's method is confusingly named but this is correct
+            wizard_obj.lang_install([wizard_id])
         log.info("Language installation process triggered successfully.")
     except Exception as e:
         log.error(f"An error occurred during language installation: {e}")
