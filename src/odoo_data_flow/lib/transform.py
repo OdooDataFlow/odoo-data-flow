@@ -301,6 +301,7 @@ class Processor:
         header_prefix: str = "child",
         separator: str = ";",
         encoding: str = "utf-8",
+        dry_run: bool = False,
     ) -> None:
         """Joins data from a secondary file into the processor's main data.
 
@@ -311,6 +312,8 @@ class Processor:
             header_prefix: A prefix to add to the headers from the child file.
             separator: The column separator for the child CSV file.
             encoding: The character encoding of the child file.
+            dry_run: If True, prints a sample of the joined data to the
+                console without modifying the processor's state.
         """
         child_header, child_data = self._read_file(filename, separator, encoding)
 
@@ -327,7 +330,10 @@ class Processor:
         child_data_map = {row[child_key_pos]: row for row in child_data}
 
         empty_child_row = [""] * len(child_header)
-        for master_row in self.data:
+
+        target_data = [list(row) for row in self.data] if dry_run else self.data
+
+        for master_row in target_data:
             key_value = master_row[master_key_pos]
             row_to_join = child_data_map.get(key_value, empty_child_row)
             master_row.extend(row_to_join)
