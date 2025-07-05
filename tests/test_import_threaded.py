@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from rich.progress import Progress, TaskID
 
 from odoo_data_flow.import_threaded import (
     RPCThreadImport,
@@ -26,7 +27,7 @@ class TestRPCThreadImport:
         )
         messages = [{"message": "Generic Error"}]
         failed_lines = rpc_thread._handle_odoo_messages(messages, lines)
-        assert failed_lines[0][-1] == "Generic Error | "
+        assert failed_lines[0][-1] == "Generic Error\n".replace("\n", " | ")
 
     def test_handle_odoo_messages_no_error_reason(self) -> None:
         """Tests that when add_error_reason is False, the reason is not appended."""
@@ -38,7 +39,7 @@ class TestRPCThreadImport:
         )
         messages = [{"message": "Generic Error", "record": 0}]
         failed_lines = rpc_thread._handle_odoo_messages(messages, lines)
-        assert len(failed_lines[0]) == 2  # No extra column added
+        assert len(failed_lines[0]) == 2
 
     def test_handle_record_mismatch(self) -> None:
         """Tests the logic for handling a record count mismatch."""
@@ -65,6 +66,51 @@ class TestRPCThreadImport:
         failed_lines = rpc_thread._handle_rpc_error(error, lines)
         assert len(failed_lines) == 2
         assert failed_lines[0][2] == "Connection Timed Out"
+
+    @patch("odoo_data_flow.lib.internal.rpc_thread.RpcThread.wait")
+    def test_wait_fallback_without_progress(self, mock_super_wait: MagicMock) -> None:
+        """Tests that wait() calls super().wait() if no progress bar is given."""
+        rpc_thread = RPCThreadImport(1, None, [], None)
+        rpc_thread.wait()
+        mock_super_wait.assert_called_once()
+
+    def test_wait_updates_progress_bar(self) -> None:
+        """Tests that wait() updates the progress bar on task completion."""
+        mock_progress = MagicMock(spec=Progress)
+        mock_task_id = MagicMock(spec=TaskID)
+        rpc_thread = RPCThreadImport(
+            1, None, [], None, progress=mock_progress, task_id=mock_task_id
+        )
+
+        # Simulate a completed future
+        future = MagicMock()
+        future.result.return_value = 5  # Simulate a batch of 5 records
+        rpc_thread.futures = [future]
+
+        with patch("concurrent.futures.as_completed", return_value=[future]):
+            rpc_thread.wait()
+
+        mock_progress.update.assert_called_once_with(mock_task_id, advance=5)
+
+    @patch("odoo_data_flow.lib.internal.rpc_thread.log.error")
+    def test_wait_handles_and_logs_exception(self, mock_log_error: MagicMock) -> None:
+        """Tests that wait() correctly handles exceptions from futures."""
+        mock_progress = MagicMock(spec=Progress)
+        mock_task_id = MagicMock(spec=TaskID)
+        rpc_thread = RPCThreadImport(
+            1, None, [], None, progress=mock_progress, task_id=mock_task_id
+        )
+        future = MagicMock()
+        test_exception = ValueError("Worker thread failed")
+        future.result.side_effect = test_exception
+        rpc_thread.futures = [future]
+
+        with patch("concurrent.futures.as_completed", return_value=[future]):
+            rpc_thread.wait()
+
+        mock_log_error.assert_called_once()
+        assert "A task in a worker thread failed" in mock_log_error.call_args[0][0]
+        assert mock_log_error.call_args.kwargs["exc_info"] is True
 
 
 class TestHelperFunctions:
@@ -172,3 +218,27 @@ class TestImportData:
         init_args = mock_rpc_thread.call_args.args
         filtered_header = init_args[2]
         assert filtered_header == ["id", "name"]
+
+    @patch("odoo_data_flow.import_threaded.RPCThreadImport")
+    @patch("odoo_data_flow.import_threaded.Progress")
+    def test_import_data_with_progress(
+        self, mock_progress: MagicMock, mock_rpc_thread: MagicMock
+    ) -> None:
+        """Tests that import_data correctly uses the rich progress bar."""
+        header = ["id", "name"]
+        data = [["1", "A"]]
+
+        with patch(
+            "odoo_data_flow.import_threaded.conf_lib.get_connection_from_config"
+        ):
+            import_data(
+                config_file="dummy.conf",
+                model="dummy.model",
+                header=header,
+                data=data,
+            )
+
+        mock_progress.assert_called_once()
+        mock_rpc_thread.assert_called_once()
+        # Check that the progress object was passed to the thread handler
+        assert "progress" in mock_rpc_thread.call_args.kwargs

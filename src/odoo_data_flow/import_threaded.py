@@ -4,11 +4,21 @@ This module contains the low-level, multi-threaded logic for importing
 data into an Odoo instance.
 """
 
+import concurrent.futures
 import csv
 import sys
 from collections.abc import Generator
 from time import time
 from typing import Any, Optional
+
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskID,
+    TextColumn,
+    TimeRemainingColumn,
+)
 
 from .lib import conf_lib
 from .lib.internal.rpc_thread import RpcThread
@@ -47,6 +57,8 @@ class RPCThreadImport(RpcThread):
         writer: Optional[Any] = None,  # csv.writer is not a type, use Any
         context: Optional[dict[str, Any]] = None,
         add_error_reason: bool = False,
+        progress: Optional[Progress] = None,
+        task_id: Optional[TaskID] = None,
     ) -> None:
         """Initializes the import thread handler."""
         super().__init__(max_connection)
@@ -55,6 +67,8 @@ class RPCThreadImport(RpcThread):
         self.writer = writer
         self.context = context or {}
         self.add_error_reason = add_error_reason
+        self.progress = progress
+        self.task_id = task_id
 
     def _handle_odoo_messages(
         self, messages: list[dict[str, Any]], original_lines: list[list[Any]]
@@ -113,7 +127,7 @@ class RPCThreadImport(RpcThread):
     ) -> None:
         """Submits a batch of data lines to be imported by a worker thread."""
 
-        def launch_batch_fun(lines: list[list[Any]], num: Any, do_check: bool) -> None:
+        def launch_batch_fun(lines: list[list[Any]], num: Any, do_check: bool) -> int:
             """The actual function executed by the worker thread."""
             start_time = time()
             failed_lines = []
@@ -137,10 +151,29 @@ class RPCThreadImport(RpcThread):
             log.info(
                 f"Time for batch {num}: {time() - start_time:.2f}s. Success: {success}"
             )
+            # Return the number of lines in this batch to update the progress
+            return len(lines)
 
         self.spawn_thread(
             launch_batch_fun, [data_lines, batch_number], {"do_check": check}
         )
+
+    def wait(self) -> None:
+        """Waits for tasks and updates the progress bar upon completion."""
+        if not self.progress or self.task_id is None:
+            # Fallback to original behavior if no progress bar is provided
+            super().wait()
+            return
+
+        for future in concurrent.futures.as_completed(self.futures):
+            try:
+                # The number of processed lines is returned by the future
+                num_processed = future.result()
+                self.progress.update(self.task_id, advance=num_processed)
+            except Exception as e:
+                log.error(f"A task in a worker thread failed: {e}", exc_info=True)
+
+        self.executor.shutdown(wait=True)
 
 
 def _filter_ignored_columns(
@@ -304,24 +337,40 @@ def import_data(
             log.error(f"Could not open fail file for writing: {fail_file}. Error: {e}")
             return
 
-    rpc_thread = RPCThreadImport(
-        max_connection,
-        model_obj,
-        final_header,
-        fail_file_writer,
-        _context,
-        add_error_reason=is_fail_run,
+    progress = Progress(
+        SpinnerColumn(),
+        TextColumn("[bold blue]{task.description}", justify="right"),
+        BarColumn(bar_width=None),
+        "[progress.percentage]{task.percentage:>3.0f}%",
+        TextColumn("•"),
+        TextColumn("[green]{task.completed} of {task.total} records"),
+        TextColumn("•"),
+        TimeRemainingColumn(),
     )
     start_time = time()
 
-    # Create batches and launch them in threads
-    for batch_number, lines_batch in _create_batches(
-        final_data, split, final_header, batch_size, o2m
-    ):
-        rpc_thread.launch_batch(lines_batch, batch_number, check)
+    with progress:
+        task_id = progress.add_task(
+            f"[green]Importing to [bold]{model}[/bold]", total=len(final_data)
+        )
 
-    # Wait for all threads to complete
-    rpc_thread.wait()
+        rpc_thread = RPCThreadImport(
+            max_connection,
+            model_obj,
+            final_header,
+            fail_file_writer,
+            _context,
+            add_error_reason=is_fail_run,
+            progress=progress,
+            task_id=task_id,
+        )
+
+        for batch_number, lines_batch in _create_batches(
+            final_data, split, final_header, batch_size, o2m
+        ):
+            rpc_thread.launch_batch(lines_batch, batch_number, check)
+
+        rpc_thread.wait()
 
     if fail_file_handle:
         fail_file_handle.close()
