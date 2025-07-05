@@ -10,7 +10,7 @@ authors = [
 ]
 classifiers = ["Development Status :: 3 - Alpha"]
 
-dependencies = ["click >=8.0.1", "odoo-client-lib", "requests", "lxml"]
+dependencies = ["click >=8.0.1", "odoo-client-lib", "requests", "lxml", "rich"]
 
 
 [project.urls]
@@ -27,7 +27,7 @@ dev = [
     "pytest >=6.2.5",
     "pygments >=2.10.0",
     "nox >=2024.04.14",
-    "pytest-mock"
+    "pytest-mock",
 ]
 lint = ["ruff >=0.5.5", "pydoclint >=0.5.0"]
 docs = [

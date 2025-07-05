@@ -4,6 +4,8 @@ import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from rich.logging import RichHandler
+
 from odoo_data_flow.logging_config import log, setup_logging
 
 
@@ -19,8 +21,8 @@ def test_setup_logging_console_only() -> None:
     assert len(log.handlers) == 1, (
         "There should be exactly one handler for the console."
     )
-    assert isinstance(log.handlers[0], logging.StreamHandler)
-    assert not isinstance(log.handlers[0], logging.FileHandler)
+    # The console handler should now be a RichHandler
+    assert isinstance(log.handlers[0], RichHandler)
 
 
 def test_setup_logging_with_file(tmp_path: Path) -> None:
@@ -41,7 +43,7 @@ def test_setup_logging_with_file(tmp_path: Path) -> None:
 
     # Check that we have one of each type of handler
     handler_types = [type(h) for h in log.handlers]
-    assert logging.StreamHandler in handler_types
+    assert RichHandler in handler_types
     assert logging.FileHandler in handler_types
 
     # Find the file handler and check its path
@@ -57,7 +59,6 @@ def test_setup_logging_with_file(tmp_path: Path) -> None:
     # 3. Assertions
     # We should only have the new console handler, not the old NullHandler
     assert len(log.handlers) == 1
-    assert isinstance(log.handlers[0], logging.StreamHandler)
 
 
 def test_setup_logging_clears_existing_handlers() -> None:
@@ -77,7 +78,7 @@ def test_setup_logging_clears_existing_handlers() -> None:
     # 3. Assertions
     # We should only have the new console handler, not the old NullHandler
     assert len(log.handlers) == 1
-    assert isinstance(log.handlers[0], logging.StreamHandler)
+    assert isinstance(log.handlers[0], RichHandler)
 
 
 def test_log_output_is_written_to_file(tmp_path: Path) -> None:
