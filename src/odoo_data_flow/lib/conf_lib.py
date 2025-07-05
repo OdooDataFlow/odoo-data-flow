@@ -8,6 +8,7 @@ import configparser
 from typing import Any
 
 import odoolib  # type: ignore[import-untyped]
+from rich.status import Status
 
 from ..logging_config import log
 
@@ -48,12 +49,11 @@ def get_connection_from_config(config_file: str) -> Any:
             # The OdooClient expects the user ID as 'user_id'
             conn_details["user_id"] = int(conn_details.pop("uid"))
 
-        log.info(f"Connecting to Odoo server at {conn_details.get('hostname')}...")
+        hostname = conn_details.get("hostname")
+        with Status(f"Connecting to Odoo server at {hostname}...", spinner="dots"):
+            connection = odoolib.get_connection(**conn_details)
 
-        # Use odoo-client-lib to establish the connection
-        connection = odoolib.get_connection(**conn_details)
-
-        log.info("Connection successful.")
+        log.info(f"Connection to [bold green]{hostname}[/bold green] successful.")
         return connection
 
     except (KeyError, ValueError) as e:
