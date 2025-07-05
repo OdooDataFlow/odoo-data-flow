@@ -150,6 +150,37 @@ The method takes these key arguments:
 * **`filename_out` (str)**: **Required**. The path where the clean, transformed CSV file will be saved.
 * **`params` (dict, optional)**: A crucial dictionary that holds the configuration for the `odoo-data-flow import` command. These parameters will be used when generating the `load.sh` script.
 
+### Testing Your Mapping with a Dry Run
+
+A crucial part of developing a transformation script is verifying that your mapping logic is correct without running a full import or writing files to disk. The `process` method includes a `dry_run=True` option for exactly this purpose.
+
+When you use this option, the `Processor` will:
+1.  Perform the complete data transformation in memory.
+2.  **Not** write any CSV files or add any commands to the `write_to_file` queue.
+3.  Print a beautifully formatted table to your console showing a sample of the first 10 rows of the transformed data.
+
+This allows you to quickly inspect the output and debug your mappers.
+
+**Example Usage:**
+```python
+# In your transform.py script
+
+# ... (define your mapping and processor) ...
+
+print("--- Running transformation in dry-run mode ---")
+processor.process(
+    mapping=my_mapping_dict,
+    filename_out='data/clean_data.csv',
+    params=import_params_dict,
+    dry_run=True  # This is the key argument
+)
+
+# You can comment out the write_to_file call during a dry run
+# processor.write_to_file("load_my_data.sh")
+```
+
+This will produce a table in your console, making it easy to see if your `concat`, `map_val`, or other mappers are producing the expected results.
+
 ### Configuring the Import Client with `params`
 
 The `params` dictionary allows you to control the behavior of the import client without ever leaving your Python script. The keys in this dictionary map directly to the command-line options of the `odoo-data-flow import` command.
