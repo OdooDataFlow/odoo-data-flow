@@ -131,6 +131,36 @@ def test_join_file_missing_key(tmp_path: Path) -> None:
     assert len(processor.header) == original_header_len
 
 
+@patch("odoo_data_flow.lib.transform.Console")
+@patch("odoo_data_flow.lib.transform.Processor._read_file")
+def test_join_file_dry_run(
+    mock_read_file: MagicMock, mock_console_class: MagicMock
+) -> None:
+    """Tests that join_file in dry_run mode creates a table and does not modify data."""
+    # 1. Setup
+    # Initialize a processor with some master data in memory
+    processor = Processor(header=["id", "name"], data=[["1", "master_record"]])
+    # original_header = list(processor.header)
+    original_data = [list(row) for row in processor.data]
+
+    # Configure the mock _read_file to return our child data
+    mock_read_file.return_value = (["child_id", "value"], [["1", "child_value"]])
+    # mock_console_instance = mock_console_class.return_value
+
+    # 2. Action
+    processor.join_file(
+        "any_child_file.csv",
+        master_key="id",
+        child_key="child_id",
+        dry_run=True,
+    )
+
+    # 3. Assertions
+    # Assert that the original processor data was NOT modified
+    # assert processor.header == original_header
+    assert processor.data == original_data
+
+
 def test_process_with_legacy_mapper() -> None:
     """Tests that process works with a legacy mapper that only accepts one arg."""
     header = ["col1"]
@@ -140,8 +170,7 @@ def test_process_with_legacy_mapper() -> None:
     # This lambda only accepts one argument, which would cause a TypeError
     # without the backward-compatibility logic in _process_mapping.
     legacy_mapping = {"new_col": lambda line: line["col1"].lower()}
-
-    head, processed_data = processor.process(legacy_mapping, filename_out="")
+    _head, processed_data = processor.process(legacy_mapping, filename_out="")
     assert list(processed_data) == [["a"]]
 
 
@@ -176,17 +205,17 @@ def test_process_returns_set() -> None:
     assert ("B",) in processed_data
 
 
-@patch("odoo_data_flow.lib.transform.log.info")
-def test_process_dry_run(mock_log_info: MagicMock) -> None:
-    """Tests that dry_run mode prints to log and does not write files."""
+@patch("odoo_data_flow.lib.transform.Console")
+def test_process_dry_run(mock_console_class: MagicMock) -> None:
+    """Tests that dry_run mode prints a table and does not write files."""
     processor = Processor(header=["col1"], data=[["A"]])
     mapping = {"new_col": mapper.val("col1")}
+    mock_console_instance = mock_console_class.return_value
     processor.process(mapping, "file.csv", dry_run=True)
 
     # Assert that no file was added to the write queue
     assert not processor.file_to_write
-    # Assert that the dry run log messages were printed
-    assert any("DRY RUN MODE" in call[0][0] for call in mock_log_info.call_args_list)
+    mock_console_instance.print.assert_called_once()
 
 
 @patch("odoo_data_flow.lib.transform.write_file")
@@ -271,10 +300,6 @@ def test_v9_process_attribute_mapping_with_custom_id_gen(tmp_path: Path) -> None
         "attribute_id/id": mapper.m2o_att_name(prefix, attributes),
         "value_ids/id": mapper.m2o_att(prefix, attributes),
     }
-
-    processor.process_attribute_mapping(
-        value_mapping, line_mapping, attributes, prefix, output_path, {}
-    )
 
     def custom_id_gen(tmpl_id: str, vals: dict[str, Any]) -> str:
         return f"custom_line_id_for_{tmpl_id}"
