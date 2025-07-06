@@ -52,28 +52,11 @@ class Processor:
         filename: Optional[str] = None,
         separator: str = ";",
         encoding: str = "utf-8",
-        header: Optional[list[str]] = None,
-        data: Optional[list[list[Any]]] = None,
-        preprocess: Callable[
-            [list[str], list[list[Any]]], tuple[list[str], list[list[Any]]]
-        ] = lambda h, d: (h, d),
+        dataframe: Optional[pl.DataFrame] = None,
+        preprocess: Callable[[pl.DataFrame], pl.DataFrame] = lambda df: df,
         **kwargs: Any,
     ) -> None:
-        """Initializes the Processor.
-
-        The Processor can be initialized either by providing a `filename` to read
-        from disk, or by providing `header` and `data` lists to work with
-        in-memory data.
-
-        Args:
-            filename: The path to the source CSV or XML file.
-            separator: The column delimiter for CSV files.
-            encoding: The character encoding of the source file.
-            header: A list of strings for the header row (for in-memory data).
-            data: A list of lists representing the data rows (for in-memory data).
-            preprocess: A function to modify the raw data before mapping begins.
-            **kwargs: Catches other arguments, primarily for XML processing.
-        """
+        """Initializes the Processor."""
         self.file_to_write: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self.dataframe: pl.DataFrame
 
