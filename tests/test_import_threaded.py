@@ -1,6 +1,7 @@
 """Test the low-level, multi-threaded import logic."""
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -172,12 +173,13 @@ class TestImportData:
     def test_import_data_connection_fails(self, mock_get_conn: MagicMock) -> None:
         """Tests that the function exits gracefully if the connection fails."""
         mock_get_conn.side_effect = Exception("Cannot connect")
-        import_data(
+        result = import_data(
             config_file="bad.conf",
             model="dummy.model",
             header=["id"],
             data=[["1"]],
         )
+        assert result is False
         mock_get_conn.assert_called_once()
 
     @patch("odoo_data_flow.import_threaded.conf_lib.get_connection_from_config")
@@ -188,13 +190,14 @@ class TestImportData:
         """Tests that the function handles an OSError when opening the fail file."""
         mock_get_conn.return_value = MagicMock()
         mock_open.side_effect = OSError("Permission denied")
-        import_data(
+        result = import_data(
             config_file="dummy.conf",
             model="dummy.model",
             header=["id"],
             data=[["1"]],
             fail_file="protected/fail.csv",
         )
+        assert result is False
         mock_open.assert_called_once()
 
     @patch("odoo_data_flow.import_threaded.RPCThreadImport")
@@ -242,3 +245,46 @@ class TestImportData:
         mock_rpc_thread.assert_called_once()
         # Check that the progress object was passed to the thread handler
         assert "progress" in mock_rpc_thread.call_args.kwargs
+
+    @patch("odoo_data_flow.import_threaded.RPCThreadImport")
+    def test_import_data_returns_true_on_success(
+        self, mock_rpc_thread: MagicMock
+    ) -> None:
+        """Tests that import_data returns True on a successful run."""
+        mock_rpc_thread.return_value.abort_flag = False
+        with patch(
+            "odoo_data_flow.import_threaded.conf_lib.get_connection_from_config"
+        ):
+            result = import_data(
+                config_file="dummy.conf",
+                model="dummy.model",
+                header=["id"],
+                data=[["1"]],
+            )
+        assert result is True
+
+    @patch("odoo_data_flow.import_threaded.RPCThreadImport")
+    def test_import_data_aborts_on_connection_error(
+        self, mock_rpc_thread_class: MagicMock
+    ) -> None:
+        """Tests that the import process aborts on a connection error."""
+        mock_rpc_instance = mock_rpc_thread_class.return_value
+
+        # Corrected: Add type hints to the inner helper function
+        def launch_side_effect(*args: Any, **kwargs: Any) -> None:
+            mock_rpc_instance.abort_flag = True
+
+        mock_rpc_instance.launch_batch.side_effect = launch_side_effect
+
+        with patch(
+            "odoo_data_flow.import_threaded.conf_lib.get_connection_from_config"
+        ):
+            result = import_data(
+                config_file="dummy.conf",
+                model="dummy.model",
+                header=["id"],
+                data=[["1"], ["2"], ["3"]],  # Multiple records to create batches
+                batch_size=1,
+            )
+
+        assert result is False

@@ -89,7 +89,7 @@ def test_two_step_failure_handling(tmp_path: Path) -> None:
     assert intermediate_fail_file.exists(), "Intermediate _fail.csv was not created"
 
     with open(intermediate_fail_file, encoding="utf-8") as f:
-        reader = csv.reader(f)
+        reader = csv.reader(f, delimiter=",")
         header_fail1 = next(reader)
         data_fail1 = list(reader)
 
@@ -124,7 +124,7 @@ def test_two_step_failure_handling(tmp_path: Path) -> None:
     final_fail_file = final_fail_files[0]
 
     with open(final_fail_file, encoding="utf-8") as f:
-        reader = csv.reader(f)
+        reader = csv.reader(f, delimiter=",")
         header_fail2 = next(reader)
         data_fail2 = list(reader)
 

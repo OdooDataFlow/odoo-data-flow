@@ -6,9 +6,18 @@ import os
 from datetime import datetime
 from typing import Any, Optional
 
+from rich.console import Console
+from rich.panel import Panel
+
 from . import import_threaded
 from .lib import conf_lib
 from .logging_config import log
+
+
+def _show_error_panel(title: str, message: str) -> None:
+    """Displays a formatted error panel to the console."""
+    console = Console(stderr=True, style="bold red")
+    console.print(Panel(message, title=title, border_style="red"))
 
 
 def _verify_import_fields(
@@ -27,10 +36,10 @@ def _verify_import_fields(
             reader = csv.reader(f, delimiter=separator)
             csv_header = next(reader)
     except FileNotFoundError:
-        log.error(f"Pre-flight Check Failed: Input file not found at {filename}")
+        _show_error_panel("File Not Found", f"Input file not found at {filename}")
         return False
     except Exception as e:
-        log.error(f"Pre-flight Check Failed: Could not read CSV header. Error: {e}")
+        _show_error_panel("File Read Error", f"Could not read CSV header. Error: {e}")
         return False
 
     # Step 2: Get the list of valid fields from the Odoo model
@@ -41,22 +50,21 @@ def _verify_import_fields(
         odoo_fields_data = model_fields_obj.search_read(domain, ["name"])
         odoo_field_names = {field["name"] for field in odoo_fields_data}
     except Exception as e:
-        log.error(
-            f"Pre-flight Check Failed: "
-            f"Could not connect to Odoo to get model fields. Error: {e}"
+        _show_error_panel(
+            "Odoo Connection Error",
+            f"Could not connect to Odoo to get model fields. Error: {e}",
         )
         return False
 
-    # Step 3: Compare the lists and find any missing fields
     missing_fields = [field for field in csv_header if field not in odoo_field_names]
 
     if missing_fields:
-        log.error(
-            "Pre-flight Check Failed: The following columns in your CSV file "
-            "do not exist on the Odoo model:"
+        error_message = (
+            "The following columns in your CSV file do not exist on the Odoo model:\n"
         )
         for field in missing_fields:
-            log.error(f"  - '{field}' is not a valid field on model '{model}'")
+            error_message += f"  - '{field}' is not a valid field on model '{model}'\n"
+        _show_error_panel("Invalid Fields Found", error_message)
         return False
 
     log.info("Pre-flight Check Successful: All columns are valid fields on the model.")
@@ -108,9 +116,10 @@ def run_import(
         base_name = os.path.basename(filename)
         inferred_model = os.path.splitext(base_name)[0].replace("_", ".")
         if not inferred_model or inferred_model.startswith("."):
-            log.error(
+            _show_error_panel(
+                "Model Not Found",
                 "Model not specified and could not be inferred from filename "
-                f"'{base_name}'. Please use the --model option."
+                f"'{base_name}'.\nPlease use the --model option.",
             )
             return
         final_model = inferred_model
@@ -129,8 +138,10 @@ def run_import(
         if not isinstance(parsed_context, dict):
             raise TypeError("Context must be a dictionary.")
     except Exception as e:
-        log.error(
-            f"Invalid context provided. Must be a valid Python dictionary string. {e}"
+        _show_error_panel(
+            "Invalid Context",
+            f"The --context argument must be a valid Python dictionary string.\n"
+            f"Error: {e}",
         )
         return
 
@@ -167,7 +178,7 @@ def run_import(
     log.info(f"Workers: {max_connection_run}, Batch Size: {batch_size_run}")
     log.info(f"Failed records will be saved to: {fail_output_file}")
 
-    import_threaded.import_data(
+    success = import_threaded.import_data(
         config,
         final_model,
         file_csv=file_to_process,
@@ -185,7 +196,22 @@ def run_import(
         is_fail_run=is_fail_run,
     )
 
-    log.info("Import process finished.")
+    console = Console()
+    if success:
+        console.print(
+            Panel(
+                f"Import process for model [bold cyan]{final_model}[/bold cyan] "
+                f"finished successfully.",
+                title="[bold green]Import Complete[/bold green]",
+                border_style="green",
+            )
+        )
+    else:
+        _show_error_panel(
+            "Import Aborted",
+            "The import process was aborted due to a critical error. "
+            "Please check the logs above for details.",
+        )
 
 
 def run_import_for_migration(

@@ -9,8 +9,9 @@ import csv
 import sys
 from collections.abc import Generator
 from time import time
-from typing import Any, Optional
+from typing import Any, Optional, TextIO
 
+import requests  # type: ignore[import-untyped]
 from rich.progress import (
     BarColumn,
     Progress,
@@ -69,6 +70,7 @@ class RPCThreadImport(RpcThread):
         self.add_error_reason = add_error_reason
         self.progress = progress
         self.task_id = task_id
+        self.abort_flag = False
 
     def _handle_odoo_messages(
         self, messages: list[dict[str, Any]], original_lines: list[list[Any]]
@@ -126,9 +128,13 @@ class RPCThreadImport(RpcThread):
         check: bool = False,
     ) -> None:
         """Submits a batch of data lines to be imported by a worker thread."""
+        if self.abort_flag:
+            return
 
         def launch_batch_fun(lines: list[list[Any]], num: Any, do_check: bool) -> int:
             """The actual function executed by the worker thread."""
+            if self.abort_flag:
+                return 0
             start_time = time()
             failed_lines = []
             try:
@@ -140,7 +146,12 @@ class RPCThreadImport(RpcThread):
                 elif do_check and len(res.get("ids", [])) != len(lines):
                     failed_lines = self._handle_record_mismatch(res, lines)
 
+            except requests.exceptions.ConnectionError as e:
+                log.error(f"Connection to Odoo failed: {e}. Aborting import.")
+                failed_lines = self._handle_rpc_error(e, lines)
+                self.abort_flag = True
             except Exception as e:
+                # For all other unexpected errors, log the full traceback.
                 log.error(f"RPC call for batch {num} failed: {e}", exc_info=True)
                 failed_lines = self._handle_rpc_error(e, lines)
 
@@ -166,10 +177,16 @@ class RPCThreadImport(RpcThread):
             return
 
         for future in concurrent.futures.as_completed(self.futures):
+            if self.abort_flag:
+                # If a critical error occurred, don't wait for other tasks.
+                # Cancel pending futures and shut down immediately.
+                self.executor.shutdown(wait=True, cancel_futures=True)
+                break
             try:
                 # The number of processed lines is returned by the future
                 num_processed = future.result()
-                self.progress.update(self.task_id, advance=num_processed)
+                if self.progress:
+                    self.progress.update(self.task_id, advance=num_processed)
             except Exception as e:
                 log.error(f"A task in a worker thread failed: {e}", exc_info=True)
 
@@ -273,6 +290,82 @@ def _create_batches(
         yield f"{batch_num}-{current_split_value}", current_batch
 
 
+def _setup_fail_file(
+    fail_file: str, header: list[str], is_fail_run: bool, separator: str, encoding: str
+) -> tuple[Optional[Any], Optional[TextIO]]:
+    """Opens the fail file and returns the writer and file handle."""
+    try:
+        fail_file_handle = open(fail_file, "w", newline="", encoding=encoding)
+        fail_file_writer = csv.writer(
+            fail_file_handle, delimiter=separator, quoting=csv.QUOTE_ALL
+        )
+        header_to_write = list(header)
+        if is_fail_run:
+            header_to_write.append("_ERROR_REASON")
+        fail_file_writer.writerow(header_to_write)
+        return fail_file_writer, fail_file_handle
+    except OSError as e:
+        log.error(f"Could not open fail file for writing: {fail_file}. Error: {e}")
+        return None, None
+
+
+def _execute_import_in_threads(
+    max_connection: int,
+    model_obj: Any,
+    final_header: list[str],
+    final_data: list[list[Any]],
+    fail_file_writer: Optional[Any],
+    context: dict[str, Any],
+    is_fail_run: bool,
+    split: Optional[str],
+    batch_size: int,
+    o2m: bool,
+    check: bool,
+    model: str,
+) -> bool:
+    """Sets up and runs the rich progress bar and threaded import."""
+    progress = Progress(
+        SpinnerColumn(),
+        TextColumn("[bold blue]{task.description}", justify="right"),
+        BarColumn(bar_width=None),
+        "[progress.percentage]{task.percentage:>3.0f}%",
+        TextColumn("•"),
+        TextColumn("[green]{task.completed} of {task.total} records"),
+        TextColumn("•"),
+        TimeRemainingColumn(),
+    )
+
+    with progress:
+        task_id = progress.add_task(
+            f"Importing to [bold]{model}[/bold]", total=len(final_data)
+        )
+
+        rpc_thread = RPCThreadImport(
+            max_connection,
+            model_obj,
+            final_header,
+            fail_file_writer,
+            context,
+            add_error_reason=is_fail_run,
+            progress=progress,
+            task_id=task_id,
+        )
+
+        for batch_number, lines_batch in _create_batches(
+            final_data, split, final_header, batch_size, o2m
+        ):
+            if rpc_thread.abort_flag:
+                log.error(
+                    "Aborting further processing due to critical connection error."
+                )
+                break
+            rpc_thread.launch_batch(lines_batch, batch_number, check)
+
+        rpc_thread.wait()
+
+    return not rpc_thread.abort_flag
+
+
 def import_data(
     config_file: str,
     model: str,
@@ -291,18 +384,40 @@ def import_data(
     skip: int = 0,
     o2m: bool = False,
     is_fail_run: bool = False,
-) -> None:
+) -> bool:
     """Main function to orchestrate the import process.
 
     Can be run from a file or from in-memory data.
+
+    Args:
+        config_file: Path to the connection configuration file.
+        model: The Odoo model to import data into.
+        header: A list of strings for the header row (for in-memory data).
+        data: A list of lists representing the data rows (for in-memory data).
+        file_csv: Path to the source CSV file to import.
+        context: A dictionary for the Odoo context.
+        fail_file: Path to write failed records to.
+        encoding: The file encoding of the source file.
+        separator: The delimiter used in the CSV file.
+        ignore: A list of column names to ignore during import.
+        split: The column name to group records by to avoid concurrent updates.
+        check: If True, checks if records were successfully imported.
+        max_connection: The number of simultaneous connections to use.
+        batch_size: The number of records to process in each batch.
+        skip: The number of initial lines to skip in the source file.
+        o2m: If True, enables special handling for one-to-many imports.
+        is_fail_run: If True, indicates a run to re-process failed records.
+
+    Returns:
+        True if the import completed, False if it was aborted.
     """
     _ignore = ignore or []
     _context = context or {}
 
     if file_csv:
         header, data = _read_data_file(file_csv, separator, encoding, skip)
-        if not data:
-            return  # Stop if file reading failed
+        if not data and not header:
+            return False
 
     if header is None or data is None:
         raise ValueError(
@@ -317,65 +432,37 @@ def import_data(
         model_obj = connection.get_model(model)
     except Exception as e:
         log.error(f"Failed to connect to Odoo: {e}")
-        return
+        return False
 
-    # Set up the writer for the fail file
-    fail_file_writer: Optional[Any] = None
-    fail_file_handle = None
+    fail_file_writer, fail_file_handle = None, None
     if fail_file:
-        try:
-            fail_file_handle = open(fail_file, "w", newline="", encoding=encoding)
-            fail_file_writer = csv.writer(
-                fail_file_handle, delimiter=separator, quoting=csv.QUOTE_ALL
-            )
-            # Add the error reason column to the header only for the second failure file
-            header_to_write = list(final_header)
-            if is_fail_run:
-                header_to_write.append("_ERROR_REASON")
-            fail_file_writer.writerow(header_to_write)
-        except OSError as e:
-            log.error(f"Could not open fail file for writing: {fail_file}. Error: {e}")
-            return
+        fail_file_writer, fail_file_handle = _setup_fail_file(
+            fail_file, final_header, is_fail_run, separator, encoding
+        )
+        if not fail_file_writer:
+            return False
 
-    progress = Progress(
-        SpinnerColumn(),
-        TextColumn("[bold blue]{task.description}", justify="right"),
-        BarColumn(bar_width=None),
-        "[progress.percentage]{task.percentage:>3.0f}%",
-        TextColumn("•"),
-        TextColumn("[green]{task.completed} of {task.total} records"),
-        TextColumn("•"),
-        TimeRemainingColumn(),
+    success = _execute_import_in_threads(
+        max_connection,
+        model_obj,
+        final_header,
+        final_data,
+        fail_file_writer,
+        _context,
+        is_fail_run,
+        split,
+        batch_size,
+        o2m,
+        check,
+        model,
     )
     start_time = time()
 
-    with progress:
-        task_id = progress.add_task(
-            f"[green]Importing to [bold]{model}[/bold]", total=len(final_data)
-        )
-
-        rpc_thread = RPCThreadImport(
-            max_connection,
-            model_obj,
-            final_header,
-            fail_file_writer,
-            _context,
-            add_error_reason=is_fail_run,
-            progress=progress,
-            task_id=task_id,
-        )
-
-        for batch_number, lines_batch in _create_batches(
-            final_data, split, final_header, batch_size, o2m
-        ):
-            rpc_thread.launch_batch(lines_batch, batch_number, check)
-
-        rpc_thread.wait()
-
     if fail_file_handle:
         fail_file_handle.close()
-
     log.info(
         f"{len(final_data)} records processed for model '{model}'. "
         f"Total time: {time() - start_time:.2f}s."
     )
+
+    return success

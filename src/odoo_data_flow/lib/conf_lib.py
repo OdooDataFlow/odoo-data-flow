@@ -53,7 +53,6 @@ def get_connection_from_config(config_file: str) -> Any:
         # Use odoo-client-lib to establish the connection
         connection = odoolib.get_connection(**conn_details)
 
-        log.info("Connection successful.")
         return connection
 
     except (KeyError, ValueError) as e:

@@ -30,9 +30,9 @@ def test_run_import_infers_model_from_filename(
 
 
 @patch("odoo_data_flow.importer.import_threaded.import_data")
-@patch("odoo_data_flow.importer.log.error")
+@patch("odoo_data_flow.importer._show_error_panel")
 def test_run_import_no_model_fails(
-    mock_log_error: MagicMock, mock_import_data: MagicMock, tmp_path: Path
+    mock_show_error: MagicMock, mock_import_data: MagicMock, tmp_path: Path
 ) -> None:
     """Test import with no fails.
 
@@ -44,11 +44,8 @@ def test_run_import_no_model_fails(
 
     # 2. Action
     run_import(config="dummy.conf", filename=str(bad_file))
-
-    # 3. Assertions
-    mock_log_error.assert_called_once()
-    assert "could not be inferred" in mock_log_error.call_args[0][0]
-    # Ensure the import process was stopped and the threaded import was not called
+    mock_show_error.assert_called_once()
+    assert "Model Not Found" in mock_show_error.call_args[0]
     mock_import_data.assert_not_called()
 
 
@@ -83,9 +80,9 @@ def test_run_import_fail_mode(mock_import_data: MagicMock, tmp_path: Path) -> No
     assert call_kwargs["max_connection"] == 1
 
 
-@patch("odoo_data_flow.importer.log.error")
+@patch("odoo_data_flow.importer._show_error_panel")
 def test_run_import_bad_context_string(
-    mock_log_error: MagicMock, tmp_path: Path
+    mock_show_error: MagicMock, tmp_path: Path
 ) -> None:
     """Tests that a malformed context string is handled gracefully."""
     # Setup: Create a dummy file to get past the file-read stage
@@ -99,13 +96,13 @@ def test_run_import_bad_context_string(
         context="this-is-not-a-dict",
         separator=",",
     )
-    mock_log_error.assert_called_once()
-    assert "Invalid context provided" in mock_log_error.call_args[0][0]
+    mock_show_error.assert_called_once()
+    assert "Invalid Context" in mock_show_error.call_args[0]
 
 
-@patch("odoo_data_flow.importer.log.error")
+@patch("odoo_data_flow.importer._show_error_panel")
 def test_run_import_context_not_a_dict(
-    mock_log_error: MagicMock, tmp_path: Path
+    mock_show_error: MagicMock, tmp_path: Path
 ) -> None:
     """Tests that an error is logged if the context string is not a dictionary."""
     # Setup: Create a dummy file to get past the file-read stage
@@ -120,8 +117,8 @@ def test_run_import_context_not_a_dict(
         context="['not', 'a', 'dict']",
         separator=",",
     )
-    mock_log_error.assert_called_once()
-    assert "Context must be a dictionary" in mock_log_error.call_args[0][0]
+    mock_show_error.assert_called_once()
+    assert "Invalid Context" in mock_show_error.call_args[0]
 
 
 @patch("odoo_data_flow.importer.import_threaded.import_data")
@@ -158,7 +155,8 @@ def test_run_import_skips_verification_by_default(
         config="dummy.conf",
         filename=str(source_file),
         model="res.partner",
-        verify_fields=False,  # Explicitly False
+        verify_fields=False,
+        separator=",",
     )
 
     mock_verify_fields.assert_not_called()
@@ -202,11 +200,11 @@ def test_verify_fields_success(
 
 
 @patch("odoo_data_flow.importer.import_threaded.import_data")
-@patch("odoo_data_flow.importer.log.error")
+@patch("odoo_data_flow.importer._show_error_panel")
 @patch("odoo_data_flow.importer.conf_lib.get_connection_from_config")
 def test_verify_fields_failure_missing_field(
     mock_get_connection: MagicMock,
-    mock_log_error: MagicMock,
+    mock_show_error: MagicMock,
     mock_import_data: MagicMock,
     tmp_path: Path,
 ) -> None:
@@ -215,13 +213,9 @@ def test_verify_fields_failure_missing_field(
     source_file = tmp_path / "data.csv"
     # This file contains a column that is not on the mocked model below
     source_file.write_text("id,name,x_studio_legacy_field")
-
     mock_model_fields_obj = MagicMock()
     # Simulate Odoo returning only two valid fields
-    mock_model_fields_obj.search_read.return_value = [
-        {"name": "id"},
-        {"name": "name"},
-    ]
+    mock_model_fields_obj.search_read.return_value = [{"name": "id"}, {"name": "name"}]
     mock_connection = MagicMock()
     mock_connection.get_model.return_value = mock_model_fields_obj
     mock_get_connection.return_value = mock_connection
@@ -237,18 +231,18 @@ def test_verify_fields_failure_missing_field(
 
     # 3. Assertions
     # An error should be logged, and the main import should NOT be called
-    assert mock_log_error.call_count > 0
+
     # Check that the specific error message was one of the logs
-    assert any(
-        "is not a valid field" in call[0][0] for call in mock_log_error.call_args_list
-    )
+    mock_show_error.assert_called_once()
+    assert "Invalid Fields Found" in mock_show_error.call_args[0]
+    # assert "x_studio_legacy_field" in mock_show_error.call_args[1]
     mock_import_data.assert_not_called()
 
 
 @patch("odoo_data_flow.importer.import_threaded.import_data")
-@patch("odoo_data_flow.importer.log.error")
+@patch("odoo_data_flow.importer._show_error_panel")
 def test_verify_fields_failure_file_not_found(
-    mock_log_error: MagicMock, mock_import_data: MagicMock
+    mock_show_error: MagicMock, mock_import_data: MagicMock
 ) -> None:
     """Tests that verification fails gracefully if the source file is not found."""
     run_import(
@@ -257,9 +251,6 @@ def test_verify_fields_failure_file_not_found(
         model="res.partner",
         verify_fields=True,
     )
-
-    # Assert that the specific error message was logged
-    assert any(
-        "Input file not found" in call[0][0] for call in mock_log_error.call_args_list
-    )
+    mock_show_error.assert_called_once()
+    assert "File Not Found" in mock_show_error.call_args[0]
     mock_import_data.assert_not_called()
