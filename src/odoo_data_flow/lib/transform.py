@@ -366,19 +366,19 @@ class Processor:
         lines_out: Union[list[Any], set[tuple[Any, ...]]] = [] if t == "list" else set()
         state: dict[str, Any] = {}
 
-        for i, line in enumerate(self.data):
-            cleaned_line = [
-                s.strip() if s and s.strip() not in null_values else "" for s in line
-            ]
-            line_dict = dict(zip(self.header, cleaned_line))
+        for i, row in enumerate(self.dataframe.iter_rows(named=True)):
+            cleaned_row = {
+                k: v.strip() if isinstance(v, str) and v.strip() not in null_values else ""
+                for k, v in row.items()
+            }
 
             try:
-                line_out = [mapping[k](line_dict, state) for k in mapping.keys()]
+                line_out = [mapping[k](cleaned_row, state) for k in mapping.keys()]
             except SkippingError as e:
                 log.debug(f"Skipping line {i}: {e.message}")
                 continue
             except TypeError:
-                line_out = [mapping[k](line_dict) for k in mapping.keys()]
+                line_out = [mapping[k](cleaned_row) for k in mapping.keys()]
 
             if isinstance(lines_out, list):
                 lines_out.append(line_out)
