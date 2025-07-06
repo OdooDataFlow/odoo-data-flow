@@ -10,7 +10,15 @@ authors = [
 ]
 classifiers = ["Development Status :: 3 - Alpha"]
 
-dependencies = ["click >=8.0.1", "odoo-client-lib", "requests", "lxml", "rich"]
+dependencies = [
+    "click >=8.0.1",
+    "odoo-client-lib",
+    "requests",
+    "lxml",
+    "rich",
+    "polars",
+    "pyarrow",
+]
 
 
 [project.urls]
