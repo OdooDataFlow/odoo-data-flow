@@ -159,7 +159,7 @@ class Processor:
         Returns:
             True if the check passes, False otherwise.
         """
-        res = check_fun(self.header, self.data)
+        res = check_fun(self.dataframe)
         if not res:
             error_message = (
                 message or f"Data quality check '{check_fun.__name__}' failed."
@@ -178,16 +178,15 @@ class Processor:
             A dictionary where keys are the grouping keys and values are new
             Processor instances containing the grouped data.
         """
-        grouped_data: OrderedDict[Any, list[list[Any]]] = OrderedDict()
-        for i, row in enumerate(self.data):
-            row_dict = dict(zip(self.header, row))
-            key = split_fun(row_dict, i)
+        grouped_data: OrderedDict[Any, list[dict[str, Any]]] = OrderedDict()
+        for i, row in enumerate(self.dataframe.iter_rows(named=True)):
+            key = split_fun(row, i)
             if key not in grouped_data:
                 grouped_data[key] = []
             grouped_data[key].append(row)
 
         return {
-            key: Processor(header=list(self.header), data=data)
+            key: Processor(dataframe=pl.from_dicts(data))
             for key, data in grouped_data.items()
         }
 
@@ -195,7 +194,7 @@ class Processor:
         """Generates a direct 1-to-1 mapping dictionary."""
         return {
             str(column): MapperRepr(f"mapper.val('{column}')", mapper.val(column))
-            for column in self.header
+            for column in self.dataframe.columns
             if column
         }
 
@@ -315,30 +314,32 @@ class Processor:
             dry_run: If True, prints a sample of the joined data to the
                 console without modifying the processor's state.
         """
-        child_header, child_data = self._read_file(filename, separator, encoding)
+        child_df = self._read_file(filename, separator, encoding)
+        child_df = child_df.rename(
+            {col: f"{header_prefix}_{col}" for col in child_df.columns}
+        )
 
-        try:
-            child_key_pos = child_header.index(child_key)
-            master_key_pos = self.header.index(master_key)
-        except ValueError as e:
-            log.error(
-                f"Join key error: {e}. Check if '{master_key}' and "
-                f"'{child_key}' exist in their respective files."
+        if dry_run:
+            joined_df = self.dataframe.join(
+                child_df, left_on=master_key, right_on=f"{header_prefix}_{child_key}"
             )
-            return
+            log.info("--- DRY RUN MODE (Outputting sample of joined data) ---")
+            console = Console()
+            table = Table(title="Joined Data Sample")
 
-        child_data_map = {row[child_key_pos]: row for row in child_data}
+            for column_header in joined_df.columns:
+                table.add_column(column_header, style="cyan")
 
-        empty_child_row = [""] * len(child_header)
+            for row in joined_df.head(10).iter_rows():
+                str_row = [str(item) for item in row]
+                table.add_row(*str_row)
 
-        target_data = [list(row) for row in self.data] if dry_run else self.data
-
-        for master_row in target_data:
-            key_value = master_row[master_key_pos]
-            row_to_join = child_data_map.get(key_value, empty_child_row)
-            master_row.extend(row_to_join)
-
-        self.header.extend([f"{header_prefix}_{h}" for h in child_header])
+            console.print(table)
+            log.info(f"Total rows that would be generated: {len(joined_df)}")
+        else:
+            self.dataframe = self.dataframe.join(
+                child_df, left_on=master_key, right_on=f"{header_prefix}_{child_key}"
+            )
 
     def _add_data(
         self,
@@ -368,9 +369,7 @@ class Processor:
 
         for i, row in enumerate(self.dataframe.iter_rows(named=True)):
             cleaned_row = {
-                k: v.strip()
-                if isinstance(v, str) and v.strip() not in null_values
-                else ""
+                k: v.strip() if isinstance(v, str) and v.strip() not in null_values else ""
                 for k, v in row.items()
             }
 
@@ -475,15 +474,11 @@ class ProductProcessorV10(Processor):
         unique_attribute_values: set[tuple[str, str, str]] = set()
 
         # Iterate over all raw data lines
-        for raw_line in self.data:
-            line_dict = dict(
-                zip(self.header, raw_line)
-            )  # Convert to dict for easy access
-
+        for raw_line in self.dataframe.iter_rows(named=True):
             for attribute_field in attribute_list:
                 # Get the raw value for this specific attribute
                 # (e.g., "Black" for "Color")
-                value_raw = line_dict.get(attribute_field, "").strip()
+                value_raw = raw_line.get(attribute_field, "").strip()
 
                 if value_raw:
                     # Form the ID for the attribute value
@@ -580,11 +575,12 @@ class ProductProcessorV9(Processor):
         )
 
         processed_rows: list[dict[str, Any]] = []
-        for line in self.data:
-            cleaned_line = [
-                s.strip() if s and s.strip() not in _null_values else "" for s in line
-            ]
-            processed_rows.append(dict(zip(self.header, cleaned_line)))
+        for row in self.dataframe.iter_rows(named=True):
+            cleaned_row = {
+                k: v.strip() if isinstance(v, str) and v.strip() not in _null_values else ""
+                for k, v in row.items()
+            }
+            processed_rows.append(cleaned_row)
 
         values_header = list(mapping.keys())
         values_data = self._extract_attribute_value_data(
