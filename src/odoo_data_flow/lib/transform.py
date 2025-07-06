@@ -10,6 +10,7 @@ from typing import (
     Union,
 )
 
+import polars as pl
 from lxml import etree  # type: ignore[import-untyped]
 from rich.console import Console
 from rich.table import Table
@@ -377,7 +378,9 @@ class Processor:
 
         for i, row in enumerate(self.dataframe.iter_rows(named=True)):
             cleaned_row = {
-                k: v.strip() if isinstance(v, str) and v.strip() not in null_values else ""
+                k: v.strip()
+                if isinstance(v, str) and v.strip() not in null_values
+                else ""
                 for k, v in row.items()
             }
 
@@ -585,7 +588,9 @@ class ProductProcessorV9(Processor):
         processed_rows: list[dict[str, Any]] = []
         for row in self.dataframe.iter_rows(named=True):
             cleaned_row = {
-                k: v.strip() if isinstance(v, str) and v.strip() not in _null_values else ""
+                k: v.strip()
+                if isinstance(v, str) and v.strip() not in _null_values
+                else ""
                 for k, v in row.items()
             }
             processed_rows.append(cleaned_row)
