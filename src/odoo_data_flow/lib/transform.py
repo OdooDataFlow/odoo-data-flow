@@ -368,7 +368,9 @@ class Processor:
 
         for i, row in enumerate(self.dataframe.iter_rows(named=True)):
             cleaned_row = {
-                k: v.strip() if isinstance(v, str) and v.strip() not in null_values else ""
+                k: v.strip()
+                if isinstance(v, str) and v.strip() not in null_values
+                else ""
                 for k, v in row.items()
             }
 

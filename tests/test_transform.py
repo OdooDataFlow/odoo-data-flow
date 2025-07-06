@@ -4,9 +4,6 @@ from pathlib import Path
 from typing import Any, Callable
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from odoo_data_flow.lib import mapper
 import polars as pl
 import pytest
 
@@ -105,7 +102,6 @@ def test_join_file_success(tmp_path: Path) -> None:
     assert processor.dataframe.rows() == [("1", "master_record", "child_value")]
 
 
-
 def test_join_file_missing_key(tmp_path: Path) -> None:
     """Tests that join_file handles a missing join key gracefully."""
     master_file = tmp_path / "master.csv"
@@ -121,7 +117,6 @@ def test_join_file_missing_key(tmp_path: Path) -> None:
             child_key="child_id",
             separator=",",
         )
-
 
 
 @patch("odoo_data_flow.lib.transform.Console")
