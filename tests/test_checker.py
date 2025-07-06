@@ -1,7 +1,8 @@
 """Test the data quality checker functions."""
 
-import polars as pl
 from unittest.mock import MagicMock, patch
+
+import polars as pl
 
 from odoo_data_flow.lib import checker
 
@@ -11,7 +12,9 @@ class TestCheckers:
 
     def test_id_validity_checker_success(self) -> None:
         """Tests that id_validity_checker returns True for valid data."""
-        df = pl.DataFrame({"id": ["SKU-001", "SKU-002", "NULL"], "name": ["A", "B", "C"]})
+        df = pl.DataFrame(
+            {"id": ["SKU-001", "SKU-002", "NULL"], "name": ["A", "B", "C"]}
+        )
         check_func = checker.id_validity_checker("id", r"^SKU-\d{3}$")
         assert check_func(df) is True
 
@@ -83,7 +86,10 @@ class TestCheckers:
     def test_cell_len_checker_failure(self, mock_log_warning: MagicMock) -> None:
         """Tests that cell_len_checker returns False for invalid data."""
         df = pl.DataFrame(
-            {"id": ["1"], "description": ["This description is definitely way too long"]}
+            {
+                "id": ["1"],
+                "description": ["This description is definitely way too long"],
+            }
         )
         check_func = checker.cell_len_checker(20)
         assert check_func(df) is False
@@ -95,9 +101,7 @@ class TestCheckers:
         self, mock_log_warning: MagicMock
     ) -> None:
         """Tests cell_len_checker failure when header is shorter than data row."""
-        df = pl.DataFrame(
-            {"id": ["1"], "description": ["This cell causes the error"]}
-        )
+        df = pl.DataFrame({"id": ["1"], "description": ["This cell causes the error"]})
         check_func = checker.cell_len_checker(5)
         assert check_func(df) is False
         mock_log_warning.assert_called_once()

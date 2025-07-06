@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import Any, Callable
 from unittest.mock import MagicMock, patch
 
-import pytest
 import polars as pl
+import pytest
 
 from odoo_data_flow.lib import mapper
 from odoo_data_flow.lib.transform import (
@@ -28,7 +28,8 @@ def test_mapper_repr_and_call() -> None:
 def test_processor_init_fails_without_args() -> None:
     """Tests that the Processor raises a ValueError if initialized with no args."""
     with pytest.raises(
-        ValueError, match="Processor must be initialized with either a 'filename' or a 'dataframe'."
+        ValueError,
+        match="Processor must be initialized with either a 'filename' or a 'dataframe'.",
     ):
         Processor()
 
@@ -306,7 +307,5 @@ def test_v9_process_attribute_mapping_with_custom_id_gen(tmp_path: Path) -> None
 
     # Assert that all three files were added to the write queue
     assert len(processor.file_to_write) == 3
-    line_file_data = processor.file_to_write[
-        output_path + "product.attribute.line.csv"
-    ]
+    line_file_data = processor.file_to_write[output_path + "product.attribute.line.csv"]
     assert line_file_data["data"][0][0] == "custom_line_id_for_tmpl_.TPL1"

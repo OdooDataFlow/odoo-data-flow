@@ -1,6 +1,5 @@
 """This module contains the core Processor class for transforming data."""
 
-import csv
 import os
 from collections import OrderedDict
 from typing import (
@@ -357,7 +356,9 @@ class Processor:
 
         for i, row in enumerate(self.dataframe.iter_rows(named=True)):
             cleaned_row = {
-                k: v.strip() if isinstance(v, str) and v.strip() not in null_values else ""
+                k: v.strip()
+                if isinstance(v, str) and v.strip() not in null_values
+                else ""
                 for k, v in row.items()
             }
 
@@ -565,7 +566,9 @@ class ProductProcessorV9(Processor):
         processed_rows: list[dict[str, Any]] = []
         for row in self.dataframe.iter_rows(named=True):
             cleaned_row = {
-                k: v.strip() if isinstance(v, str) and v.strip() not in _null_values else ""
+                k: v.strip()
+                if isinstance(v, str) and v.strip() not in _null_values
+                else ""
                 for k, v in row.items()
             }
             processed_rows.append(cleaned_row)
