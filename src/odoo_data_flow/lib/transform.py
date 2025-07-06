@@ -75,23 +75,19 @@ class Processor:
             **kwargs: Catches other arguments, primarily for XML processing.
         """
         self.file_to_write: OrderedDict[str, dict[str, Any]] = OrderedDict()
-        self.header: list[str]
-        self.data: list[list[Any]]
+        self.dataframe: pl.DataFrame
 
         if filename:
-            self.header, self.data = self._read_file(
-                filename, separator, encoding, **kwargs
-            )
-        elif header is not None and data is not None:
-            self.header = header
-            self.data = data
+            self.dataframe = self._read_file(filename, separator, encoding, **kwargs)
+        elif dataframe is not None:
+            self.dataframe = dataframe
         else:
             raise ValueError(
-                "Processor must be initialized with either a 'filename' or both"
-                " 'header' and 'data'."
+                "Processor must be initialized with either "
+                "a 'filename' or a 'dataframe'."
             )
 
-        self.header, self.data = preprocess(self.header, self.data)
+        self.dataframe = preprocess(self.dataframe)
 
     def _read_file(
         self, filename: str, separator: str, encoding: str, **kwargs: Any
