@@ -10,6 +10,7 @@ from typing import (
     Union,
 )
 
+import polars as pl
 from lxml import etree  # type: ignore[import-untyped]
 from rich.console import Console
 from rich.table import Table
@@ -51,54 +52,41 @@ class Processor:
         filename: Optional[str] = None,
         separator: str = ";",
         encoding: str = "utf-8",
-        header: Optional[list[str]] = None,
-        data: Optional[list[list[Any]]] = None,
-        preprocess: Callable[
-            [list[str], list[list[Any]]], tuple[list[str], list[list[Any]]]
-        ] = lambda h, d: (h, d),
+        dataframe: Optional[pl.DataFrame] = None,
+        preprocess: Callable[[pl.DataFrame], pl.DataFrame] = lambda df: df,
         **kwargs: Any,
     ) -> None:
-        """Initializes the Processor.
-
-        The Processor can be initialized either by providing a `filename` to read
-        from disk, or by providing `header` and `data` lists to work with
-        in-memory data.
-
-        Args:
-            filename: The path to the source CSV or XML file.
-            separator: The column delimiter for CSV files.
-            encoding: The character encoding of the source file.
-            header: A list of strings for the header row (for in-memory data).
-            data: A list of lists representing the data rows (for in-memory data).
-            preprocess: A function to modify the raw data before mapping begins.
-            **kwargs: Catches other arguments, primarily for XML processing.
-        """
+        """Initializes the Processor."""
         self.file_to_write: OrderedDict[str, dict[str, Any]] = OrderedDict()
-        self.header: list[str]
-        self.data: list[list[Any]]
+        self.dataframe: pl.DataFrame
 
         if filename:
-            self.header, self.data = self._read_file(
-                filename, separator, encoding, **kwargs
-            )
-        elif header is not None and data is not None:
-            self.header = header
-            self.data = data
+            self.dataframe = self._read_file(filename, separator, encoding, **kwargs)
+        elif dataframe is not None:
+            self.dataframe = dataframe
         else:
             raise ValueError(
-                "Processor must be initialized with either a 'filename' or both"
-                " 'header' and 'data'."
+                "Processor must be initialized with either "
+                "a 'filename' or a 'dataframe'."
             )
 
-        self.header, self.data = preprocess(self.header, self.data)
+        self.dataframe = preprocess(self.dataframe)
 
     def _read_file(
         self, filename: str, separator: str, encoding: str, **kwargs: Any
-    ) -> tuple[list[str], list[list[Any]]]:
-        """Reads a CSV or XML file and returns its header and data."""
+    ) -> pl.DataFrame:
+        """Reads a CSV or XML file and returns its content as a DataFrame."""
+        _, file_extension = os.path.splitext(filename)
         xml_root_path = kwargs.get("xml_root_tag")
 
-        if xml_root_path:
+        if file_extension == ".csv":
+            log.info(f"Reading CSV file: {filename}")
+            try:
+                return pl.read_csv(filename, separator=separator, encoding=encoding)
+            except Exception as e:
+                log.error(f"Failed to read CSV file {filename}: {e}")
+                return pl.DataFrame()
+        elif xml_root_path:
             log.info(f"Reading XML file: {filename}")
             try:
                 parser = etree.XMLParser(
@@ -112,40 +100,22 @@ class Processor:
 
                 if not nodes:
                     log.warning(f"No nodes found for root path '{xml_root_path}'")
-                    return [], []
+                    return pl.DataFrame()
 
-                header = [elem.tag for elem in nodes[0]]
-                data = []
-                for node in nodes:
-                    row = [
-                        (node.find(col).text if node.find(col) is not None else "")
-                        for col in header
-                    ]
-                    data.append(row)
-                return header, data
+                data = [{elem.tag: elem.text for elem in node} for node in nodes]
+                return pl.DataFrame(data)
             except etree.XMLSyntaxError as e:
                 log.error(f"Failed to parse XML file {filename}: {e}")
-                return [], []
+                return pl.DataFrame()
             except Exception as e:
                 log.error(
                     "An unexpected error occurred while reading XML file "
                     f"{filename}: {e}"
                 )
-                return [], []
+                return pl.DataFrame()
         else:
-            log.info(f"Reading CSV file: {filename}")
-            try:
-                with open(filename, encoding=encoding, newline="") as f:
-                    reader = csv.reader(f, delimiter=separator)
-                    header = next(reader)
-                    data = [row for row in reader]
-                    return header, data
-            except FileNotFoundError:
-                log.error(f"Source file not found at: {filename}")
-                return [], []
-            except Exception as e:
-                log.error(f"Failed to read file {filename}: {e}")
-            return [], []
+            log.error(f"Unsupported file format for {filename}")
+            return pl.DataFrame()
 
     def check(
         self, check_fun: Callable[..., bool], message: Optional[str] = None
@@ -159,7 +129,7 @@ class Processor:
         Returns:
             True if the check passes, False otherwise.
         """
-        res = check_fun(self.header, self.data)
+        res = check_fun(self.dataframe)
         if not res:
             error_message = (
                 message or f"Data quality check '{check_fun.__name__}' failed."
@@ -178,16 +148,15 @@ class Processor:
             A dictionary where keys are the grouping keys and values are new
             Processor instances containing the grouped data.
         """
-        grouped_data: OrderedDict[Any, list[list[Any]]] = OrderedDict()
-        for i, row in enumerate(self.data):
-            row_dict = dict(zip(self.header, row))
-            key = split_fun(row_dict, i)
+        grouped_data: OrderedDict[Any, list[dict[str, Any]]] = OrderedDict()
+        for i, row in enumerate(self.dataframe.iter_rows(named=True)):
+            key = split_fun(row, i)
             if key not in grouped_data:
                 grouped_data[key] = []
             grouped_data[key].append(row)
 
         return {
-            key: Processor(header=list(self.header), data=data)
+            key: Processor(dataframe=pl.from_dicts(data))
             for key, data in grouped_data.items()
         }
 
@@ -195,7 +164,7 @@ class Processor:
         """Generates a direct 1-to-1 mapping dictionary."""
         return {
             str(column): MapperRepr(f"mapper.val('{column}')", mapper.val(column))
-            for column in self.header
+            for column in self.dataframe.columns
             if column
         }
 
@@ -315,30 +284,50 @@ class Processor:
             dry_run: If True, prints a sample of the joined data to the
                 console without modifying the processor's state.
         """
-        child_header, child_data = self._read_file(filename, separator, encoding)
+        child_df = self._read_file(filename, separator, encoding)
+        self.dataframe = self.dataframe.with_columns(
+            pl.col(master_key).cast(pl.Utf8, strict=False)
+        )
+        child_df = child_df.with_columns(pl.col(child_key).cast(pl.Utf8, strict=False))
 
-        try:
-            child_key_pos = child_header.index(child_key)
-            master_key_pos = self.header.index(master_key)
-        except ValueError as e:
-            log.error(
-                f"Join key error: {e}. Check if '{master_key}' and "
-                f"'{child_key}' exist in their respective files."
+        # Rename child columns to avoid conflicts
+        child_df = child_df.rename(
+            {col: f"{header_prefix}_{col}" for col in child_df.columns}
+        )
+
+        if dry_run:
+            joined_df = self.dataframe.join(
+                child_df,
+                left_on=master_key,
+                right_on=f"{header_prefix}_{child_key}",
+                how="left",
             )
-            return
+            log.info("--- DRY RUN MODE (Outputting sample of joined data) ---")
+            console = Console()
+            table = Table(title="Joined Data Sample")
 
-        child_data_map = {row[child_key_pos]: row for row in child_data}
+            for column_header in joined_df.columns:
+                table.add_column(column_header, style="cyan")
 
-        empty_child_row = [""] * len(child_header)
+            for row in joined_df.head(10).iter_rows():
+                str_row = [str(item) for item in row]
+                table.add_row(*str_row)
 
-        target_data = [list(row) for row in self.data] if dry_run else self.data
-
-        for master_row in target_data:
-            key_value = master_row[master_key_pos]
-            row_to_join = child_data_map.get(key_value, empty_child_row)
-            master_row.extend(row_to_join)
-
-        self.header.extend([f"{header_prefix}_{h}" for h in child_header])
+            console.print(table)
+            log.info(f"Total rows that would be generated: {len(joined_df)}")
+        else:
+            self.dataframe = self.dataframe.join(
+                child_df,
+                left_on=master_key,
+                right_on=f"{header_prefix}_{child_key}",
+                how="left",
+            )
+            self.dataframe = self.dataframe.rename(
+                {
+                    f"{header_prefix}_{child_key}": f"{header_prefix}_{child_key}",
+                    f"{header_prefix}_value": f"{header_prefix}_value",
+                }
+            )
 
     def _add_data(
         self,
@@ -366,19 +355,19 @@ class Processor:
         lines_out: Union[list[Any], set[tuple[Any, ...]]] = [] if t == "list" else set()
         state: dict[str, Any] = {}
 
-        for i, line in enumerate(self.data):
-            cleaned_line = [
-                s.strip() if s and s.strip() not in null_values else "" for s in line
-            ]
-            line_dict = dict(zip(self.header, cleaned_line))
+        for i, row in enumerate(self.dataframe.iter_rows(named=True)):
+            cleaned_row = {
+                k: v.strip() if isinstance(v, str) and v.strip() not in null_values else ""
+                for k, v in row.items()
+            }
 
             try:
-                line_out = [mapping[k](line_dict, state) for k in mapping.keys()]
+                line_out = [mapping[k](cleaned_row, state) for k in mapping.keys()]
             except SkippingError as e:
                 log.debug(f"Skipping line {i}: {e.message}")
                 continue
             except TypeError:
-                line_out = [mapping[k](line_dict) for k in mapping.keys()]
+                line_out = [mapping[k](cleaned_row) for k in mapping.keys()]
 
             if isinstance(lines_out, list):
                 lines_out.append(line_out)
@@ -473,15 +462,11 @@ class ProductProcessorV10(Processor):
         unique_attribute_values: set[tuple[str, str, str]] = set()
 
         # Iterate over all raw data lines
-        for raw_line in self.data:
-            line_dict = dict(
-                zip(self.header, raw_line)
-            )  # Convert to dict for easy access
-
+        for raw_line in self.dataframe.iter_rows(named=True):
             for attribute_field in attribute_list:
                 # Get the raw value for this specific attribute
                 # (e.g., "Black" for "Color")
-                value_raw = line_dict.get(attribute_field, "").strip()
+                value_raw = raw_line.get(attribute_field, "").strip()
 
                 if value_raw:
                     # Form the ID for the attribute value
@@ -578,11 +563,12 @@ class ProductProcessorV9(Processor):
         )
 
         processed_rows: list[dict[str, Any]] = []
-        for line in self.data:
-            cleaned_line = [
-                s.strip() if s and s.strip() not in _null_values else "" for s in line
-            ]
-            processed_rows.append(dict(zip(self.header, cleaned_line)))
+        for row in self.dataframe.iter_rows(named=True):
+            cleaned_row = {
+                k: v.strip() if isinstance(v, str) and v.strip() not in _null_values else ""
+                for k, v in row.items()
+            }
+            processed_rows.append(cleaned_row)
 
         values_header = list(mapping.keys())
         values_data = self._extract_attribute_value_data(
