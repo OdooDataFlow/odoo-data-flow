@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import polars as pl
+
 from odoo_data_flow.lib import mapper
 from odoo_data_flow.migrator import run_migration
 
@@ -21,9 +23,8 @@ def test_run_migration_success_with_mapping(
 
     # Mock the processor and its process method
     mock_processor_instance = MagicMock()
-    mock_processor_instance.process.return_value = (
-        ["id", "name"],
-        [["1", "Transformed Name"]],
+    mock_processor_instance.process.return_value = pl.DataFrame(
+        {"id": ["1"], "name": ["Transformed Name"]}
     )
     mock_processor.return_value = mock_processor_instance
 
@@ -51,9 +52,13 @@ def test_run_migration_success_with_mapping(
         batch_size=100,
         technical_names=True,
     )
-    mock_processor.assert_called_once_with(
-        header=["id", "name"], data=[["1", "Source Name"]]
-    )
+    mock_processor.assert_called_once()
+    # Get the dataframe from the call arguments
+    df_arg = mock_processor.call_args.kwargs["dataframe"]
+    assert isinstance(df_arg, pl.DataFrame)
+    assert df_arg.schema == {"id": pl.Utf8, "name": pl.Utf8}
+    assert df_arg.rows() == [("1", "Source Name")]
+
     mock_processor_instance.process.assert_called_once_with(
         custom_mapping, filename_out=""
     )
@@ -86,9 +91,8 @@ def test_run_migration_success_no_mapping(
         "id": MagicMock(func=lambda line, state: line["id"]),
         "name": MagicMock(func=lambda line, state: line["name"]),
     }
-    mock_processor_instance.process.return_value = (
-        ["id", "name"],
-        [["1", "Source Name"]],
+    mock_processor_instance.process.return_value = pl.DataFrame(
+        {"id": ["1"], "name": ["Source Name"]}
     )
     mock_processor.return_value = mock_processor_instance
 

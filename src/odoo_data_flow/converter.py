@@ -5,8 +5,8 @@ or URLs to base64 strings, for use in Odoo imports.
 """
 
 import base64
-import os
-from typing import Any, Callable, Optional
+
+import polars as pl
 
 from .lib import mapper
 from .lib.transform import Processor
@@ -24,66 +24,88 @@ def to_base64(filepath: str) -> str:
 
 
 def run_path_to_image(
-    file: str, fields: str, out: str = "out.csv", path: Optional[str] = None
+    file: str,
+    fields: str,
+    out: str,
+    path: str,
+    delimiter: str = ";",
+    encoding: str = "utf-8",
 ) -> None:
     """Path to image.
 
     Takes a CSV file and converts columns containing local file paths
     into base64 encoded strings.
     """
-    log.info("Starting path-to-image conversion...")
+    log.info(f"Starting path-to-image conversion for file: {file}")
+    field_list = fields.split(",")
+    processor = Processor(filename=file, separator=delimiter, encoding=encoding)
 
-    base_path = path or os.getcwd()
-
-    processor = Processor(file)
-    mapping = processor.get_o2o_mapping()
-
-    # Create a new mapping with the correct value type for the 'process' method
-    callable_mapping: dict[str, Callable[..., Any]] = {
-        k: v.func for k, v in mapping.items()
+    mapping = {
+        **{
+            field: mapper.binary(field, path)
+            for field in field_list
+            if field in processor.dataframe.columns
+        },
+        **{
+            col: mapper.val(col)
+            for col in processor.dataframe.columns
+            if col not in field_list
+        },
     }
+    result_df = processor.process(mapping, filename_out=out)
 
-    for f in fields.split(","):
-        field_name = f.strip()
-        if field_name not in callable_mapping:
-            log.warning(f"Field '{field_name}' not found in source file. Skipping.")
-            continue
+    # Cast object columns to string before writing to CSV
+    for col_name in result_df.columns:
+        if result_df[col_name].dtype == pl.Object:
+            result_df = result_df.with_columns(
+                pl.col(col_name).map_elements(
+                    lambda x: str(x) if x is not None else None, return_dtype=pl.String
+                )
+            )
 
-        log.info(f"Setting up conversion for column: '{field_name}'")
-        callable_mapping[field_name] = mapper.val(
-            field_name,
-            postprocess=lambda x: to_base64(os.path.join(base_path, x)) if x else "",
-        )
-
-    processor.process(callable_mapping, out, t="list")
-    processor.write_to_file("")
-    log.info(f"Conversion complete. Output written to '{out}'.")
+    result_df.write_csv(out, separator=delimiter)
+    log.info(f"Conversion complete. Output written to: {out}")
 
 
-def run_url_to_image(file: str, fields: str, out: str = "out.csv") -> None:
+def run_url_to_image(
+    file: str,
+    fields: str,
+    out: str,
+    delimiter: str = ";",
+    encoding: str = "utf-8",
+    b64: bool = False,
+) -> None:
     """URL to image.
 
     Takes a CSV file and converts columns containing URLs
     into base64 encoded strings by downloading the content.
     """
-    log.info("Starting url-to-image conversion...")
+    log.info(f"Starting URL-to-image conversion for file: {file}")
+    field_list = fields.split(",")
+    processor = Processor(filename=file, separator=delimiter, encoding=encoding)
 
-    processor = Processor(file)
-    mapping = processor.get_o2o_mapping()
-
-    callable_mapping: dict[str, Callable[..., Any]] = {
-        k: v.func for k, v in mapping.items()
+    mapping = {
+        **{
+            field: mapper.binary_url_map(field, b64)
+            for field in field_list
+            if field in processor.dataframe.columns
+        },
+        **{
+            col: mapper.val(col)
+            for col in processor.dataframe.columns
+            if col not in field_list
+        },
     }
 
-    for f in fields.split(","):
-        field_name = f.strip()
-        if field_name not in callable_mapping:
-            log.warning(f"Field '{field_name}' not found in source file. Skipping.")
-            continue
+    result_df = processor.process(mapping, filename_out=out)
+    # Cast object columns to string before writing to CSV
+    for col_name in result_df.columns:
+        if result_df[col_name].dtype == pl.Object:
+            result_df = result_df.with_columns(
+                pl.col(col_name).map_elements(
+                    lambda x: str(x) if x is not None else None, return_dtype=pl.String
+                )
+            )
 
-        log.info(f"Setting up URL download and conversion for column: '{field_name}'")
-        callable_mapping[field_name] = mapper.binary_url_map(field_name)
-
-    processor.process(callable_mapping, out, t="list")
-    processor.write_to_file("")
-    log.info(f"Conversion complete. Output written to '{out}'.")
+    result_df.write_csv(out, separator=delimiter)
+    log.info(f"Conversion complete. Output written to: {out}")

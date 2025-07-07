@@ -94,7 +94,7 @@ class TestCheckers:
         check_func = checker.cell_len_checker(20)
         assert check_func(df) is False
         mock_log_warning.assert_called_once()
-        assert "exceeds max length of 20" in mock_log_warning.call_args[0][0]
+        assert "which exceeds the max of 20" in mock_log_warning.call_args[0][0]
 
     @patch("odoo_data_flow.lib.checker.log.warning")
     def test_cell_len_checker_failure_no_header(

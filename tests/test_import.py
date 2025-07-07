@@ -6,6 +6,8 @@ to be used in the main test suite.
 
 import random
 
+import polars as pl
+
 from odoo_data_flow.lib import mapper, transform
 
 # --- Configuration ---
@@ -56,7 +58,8 @@ partner_mapping = {
 # --- Processing ---
 
 # Initialize the processor with the in-memory data
-processor = transform.Processor(header=header, data=data)
+df = pl.DataFrame(data, schema=header, orient="row")
+processor = transform.Processor(dataframe=df)
 
 # Process the tags first, using the special m2m=True mode.
 # This will find all unique tags from the 'tags' column and create a clean
