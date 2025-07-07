@@ -56,6 +56,7 @@ def test_run_path_to_image(tmp_path: Path) -> None:
         fields="image_path",
         out=str(output_csv),
         path=str(source_dir),
+        delimiter=";",
     )
 
     # 3. Assertions

@@ -378,7 +378,71 @@ def test_bool_val_mapper() -> None:
     assert mapper_truthy({"is_active": ""}, {}) == "0"
 
 
-# --- NEW TESTS ---
+def test_val_postprocess_with_state() -> None:
+    """Tests the val mapper's postprocess with a function that uses state."""
+
+    def postprocess_with_state(value: str, state: StateDict) -> str:
+        return f"{value}_{state['suffix']}"
+
+    mapper_func = mapper.val("col1", postprocess=postprocess_with_state)
+    assert mapper_func(LINE_SIMPLE, {"suffix": "extra"}) == "A_extra"
+
+
+def test_m2m_id_list_with_callable_and_const() -> None:
+    """Tests m2m_id_list with a callable and constant values."""
+
+    def my_mapper(line: LineDict, state: StateDict) -> str:
+        return "mapped_value"
+
+    mapper_func = mapper.m2m_id_list(
+        "prefix", "col1", my_mapper, const_values=["const1", "const2"]
+    )
+    result = mapper_func(LINE_SIMPLE, {})
+    assert "prefix.A" in result
+    assert "prefix.mapped_value" in result
+    assert "prefix.const1" in result
+    assert "prefix.const2" in result
+
+
+def test_m2m_value_list_with_callable_and_const() -> None:
+    """Tests m2m_value_list with a callable and constant values."""
+
+    def my_mapper(line: LineDict, state: StateDict) -> str:
+        return "mapped_value"
+
+    mapper_func = mapper.m2m_value_list(
+        "col1", my_mapper, const_values=["const1", "const2"]
+    )
+    result = mapper_func(LINE_SIMPLE, {})
+    assert "A" in result
+    assert "mapped_value" in result
+    assert "const1" in result
+    assert "const2" in result
+
+
+def test_map_val_m2m_with_non_string_key() -> None:
+    """Tests map_val in m2m mode with a non-string key."""
+    translation_map: dict[Any, Any] = {1: "One", 2: "Two"}
+    mapper_func = mapper.map_val(translation_map, mapper.const(1), m2m=True)
+    assert mapper_func({}, {}) == "One"
+
+
+def test_binary_with_path_prefix(mocker: MagicMock) -> None:
+    """Tests the binary mapper with a path_prefix."""
+    mock_open = mocker.patch(
+        "builtins.open", mocker.mock_open(read_data=b"file_content")
+    )
+    mapper_func = mapper.binary("col1", path_prefix="/my/path")
+    mapper_func(LINE_SIMPLE, {})
+    mock_open.assert_called_once_with("/my/path/A", "rb")
+
+
+def test_m2o_att_name() -> None:
+    """Tests the m2o_att_name mapper."""
+    line = {"att1": "val1", "att2": "", "att3": "val3"}
+    mapper_func = mapper.m2o_att_name("prefix", ["att1", "att2", "att3"])
+    result = mapper_func(line, {})
+    assert result == {"att1": "prefix.att1", "att3": "prefix.att3"}
 
 
 def test_m2o_fun_state_present_but_unused(mocker: MagicMock) -> None:
