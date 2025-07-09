@@ -103,6 +103,27 @@ def test_run_export_invalid_domain(mock_log_error: MagicMock) -> None:
     assert "Invalid domain provided" in mock_log_error.call_args[0][0]
 
 
+@patch("odoo_data_flow.export_threaded.conf_lib.get_connection_from_config")
+@patch("odoo_data_flow.export_threaded.RPCThreadExport")
+def test_run_export_calls_rpc_thread_wait(
+    mock_rpc_thread: MagicMock, mock_get_connection: MagicMock
+) -> None:
+    """Tests that `run_export` results in a call to RpcThread.wait."""
+    mock_connection = MagicMock()
+    mock_model = MagicMock()
+    mock_model.search.return_value = [1, 2, 3]  # Simulate finding records
+    mock_connection.get_model.return_value = mock_model
+    mock_get_connection.return_value = mock_connection
+
+    run_export(
+        config="dummy.conf",
+        filename="dummy.csv",
+        model="dummy.model",
+        fields="id",
+    )
+    assert mock_rpc_thread.return_value.get_data.called
+
+
 @patch("odoo_data_flow.exporter.log.error")
 def test_run_export_invalid_context(mock_log_error: MagicMock) -> None:
     """Tests that `run_export` logs an error for a malformed context string."""

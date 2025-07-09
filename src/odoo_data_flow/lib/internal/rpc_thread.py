@@ -7,6 +7,8 @@ RPC calls to Odoo in parallel.
 import concurrent.futures
 from typing import Any, Callable, Optional
 
+from rich.progress import Progress
+
 from ...logging_config import log
 
 
@@ -58,16 +60,21 @@ class RpcThread:
         """
         log.info(f"Waiting for {len(self.futures)} tasks to complete...")
 
-        # Use as_completed to process results as they finish,
-        # which is memory efficient.
-        for future in concurrent.futures.as_completed(self.futures):
-            try:
-                # Calling .result() will re-raise any exception that occurred
-                # in the worker thread. We catch it to log it.
-                future.result()
-            except Exception as e:
-                # Log the exception from the failed thread.
-                log.error(f"A task in a worker thread failed: {e}", exc_info=True)
+        with Progress() as progress:
+            task = progress.add_task("[cyan]Processing...", total=len(self.futures))
+
+            # Use as_completed to process results as they finish,
+            # which is memory efficient.
+            for future in concurrent.futures.as_completed(self.futures):
+                try:
+                    # Calling .result() will re-raise any exception that occurred
+                    # in the worker thread. We catch it to log it.
+                    future.result()
+                except Exception as e:
+                    # Log the exception from the failed thread.
+                    log.error(f"A task in a worker thread failed: {e}", exc_info=True)
+                finally:
+                    progress.update(task, advance=1)
 
         # Shutdown the executor gracefully.
         self.executor.shutdown(wait=True)
