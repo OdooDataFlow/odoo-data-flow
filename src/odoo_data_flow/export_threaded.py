@@ -7,7 +7,7 @@ data from an Odoo instance.
 import csv
 import sys
 from time import time
-from typing import Any, Optional
+from typing import Any, Optional, overload
 
 from .lib import conf_lib
 from .lib.internal.rpc_thread import RpcThread
@@ -82,6 +82,36 @@ class RPCThreadExport(RpcThread):
         return all_data
 
 
+@overload
+def export_data(
+    config_file: str,
+    model: str,
+    domain: list[Any],
+    header: list[str],
+    context: Optional[dict[str, Any]],
+    output: str,
+    max_connection: int,
+    batch_size: int,
+    separator: str,
+    encoding: str,
+) -> tuple[bool, str]: ...
+
+
+@overload
+def export_data(
+    config_file: str,
+    model: str,
+    domain: list[Any],
+    header: list[str],
+    context: Optional[dict[str, Any]],
+    output: None,
+    max_connection: int,
+    batch_size: int,
+    separator: str,
+    encoding: str,
+) -> tuple[list[str], Optional[list[list[Any]]]]: ...
+
+
 def export_data(
     config_file: str,
     model: str,
@@ -93,7 +123,7 @@ def export_data(
     batch_size: int = 100,
     separator: str = ";",
     encoding: str = "utf-8",
-) -> tuple[Optional[list[str]], Optional[list[list[Any]]]]:
+) -> Any:
     """Export Data.
 
     The main function for exporting data. It can either write to a file or
@@ -103,11 +133,12 @@ def export_data(
         connection = conf_lib.get_connection_from_config(config_file)
         model_obj = connection.get_model(model)
     except Exception as e:
-        log.error(
+        message = (
             f"Failed to connect to Odoo or get model '{model}'. "
             f"Please check your configuration. Error: {e}"
         )
-        return None, None
+        log.error(message)
+        return (False, message) if output else (None, None)
 
     rpc_thread = RPCThreadExport(max_connection, model_obj, header, context)
     start_time = time()
@@ -139,9 +170,11 @@ def export_data(
                 writer.writerow(header)
                 writer.writerows(all_exported_data)
             log.info("File writing complete.")
+            return True, "Export complete."
         except OSError as e:
-            log.error(f"Failed to write to output file {output}: {e}")
-        return None, None
+            message = f"Failed to write to output file {output}: {e}"
+            log.error(message)
+            return False, message
     else:
         log.info("Returning exported data in-memory.")
         return header, all_exported_data

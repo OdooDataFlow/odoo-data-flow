@@ -3,8 +3,17 @@
 import ast
 from typing import Any, Optional
 
+from rich.console import Console
+from rich.panel import Panel
+
 from . import export_threaded
 from .logging_config import log
+
+
+def _show_error_panel(title: str, message: str) -> None:
+    """Displays a formatted error panel to the console."""
+    console = Console(stderr=True, style="bold red")
+    console.print(Panel(message, title=title, border_style="red"))
 
 
 def run_export(
@@ -32,7 +41,10 @@ def run_export(
         if not isinstance(parsed_domain, list):
             raise TypeError("Domain must be a list of tuples.")
     except Exception as e:
-        log.error(f"Invalid domain provided. Must be a valid Python list string. {e}")
+        _show_error_panel(
+            "Invalid Domain",
+            f"The --domain argument must be a valid Python list string.\nError: {e}",
+        )
         return
 
     try:
@@ -40,8 +52,10 @@ def run_export(
         if not isinstance(parsed_context, dict):
             raise TypeError("Context must be a dictionary.")
     except Exception as e:
-        log.error(
-            f"Invalid context provided. Must be a valid Python dictionary string. {e}"
+        _show_error_panel(
+            "Invalid Context",
+            "The --context argument must be a valid Python dictionary string."
+            f"\nError: {e}",
         )
         return
 
@@ -53,7 +67,7 @@ def run_export(
     log.info(f"Workers: {worker}, Batch Size: {batch_size}")
 
     # Call the core export function with an output filename
-    export_threaded.export_data(
+    success, message = export_threaded.export_data(
         config,
         model,
         parsed_domain,
@@ -66,7 +80,18 @@ def run_export(
         encoding=encoding,
     )
 
-    log.info("Export process finished.")
+    console = Console()
+    if success:
+        console.print(
+            Panel(
+                f"Export process for model [bold cyan]{model}[/bold cyan] "
+                f"finished successfully.",
+                title="[bold green]Export Complete[/bold green]",
+                border_style="green",
+            )
+        )
+    else:
+        _show_error_panel("Export Aborted", message)
 
 
 def run_export_for_migration(

@@ -13,6 +13,7 @@ def test_run_export(mock_export_data: MagicMock) -> None:
     `export_threaded.export_data` function with the correct parameters.
     """
     # 1. Setup
+    mock_export_data.return_value = (True, "Export complete.")
     config_file = "conf/test.conf"
     filename = "output.csv"
     model = "res.partner"
@@ -86,8 +87,8 @@ def test_run_export_for_migration(mock_export_data: MagicMock) -> None:
     assert data == [["1", "Test Partner"]]
 
 
-@patch("odoo_data_flow.exporter.log.error")
-def test_run_export_invalid_domain(mock_log_error: MagicMock) -> None:
+@patch("odoo_data_flow.exporter._show_error_panel")
+def test_run_export_invalid_domain(mock_show_error_panel: MagicMock) -> None:
     """Tests that `run_export` logs an error for a malformed domain string."""
     # 1. Action
     run_export(
@@ -99,8 +100,8 @@ def test_run_export_invalid_domain(mock_log_error: MagicMock) -> None:
     )
 
     # 2. Assertions
-    mock_log_error.assert_called_once()
-    assert "Invalid domain provided" in mock_log_error.call_args[0][0]
+    mock_show_error_panel.assert_called_once()
+    assert "Invalid Domain" in mock_show_error_panel.call_args[0][0]
 
 
 @patch("odoo_data_flow.export_threaded.conf_lib.get_connection_from_config")
@@ -124,8 +125,8 @@ def test_run_export_calls_rpc_thread_wait(
     assert mock_rpc_thread.return_value.get_data.called
 
 
-@patch("odoo_data_flow.exporter.log.error")
-def test_run_export_invalid_context(mock_log_error: MagicMock) -> None:
+@patch("odoo_data_flow.exporter._show_error_panel")
+def test_run_export_invalid_context(mock_show_error_panel: MagicMock) -> None:
     """Tests that `run_export` logs an error for a malformed context string."""
     # 1. Action
     run_export(
@@ -137,8 +138,8 @@ def test_run_export_invalid_context(mock_log_error: MagicMock) -> None:
     )
 
     # 2. Assertions
-    mock_log_error.assert_called_once()
-    assert "Invalid context provided" in mock_log_error.call_args[0][0]
+    mock_show_error_panel.assert_called_once()
+    assert "Invalid Context" in mock_show_error_panel.call_args[0][0]
 
 
 @patch("odoo_data_flow.exporter.export_threaded.export_data")

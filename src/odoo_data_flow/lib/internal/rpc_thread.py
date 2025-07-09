@@ -7,7 +7,13 @@ RPC calls to Odoo in parallel.
 import concurrent.futures
 from typing import Any, Callable, Optional
 
-from rich.progress import Progress
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 
 from ...logging_config import log
 
@@ -60,7 +66,17 @@ class RpcThread:
         """
         log.info(f"Waiting for {len(self.futures)} tasks to complete...")
 
-        with Progress() as progress:
+        progress = Progress(
+            SpinnerColumn(),
+            TextColumn("[bold blue]{task.description}", justify="right"),
+            BarColumn(bar_width=None),
+            "[progress.percentage]{task.percentage:>3.0f}%",
+            TextColumn("•"),
+            TextColumn("[green]{task.completed} of {task.total} records"),
+            TextColumn("•"),
+            TimeRemainingColumn(),
+        )
+        with progress:
             task = progress.add_task("[cyan]Processing...", total=len(self.futures))
 
             # Use as_completed to process results as they finish,
