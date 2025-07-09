@@ -2,6 +2,7 @@
 
 import inspect
 import logging
+import os
 from typing import Any, Callable
 from unittest.mock import MagicMock, patch
 
@@ -434,7 +435,8 @@ def test_binary_with_path_prefix(mocker: MagicMock) -> None:
     )
     mapper_func = mapper.binary("col1", path_prefix="/my/path")
     mapper_func(LINE_SIMPLE, {})
-    mock_open.assert_called_once_with("/my/path/A", "rb")
+    expected_path = os.path.join("/my/path", "A")
+    mock_open.assert_called_once_with(expected_path, "rb")
 
 
 def test_m2o_att_name() -> None:
