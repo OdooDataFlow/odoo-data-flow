@@ -39,6 +39,7 @@ The command is configured using a set of options. Here are the most essential on
 | `--worker` | The number of parallel processes to use for the export. Defaults to `1`.                                  |
 | `--size`   | The number of records to fetch in a single batch. Defaults to `10`.                                       |
 | `--sep`    | The character separating columns. Defaults to a semicolon (`;`).                                          |
+| `--technical-names` | A flag that, when present, exports the raw technical values for `Selection` fields (e.g., `delivery`) instead of the human-readable labels (e.g., `Shipping Address`). This is highly recommended for data migrations. |
 
 
 ### Understanding the `--domain` Filter

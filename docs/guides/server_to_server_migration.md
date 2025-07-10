@@ -66,6 +66,8 @@ The command is configured using a set of options that combine parameters from bo
 | `--import-worker`     | The number of parallel workers to use for the import phase. Defaults to `1`.                                        |
 | `--import-batch-size` | The batch size for the import phase. Defaults to `10`.                                                              |
 
+> **Note on Data Integrity:** The migration process automatically exports the raw **technical values** for `Selection` fields (e.g., `delivery`) instead of the human-readable labels (e.g., `Shipping Address`). This is a deliberate design choice to ensure that the migration is robust and not dependent on the languages installed in the source or destination databases.
+
 ## Full Migration Example
 
 Let's say we want to migrate all partners from a staging server to a production server. We also want to add a prefix to their names during the migration to indicate they came from the staging environment.
