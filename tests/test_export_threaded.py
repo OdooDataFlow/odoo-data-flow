@@ -6,10 +6,13 @@ import csv
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from odoo_data_flow.export_threaded import export_data
+from odoo_data_flow.export_threaded import (
+    export_data_for_migration,
+    export_data_to_file,
+)
 
 
-def test_export_data_to_file(tmp_path: Path) -> None:
+def test_export_data_to_file_writes_file(tmp_path: Path) -> None:
     """Tests the main export_data function when writing to a file.
 
     This test verifies that:
@@ -37,12 +40,11 @@ def test_export_data_to_file(tmp_path: Path) -> None:
     ]
     mock_connection.get_model.return_value = mock_model_obj
 
-    # 2. Action: Run the export function
     with patch(
         "odoo_data_flow.export_threaded.conf_lib.get_connection_from_config",
         return_value=mock_connection,
     ):
-        export_data(
+        success, message = export_data_to_file(
             config_file="dummy.conf",
             model=model_name,
             domain=[("is_company", "=", True)],
@@ -53,6 +55,8 @@ def test_export_data_to_file(tmp_path: Path) -> None:
         )
 
     # 3. Assertions
+    assert success is True
+    assert message == "Export complete."
     assert output_file.exists(), "Output file was not created."
 
     with open(output_file, encoding="utf-8") as f:
@@ -70,7 +74,7 @@ def test_export_data_to_file(tmp_path: Path) -> None:
     assert mock_model_obj.export_data.call_count == 3
 
 
-def test_export_data_in_memory() -> None:
+def test_export_data_for_migration_returns_data() -> None:
     """Tests the main export_data function when returning data in-memory."""
     # 1. Setup
     mock_connection = MagicMock()
@@ -86,12 +90,11 @@ def test_export_data_in_memory() -> None:
         "odoo_data_flow.export_threaded.conf_lib.get_connection_from_config",
         return_value=mock_connection,
     ):
-        header, data = export_data(
+        header, data = export_data_for_migration(
             config_file="dummy.conf",
             model="res.partner",
             domain=[],
             header=["id", "name"],
-            output=None,  # This signals the function to return data
         )
 
     # 3. Assertions
@@ -101,7 +104,7 @@ def test_export_data_in_memory() -> None:
     assert data[0] == ["1", "Mem Partner"]
 
 
-def test_export_data_connection_failure() -> None:
+def test_export_data_for_migration_connection_failure() -> None:
     """Tests that the export function handles a connection failure gracefully."""
     # 1. Setup: This time, the get_connection call will raise an exception
     with patch(
@@ -109,7 +112,7 @@ def test_export_data_connection_failure() -> None:
         side_effect=Exception("Connection failed"),
     ) as mock_get_conn:
         # 2. Action
-        header, data = export_data(
+        header, data = export_data_for_migration(
             config_file="bad.conf",
             model="res.partner",
             domain=[],
@@ -118,5 +121,27 @@ def test_export_data_connection_failure() -> None:
 
         # 3. Assertions
         mock_get_conn.assert_called_once()
-        assert header is None
+        assert header == ["name"]
         assert data is None
+
+
+def test_export_data_to_file_connection_failure() -> None:
+    """Tests that the export function handles a connection failure gracefully."""
+    # 1. Setup: This time, the get_connection call will raise an exception
+    with patch(
+        "odoo_data_flow.export_threaded.conf_lib.get_connection_from_config",
+        side_effect=Exception("Connection failed"),
+    ) as mock_get_conn:
+        # 2. Action
+        success, message = export_data_to_file(
+            config_file="bad.conf",
+            model="res.partner",
+            domain=[],
+            header=["name"],
+            output="foo.csv",
+        )
+
+        # 3. Assertions
+        mock_get_conn.assert_called_once()
+        assert success is False
+        assert "Failed to connect" in message

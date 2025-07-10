@@ -4,10 +4,19 @@ This module contains the low-level, multi-threaded logic for exporting
 data from an Odoo instance.
 """
 
+import concurrent.futures
 import csv
 import sys
 from time import time
-from typing import Any, Optional, overload
+from typing import Any, Optional
+
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeRemainingColumn,
+)
 
 from .lib import conf_lib
 from .lib.internal.rpc_thread import RpcThread
@@ -74,76 +83,28 @@ class RPCThreadExport(RpcThread):
         Waits for all threads to complete and returns the collected data
         in the correct order.
         """
-        super().wait()
-
+        # The waiting is now handled by the progress bar in _fetch_export_data
         all_data = []
         for batch_number in sorted(self.results.keys()):
             all_data.extend(self.results[batch_number])
         return all_data
 
 
-@overload
-def export_data(
-    config_file: str,
-    model: str,
+def _fetch_export_data(
+    connection: Any,
+    model_name: str,
     domain: list[Any],
     header: list[str],
     context: Optional[dict[str, Any]],
-    output: str,
     max_connection: int,
     batch_size: int,
-    separator: str,
-    encoding: str,
-) -> tuple[bool, str]: ...
-
-
-@overload
-def export_data(
-    config_file: str,
-    model: str,
-    domain: list[Any],
-    header: list[str],
-    context: Optional[dict[str, Any]],
-    output: None,
-    max_connection: int,
-    batch_size: int,
-    separator: str,
-    encoding: str,
-) -> tuple[list[str], Optional[list[list[Any]]]]: ...
-
-
-def export_data(
-    config_file: str,
-    model: str,
-    domain: list[Any],
-    header: list[str],
-    context: Optional[dict[str, Any]] = None,
-    output: Optional[str] = None,
-    max_connection: int = 1,
-    batch_size: int = 100,
-    separator: str = ";",
-    encoding: str = "utf-8",
-) -> Any:
-    """Export Data.
-
-    The main function for exporting data. It can either write to a file or
-    return the data in-memory for migrations.
-    """
-    try:
-        connection = conf_lib.get_connection_from_config(config_file)
-        model_obj = connection.get_model(model)
-    except Exception as e:
-        message = (
-            f"Failed to connect to Odoo or get model '{model}'. "
-            f"Please check your configuration. Error: {e}"
-        )
-        log.error(message)
-        return (False, message) if output else (None, None)
-
+) -> list[list[Any]]:
+    """Fetches data from Odoo using multithreading without writing to a file."""
+    model_obj = connection.get_model(model_name)
     rpc_thread = RPCThreadExport(max_connection, model_obj, header, context)
     start_time = time()
 
-    log.info(f"Searching for records in model '{model}' to export...")
+    log.info(f"Searching for records in model '{model_name}' to export...")
     ids = model_obj.search(domain, context=context)
     total_ids = len(ids)
     log.info(
@@ -155,26 +116,107 @@ def export_data(
         rpc_thread.launch_batch(list(id_batch), i)
         i += 1
 
+    progress = Progress(
+        SpinnerColumn(),
+        TextColumn("[bold blue]{task.description}", justify="right"),
+        BarColumn(bar_width=None),
+        "[progress.percentage]{task.percentage:>3.0f}%",
+        TextColumn("•"),
+        TextColumn("[green]{task.completed} of {task.total} batches"),
+        TextColumn("•"),
+        TimeRemainingColumn(),
+    )
+    with progress:
+        task = progress.add_task(
+            f"[cyan]Exporting {model_name}...", total=len(rpc_thread.futures)
+        )
+
+        for future in concurrent.futures.as_completed(rpc_thread.futures):
+            try:
+                future.result()
+            except Exception as e:
+                log.error(f"A task in a worker thread failed: {e}", exc_info=True)
+            finally:
+                progress.update(task, advance=1)
+
+    rpc_thread.executor.shutdown(wait=True)
     all_exported_data = rpc_thread.get_data()
 
     log.info(
         f"Exported {len(all_exported_data)} records in total. Total time: "
         f"{time() - start_time:.2f}s."
     )
+    return all_exported_data
 
-    if output:
-        log.info(f"Writing exported data to file: {output}")
-        try:
-            with open(output, "w", newline="", encoding=encoding) as f:
-                writer = csv.writer(f, delimiter=separator, quoting=csv.QUOTE_ALL)
-                writer.writerow(header)
-                writer.writerows(all_exported_data)
-            log.info("File writing complete.")
-            return True, "Export complete."
-        except OSError as e:
-            message = f"Failed to write to output file {output}: {e}"
-            log.error(message)
-            return False, message
-    else:
-        log.info("Returning exported data in-memory.")
-        return header, all_exported_data
+
+def export_data_to_file(
+    config_file: str,
+    model: str,
+    domain: list[Any],
+    header: list[str],
+    output: str,
+    context: Optional[dict[str, Any]] = None,
+    max_connection: int = 1,
+    batch_size: int = 100,
+    separator: str = ";",
+    encoding: str = "utf-8",
+) -> tuple[bool, str]:
+    """Export data to a file.
+
+    Connects to Odoo, fetches data based on the domain, and writes it to a CSV file.
+    """
+    try:
+        connection = conf_lib.get_connection_from_config(config_file)
+    except Exception as e:
+        message = (
+            f"Failed to connect to Odoo. Please check your configuration. Error: {e}"
+        )
+        log.error(message)
+        return False, message
+
+    all_exported_data = _fetch_export_data(
+        connection, model, domain, header, context, max_connection, batch_size
+    )
+
+    log.info(f"Writing exported data to file: {output}")
+    try:
+        with open(output, "w", newline="", encoding=encoding) as f:
+            writer = csv.writer(f, delimiter=separator, quoting=csv.QUOTE_ALL)
+            writer.writerow(header)
+            writer.writerows(all_exported_data)
+        log.info("File writing complete.")
+        return True, "Export complete."
+    except OSError as e:
+        message = f"Failed to write to output file {output}: {e}"
+        log.error(message)
+        return False, message
+
+
+def export_data_for_migration(
+    config_file: str,
+    model: str,
+    domain: list[Any],
+    header: list[str],
+    context: Optional[dict[str, Any]] = None,
+    max_connection: int = 1,
+    batch_size: int = 100,
+) -> tuple[list[str], Optional[list[list[Any]]]]:
+    """Export data in-memory for migration.
+
+    Connects to Odoo, fetches data, and returns it as a list of lists.
+    """
+    try:
+        connection = conf_lib.get_connection_from_config(config_file)
+    except Exception as e:
+        message = (
+            f"Failed to connect to Odoo. Please check your configuration. Error: {e}"
+        )
+        log.error(message)
+        return header, None
+
+    all_exported_data = _fetch_export_data(
+        connection, model, domain, header, context, max_connection, batch_size
+    )
+
+    log.info("Returning exported data in-memory.")
+    return header, all_exported_data

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 from odoo_data_flow.exporter import run_export, run_export_for_migration
 
 
-@patch("odoo_data_flow.exporter.export_threaded.export_data")
+@patch("odoo_data_flow.exporter.export_threaded.export_data_to_file")
 def test_run_export(mock_export_data: MagicMock) -> None:
     """Tests the main `run_export` function.
 
@@ -54,7 +54,7 @@ def test_run_export(mock_export_data: MagicMock) -> None:
     assert kw_args.get("encoding") == "latin1"
 
 
-@patch("odoo_data_flow.exporter.export_threaded.export_data")
+@patch("odoo_data_flow.exporter.export_threaded.export_data_for_migration")
 def test_run_export_for_migration(mock_export_data: MagicMock) -> None:
     """Tests the `run_export_for_migration` function.
 
@@ -81,8 +81,6 @@ def test_run_export_for_migration(mock_export_data: MagicMock) -> None:
     assert pos_args[1] == "res.partner"
     assert pos_args[3] == fields_list  # Correctly check positional argument
 
-    assert kw_args.get("output") is None, "Output should be None for in-memory return"
-
     assert header == ["id", "name"]
     assert data == [["1", "Test Partner"]]
 
@@ -104,27 +102,6 @@ def test_run_export_invalid_domain(mock_show_error_panel: MagicMock) -> None:
     assert "Invalid Domain" in mock_show_error_panel.call_args[0][0]
 
 
-@patch("odoo_data_flow.export_threaded.conf_lib.get_connection_from_config")
-@patch("odoo_data_flow.export_threaded.RPCThreadExport")
-def test_run_export_calls_rpc_thread_wait(
-    mock_rpc_thread: MagicMock, mock_get_connection: MagicMock
-) -> None:
-    """Tests that `run_export` results in a call to RpcThread.wait."""
-    mock_connection = MagicMock()
-    mock_model = MagicMock()
-    mock_model.search.return_value = [1, 2, 3]  # Simulate finding records
-    mock_connection.get_model.return_value = mock_model
-    mock_get_connection.return_value = mock_connection
-
-    run_export(
-        config="dummy.conf",
-        filename="dummy.csv",
-        model="dummy.model",
-        fields="id",
-    )
-    assert mock_rpc_thread.return_value.get_data.called
-
-
 @patch("odoo_data_flow.exporter._show_error_panel")
 def test_run_export_invalid_context(mock_show_error_panel: MagicMock) -> None:
     """Tests that `run_export` logs an error for a malformed context string."""
@@ -142,7 +119,7 @@ def test_run_export_invalid_context(mock_show_error_panel: MagicMock) -> None:
     assert "Invalid Context" in mock_show_error_panel.call_args[0][0]
 
 
-@patch("odoo_data_flow.exporter.export_threaded.export_data")
+@patch("odoo_data_flow.exporter.export_threaded.export_data_for_migration")
 def test_run_export_for_migration_bad_domain(
     mock_export_data: MagicMock,
 ) -> None:
@@ -158,7 +135,7 @@ def test_run_export_for_migration_bad_domain(
     assert mock_export_data.call_args.args[2] == []
 
 
-@patch("odoo_data_flow.exporter.export_threaded.export_data")
+@patch("odoo_data_flow.exporter.export_threaded.export_data_for_migration")
 def test_run_export_for_migration_no_data(mock_export_data: MagicMock) -> None:
     """Tests that `run_export_for_migration`.
 

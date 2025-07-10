@@ -7,14 +7,6 @@ RPC calls to Odoo in parallel.
 import concurrent.futures
 from typing import Any, Callable, Optional
 
-from rich.progress import (
-    BarColumn,
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    TimeRemainingColumn,
-)
-
 from ...logging_config import log
 
 
@@ -66,31 +58,16 @@ class RpcThread:
         """
         log.info(f"Waiting for {len(self.futures)} tasks to complete...")
 
-        progress = Progress(
-            SpinnerColumn(),
-            TextColumn("[bold blue]{task.description}", justify="right"),
-            BarColumn(bar_width=None),
-            "[progress.percentage]{task.percentage:>3.0f}%",
-            TextColumn("•"),
-            TextColumn("[green]{task.completed} of {task.total} records"),
-            TextColumn("•"),
-            TimeRemainingColumn(),
-        )
-        with progress:
-            task = progress.add_task("[cyan]Processing...", total=len(self.futures))
-
-            # Use as_completed to process results as they finish,
-            # which is memory efficient.
-            for future in concurrent.futures.as_completed(self.futures):
-                try:
-                    # Calling .result() will re-raise any exception that occurred
-                    # in the worker thread. We catch it to log it.
-                    future.result()
-                except Exception as e:
-                    # Log the exception from the failed thread.
-                    log.error(f"A task in a worker thread failed: {e}", exc_info=True)
-                finally:
-                    progress.update(task, advance=1)
+        # Use as_completed to process results as they finish,
+        # which is memory efficient.
+        for future in concurrent.futures.as_completed(self.futures):
+            try:
+                # Calling .result() will re-raise any exception that occurred
+                # in the worker thread. We catch it to log it.
+                future.result()
+            except Exception as e:
+                # Log the exception from the failed thread.
+                log.error(f"A task in a worker thread failed: {e}", exc_info=True)
 
         # Shutdown the executor gracefully.
         self.executor.shutdown(wait=True)

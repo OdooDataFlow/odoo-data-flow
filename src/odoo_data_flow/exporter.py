@@ -67,13 +67,13 @@ def run_export(
     log.info(f"Workers: {worker}, Batch Size: {batch_size}")
 
     # Call the core export function with an output filename
-    success, message = export_threaded.export_data(
+    success, message = export_threaded.export_data_to_file(
         config,
         model,
         parsed_domain,
         header,
-        context=parsed_context,
         output=filename,
+        context=parsed_context,
         max_connection=int(worker),
         batch_size=int(batch_size),
         separator=separator,
@@ -125,17 +125,14 @@ def run_export_for_migration(
     except Exception:
         parsed_context = {}
 
-    header, data = export_threaded.export_data(
+    header, data = export_threaded.export_data_for_migration(
         config,
         model,
         parsed_domain,
         fields,
         context=parsed_context,
-        output=None,  # This signals the function to return data
         max_connection=int(worker),
         batch_size=int(batch_size),
-        encoding=encoding,
-        separator=";",  # Provide a default separator
     )
 
     if data:
