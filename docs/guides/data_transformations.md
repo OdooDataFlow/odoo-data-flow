@@ -110,12 +110,14 @@ Joins values from one or more source columns together, separated by a given `sep
 
 Checks the value of the source column `field`. If it's considered "truthy" (not empty, not "False", not 0), it returns `true_value`, otherwise it returns `false_value`.
 
-### `mapper.bool_val(field, true_values)`
+### `mapper.bool_val(field, true_values=None, false_values=None, default=False)`
 
-Checks if the value in the source column `field` exists within the `true_values` list and returns a boolean.
+Checks the value in the source column `field` and converts it to a boolean `1` or `0`.
 
 - **`field` (str)**: The column to check.
-- **`true_values` (list)**: A list of strings that should be considered `True`.
+- **`true_values` (list, optional)**: A list of strings that should be considered `True`.
+- **`false_values` (list, optional)**: A list of strings that should be considered `False`.
+- **`default` (bool, optional)**: The default boolean value to return if the value is not in `true_values` or `false_values`.
 
 #### How it works
 
@@ -123,19 +125,21 @@ Checks if the value in the source column `field` exists within the `true_values`
 | Status        |
 | ------------- |
 | Active        |
+| Inactive      |
 | Done          |
 
 **Transformation Code**
 
 ```python
-'is_active': mapper.bool_val('Status', ['Active', 'In Progress']),
+'is_active': mapper.bool_val('Status', true_values=['Active', 'In Progress'], false_values=['Inactive']),
 ```
 
 **Output Data**
 | is_active |
 | --------- |
-| True      |
-| False     |
+| 1         |
+| 0         |
+| 0         |
 
 ---
 

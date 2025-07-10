@@ -344,6 +344,40 @@ def test_split_mappers() -> None:
     assert split_file_func({}, 8) == 0
 
 
+def test_bool_val_mapper() -> None:
+    """Tests the bool_val mapper with various configurations."""
+    line = {"is_active": "yes", "is_vip": "no", "is_member": "true", "is_guest": ""}
+
+    # Test with true_values
+    mapper_true = mapper.bool_val("is_active", true_values=["yes", "true"])
+    assert mapper_true(line, {}) == "1"
+    assert mapper_true({"is_active": "no"}, {}) == "0"
+
+    # Test with false_values
+    mapper_false = mapper.bool_val("is_vip", false_values=["no", "false"])
+    assert mapper_false(line, {}) == "0"
+    assert mapper_false({"is_vip": "yes"}, {}) == "0"
+
+    # Test with both true and false values
+    mapper_both = mapper.bool_val(
+        "is_member", true_values=["true"], false_values=["false"]
+    )
+    assert mapper_both(line, {}) == "1"
+    assert mapper_both({"is_member": "false"}, {}) == "0"
+    assert mapper_both({"is_member": "other"}, {}) == "0"  # Fallback to default
+
+    # Test with default value
+    mapper_default_true = mapper.bool_val("is_guest", default=True)
+    assert mapper_default_true(line, {}) == "1"
+    mapper_default_false = mapper.bool_val("is_guest", default=False)
+    assert mapper_default_false(line, {}) == "0"
+
+    # Test truthiness fallback
+    mapper_truthy = mapper.bool_val("is_active")
+    assert mapper_truthy(line, {}) == "1"
+    assert mapper_truthy({"is_active": ""}, {}) == "0"
+
+
 # --- NEW TESTS ---
 
 

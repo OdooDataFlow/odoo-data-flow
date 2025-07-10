@@ -188,19 +188,42 @@ def cond(field: str, true_mapper: Any, false_mapper: Any) -> MapperFunc:
     return cond_fun
 
 
-def bool_val(field: str, true_values: list[str]) -> MapperFunc:
+def bool_val(
+    field: str,
+    true_values: Optional[list[str]] = None,
+    false_values: Optional[list[str]] = None,
+    default: bool = False,
+) -> MapperFunc:
     """Returns a mapper that converts a field value to a boolean '1' or '0'.
+
+    The logic is as follows:
+    1. If `true_values` is provided, any value in that list is considered True.
+    2. If `false_values` is provided, any value in that list is considered False.
+    3. If the value is not in either list, the truthiness of the value itself
+       is used, unless `default` is set.
+    4. If no lists are provided, the truthiness of the value is used.
 
     Args:
         field: The source column to check.
         true_values: A list of strings that should be considered `True`.
+        false_values: A list of strings that should be considered `False`.
+        default: The default boolean value to return if no other condition is met.
 
     Returns:
         A mapper function that returns "1" or "0".
     """
+    true_vals = true_values or []
+    false_vals = false_values or []
 
     def bool_val_fun(line: LineDict, state: StateDict) -> str:
-        return "1" if _get_field_value(line, field) in true_values else "0"
+        value = _get_field_value(line, field)
+        if true_vals and value in true_vals:
+            return "1"
+        if false_vals and value in false_vals:
+            return "0"
+        if not true_vals and not false_vals:
+            return "1" if value else str(int(default))
+        return str(int(default))
 
     return bool_val_fun
 
