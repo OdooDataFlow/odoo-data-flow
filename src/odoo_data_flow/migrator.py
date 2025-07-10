@@ -40,6 +40,7 @@ def run_migration(
         fields=fields or [],
         worker=export_worker,
         batch_size=export_batch_size,
+        technical_names=True,
     )
 
     if not header or not data:

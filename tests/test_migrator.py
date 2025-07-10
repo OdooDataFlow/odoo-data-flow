@@ -42,7 +42,15 @@ def test_run_migration_success_with_mapping(
     )
 
     # 3. Assertions
-    mock_run_export.assert_called_once()
+    mock_run_export.assert_called_once_with(
+        config="src.conf",
+        model="res.partner",
+        domain="[]",
+        fields=["id", "name"],
+        worker=1,
+        batch_size=100,
+        technical_names=True,
+    )
     mock_processor.assert_called_once_with(
         header=["id", "name"], data=[["1", "Source Name"]]
     )
@@ -91,6 +99,7 @@ def test_run_migration_success_no_mapping(
 
     # 3. Assertions
     mock_run_export.assert_called_once()
+    assert mock_run_export.call_args.kwargs["technical_names"] is True
     mock_processor_instance.get_o2o_mapping.assert_called_once()
     mock_processor_instance.process.assert_called_once()
     mock_run_import.assert_called_once()
@@ -115,6 +124,7 @@ def test_run_migration_no_data_exported(
 
     # 3. Assertions
     mock_run_export.assert_called_once()
+    assert mock_run_export.call_args.kwargs["technical_names"] is True
     mock_log_warning.assert_called_once_with("No data exported. Migration finished.")
     # The import function should never be called
     mock_run_import.assert_not_called()
