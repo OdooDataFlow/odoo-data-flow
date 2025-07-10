@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from odoo_data_flow.export_threaded import (
+    RPCThreadExport,
     export_data_for_migration,
     export_data_to_file,
 )
@@ -145,3 +146,46 @@ def test_export_data_to_file_connection_failure() -> None:
         mock_get_conn.assert_called_once()
         assert success is False
         assert "Failed to connect" in message
+
+
+def test_rpc_thread_export_no_context() -> None:
+    """Tests RPCThreadExport initialization with context=None."""
+    thread = RPCThreadExport(1, MagicMock(), ["id"], context=None)
+    assert thread.context == {}
+
+
+@patch("odoo_data_flow.export_threaded.log")
+def test_rpc_thread_export_launch_batch_exception(mock_log: MagicMock) -> None:
+    """Tests exception handling in the launch_batch function."""
+    mock_model = MagicMock()
+    mock_model.export_data.side_effect = Exception("Odoo Error")
+    thread = RPCThreadExport(1, mock_model, ["id"])
+    thread.launch_batch([1], 0)
+    thread.wait()
+    mock_log.error.assert_called_once()
+    assert "Export for batch 0 failed" in mock_log.error.call_args[0][0]
+
+
+@patch("odoo_data_flow.export_threaded.conf_lib.get_connection_from_config")
+@patch("builtins.open")
+def test_export_data_to_file_os_error(
+    mock_open: MagicMock, mock_get_connection: MagicMock
+) -> None:
+    """Tests that export_data_to_file handles an OSError during file write."""
+    mock_get_connection.return_value = MagicMock()
+    mock_open.side_effect = OSError("Disk full")
+
+    with patch(
+        "odoo_data_flow.export_threaded._fetch_export_data",
+        return_value=[["data"]],
+    ):
+        success, message = export_data_to_file(
+            config_file="dummy.conf",
+            model="res.partner",
+            domain=[],
+            header=["name"],
+            output="some/path/that/fails.csv",
+        )
+
+    assert success is False
+    assert "Failed to write to output file" in message

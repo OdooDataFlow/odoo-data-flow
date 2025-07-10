@@ -2,7 +2,11 @@
 
 from unittest.mock import MagicMock, patch
 
-from odoo_data_flow.exporter import run_export, run_export_for_migration
+from odoo_data_flow.exporter import (
+    _show_error_panel,
+    run_export,
+    run_export_for_migration,
+)
 
 
 @patch("odoo_data_flow.exporter.export_threaded.export_data_to_file")
@@ -146,3 +150,53 @@ def test_run_export_for_migration_no_data(mock_export_data: MagicMock) -> None:
         config="dummy.conf", model="res.partner", fields=["id"]
     )
     assert data is None
+
+
+@patch("odoo_data_flow.exporter.Console")
+def test_show_error_panel(mock_console: MagicMock) -> None:
+    """Tests the `_show_error_panel` function."""
+    _show_error_panel("Test Title", "Test Message")
+    mock_console.assert_called_once_with(stderr=True, style="bold red")
+    mock_console.return_value.print.assert_called_once()
+
+
+@patch("odoo_data_flow.exporter._show_error_panel")
+def test_run_export_domain_not_list(mock_show_error_panel: MagicMock) -> None:
+    """Tests that `run_export` logs an error for a domain that is not a list."""
+    run_export(
+        config="dummy.conf",
+        filename="dummy.csv",
+        model="dummy.model",
+        fields="id",
+        domain="{'is_company': True}",  # Not a list
+    )
+    mock_show_error_panel.assert_called_once()
+    assert "Domain must be a list" in mock_show_error_panel.call_args[0][1]
+
+
+@patch("odoo_data_flow.exporter._show_error_panel")
+def test_run_export_context_not_dict(mock_show_error_panel: MagicMock) -> None:
+    """Tests that `run_export` logs an error for a context that is not a dict."""
+    run_export(
+        config="dummy.conf",
+        filename="dummy.csv",
+        model="dummy.model",
+        fields="id",
+        context="['lang', 'fr_FR']",  # Not a dict
+    )
+    mock_show_error_panel.assert_called_once()
+    assert "Context must be a dictionary" in mock_show_error_panel.call_args[0][1]
+
+
+@patch("odoo_data_flow.exporter.export_threaded.export_data_for_migration")
+def test_run_export_for_migration_bad_context(mock_export_data: MagicMock) -> None:
+    """Tests `run_export_for_migration` with a bad context string."""
+    mock_export_data.return_value = ([], [])
+    run_export_for_migration(
+        config="dummy.conf",
+        model="res.partner",
+        fields=["id"],
+        context="bad-context",
+    )
+    # Assert that the context passed is an empty dict
+    assert mock_export_data.call_args.kwargs["context"] == {}
