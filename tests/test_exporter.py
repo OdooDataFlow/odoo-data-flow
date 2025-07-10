@@ -5,7 +5,10 @@ from unittest.mock import MagicMock, patch
 from odoo_data_flow.exporter import run_export, run_export_for_migration
 
 
-@patch("odoo_data_flow.exporter.export_threaded.export_data")
+@patch(
+    "odoo_data_flow.exporter.export_threaded.export_data_to_file",
+    return_value=(True, "OK"),
+)
 def test_run_export(mock_export_data: MagicMock) -> None:
     """Tests the main `run_export` function.
 
@@ -53,7 +56,7 @@ def test_run_export(mock_export_data: MagicMock) -> None:
     assert kw_args.get("encoding") == "latin1"
 
 
-@patch("odoo_data_flow.exporter.export_threaded.export_data")
+@patch("odoo_data_flow.exporter.export_threaded.export_data_for_migration")
 def test_run_export_for_migration(mock_export_data: MagicMock) -> None:
     """Tests the `run_export_for_migration` function.
 
@@ -86,8 +89,8 @@ def test_run_export_for_migration(mock_export_data: MagicMock) -> None:
     assert data == [["1", "Test Partner"]]
 
 
-@patch("odoo_data_flow.exporter.log.error")
-def test_run_export_invalid_domain(mock_log_error: MagicMock) -> None:
+@patch("odoo_data_flow.exporter._show_error_panel")
+def test_run_export_invalid_domain(mock_show_error_panel: MagicMock) -> None:
     """Tests that `run_export` logs an error for a malformed domain string."""
     # 1. Action
     run_export(
@@ -99,12 +102,12 @@ def test_run_export_invalid_domain(mock_log_error: MagicMock) -> None:
     )
 
     # 2. Assertions
-    mock_log_error.assert_called_once()
-    assert "Invalid domain provided" in mock_log_error.call_args[0][0]
+    mock_show_error_panel.assert_called_once()
+    assert "Invalid Domain" in mock_show_error_panel.call_args[0][0]
 
 
-@patch("odoo_data_flow.exporter.log.error")
-def test_run_export_invalid_context(mock_log_error: MagicMock) -> None:
+@patch("odoo_data_flow.exporter._show_error_panel")
+def test_run_export_invalid_context(mock_show_error_panel: MagicMock) -> None:
     """Tests that `run_export` logs an error for a malformed context string."""
     # 1. Action
     run_export(
@@ -116,11 +119,11 @@ def test_run_export_invalid_context(mock_log_error: MagicMock) -> None:
     )
 
     # 2. Assertions
-    mock_log_error.assert_called_once()
-    assert "Invalid context provided" in mock_log_error.call_args[0][0]
+    mock_show_error_panel.assert_called_once()
+    assert "Invalid Context" in mock_show_error_panel.call_args[0][0]
 
 
-@patch("odoo_data_flow.exporter.export_threaded.export_data")
+@patch("odoo_data_flow.exporter.export_threaded.export_data_for_migration")
 def test_run_export_for_migration_bad_domain(
     mock_export_data: MagicMock,
 ) -> None:
@@ -136,7 +139,7 @@ def test_run_export_for_migration_bad_domain(
     assert mock_export_data.call_args.args[2] == []
 
 
-@patch("odoo_data_flow.exporter.export_threaded.export_data")
+@patch("odoo_data_flow.exporter.export_threaded.export_data_for_migration")
 def test_run_export_for_migration_no_data(mock_export_data: MagicMock) -> None:
     """Tests that `run_export_for_migration`.
 

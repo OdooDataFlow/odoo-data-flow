@@ -286,6 +286,12 @@ def import_cmd(**kwargs: Any) -> None:
     help="Odoo context as a dictionary string.",
 )
 @click.option("--encoding", default="utf-8", help="Encoding of the data file.")
+@click.option(
+    "--technical-names",
+    is_flag=True,
+    default=False,
+    help="Export technical values for selection fields.",
+)
 def export_cmd(**kwargs: Any) -> None:
     """Runs the data export process."""
     run_export(**kwargs)
