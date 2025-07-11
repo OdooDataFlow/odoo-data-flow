@@ -4,7 +4,10 @@ This module contains the logic for performing a direct, in-memory
 migration of data from one Odoo instance to another.
 """
 
-from typing import Any, Callable, Optional
+from collections.abc import Mapping
+from typing import Any, Callable, Optional, Union
+
+import polars as pl
 
 from .exporter import run_export_for_migration
 from .importer import run_import_for_migration
@@ -18,7 +21,7 @@ def run_migration(
     model: str,
     domain: str = "[]",
     fields: Optional[list[str]] = None,
-    mapping: Optional[dict[str, Callable[..., Any]]] = None,
+    mapping: Optional[Mapping[str, Callable[..., Any]]] = None,
     export_worker: int = 1,
     export_batch_size: int = 100,
     import_worker: int = 1,
@@ -51,27 +54,23 @@ def run_migration(
 
     # Step 2: Transform the data in memory
     log.info("Transforming data in memory...")
-    processor = Processor(header=header, data=data)
+    df = pl.DataFrame(data, schema=header, orient="row")
+    processor = Processor(dataframe=df)
 
-    final_mapping: dict[str, Callable[..., Any]]
+    final_mapping: Mapping[str, Union[Callable[..., Any], pl.Expr]]
     if not mapping:
         log.info("No mapping provided, using 1-to-1 mapping.")
         # Convert the MapperRepr dict to a callable dict for the process method
-        final_mapping = {k: v.func for k, v in processor.get_o2o_mapping().items()}
+        final_mapping = processor.get_o2o_mapping()
     else:
         final_mapping = mapping
 
     # The process method returns the transformed header and data
-    to_import_header, to_import_data_unioned = processor.process(
-        final_mapping, filename_out=""
-    )
+    result_df = processor.process(final_mapping, filename_out="")
 
     # Ensure to_import_data is a list of lists
-    to_import_data_list: list[list[Any]]
-    if isinstance(to_import_data_unioned, set):
-        to_import_data_list = [list(row) for row in to_import_data_unioned]
-    else:
-        to_import_data_list = to_import_data_unioned
+    to_import_header = result_df.columns
+    to_import_data_list = [list(row) for row in result_df.rows()]
 
     # Step 3: Import the transformed data into the destination database
     log.info(f"Importing {len(to_import_data_list)} records into destination...")
