@@ -6,6 +6,8 @@ files to test the processor's split functionality.
 
 import random
 
+import polars as pl
+
 from odoo_data_flow.lib import mapper, transform
 
 # --- Configuration ---
@@ -24,6 +26,7 @@ data = [
     [str(i), ",".join(random.choice(tags) for _ in range(5))]  # noqa nosec B311
     for i in range(10000)
 ]  # nosec B311
+df = pl.DataFrame(data, schema=header)
 
 # --- Mapping Definitions (consistent with test_import.py) ---
 
@@ -53,7 +56,7 @@ partner_mapping = {
 
 # --- Processing ---
 print("Initializing processor with 10,000 records.")
-processor = transform.Processor(header=header, data=data)
+processor = transform.Processor(dataframe=df)
 
 # This first split is primarily for test coverage purposes.
 print("Running split by line number (for coverage)...")

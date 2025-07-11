@@ -8,12 +8,12 @@ before the transformation process begins.
 import re
 from typing import Callable, Optional
 
+import polars as pl
+
 from ..logging_config import log
 
 # Type aliases for clarity
-Header = list[str]
-Data = list[list[str]]
-CheckFunc = Callable[[Header, Data], bool]
+CheckFunc = Callable[[pl.DataFrame], bool]
 
 
 def id_validity_checker(
@@ -27,7 +27,7 @@ def id_validity_checker(
     if null_values is None:
         null_values = ["NULL"]
 
-    def check_id_validity(header: Header, data: Data) -> bool:
+    def check_id_validity(df: pl.DataFrame) -> bool:
         try:
             regex = re.compile(pattern)
         except re.error as e:
@@ -35,17 +35,18 @@ def id_validity_checker(
             return False
 
         is_valid = True
-        for i, line in enumerate(data, start=1):
-            line_dict = dict(zip(header, line))
-            id_value = line_dict.get(id_field, "")
+        if id_field not in df.columns:
+            log.error(f"ID field '{id_field}' not found in DataFrame.")
+            return False
 
+        for i, id_value in enumerate(df[id_field]):
             # Skip check if the value is considered null
             if id_value in null_values or not id_value:
                 continue
 
-            if not regex.match(id_value):
+            if not regex.match(str(id_value)):
                 log.warning(
-                    f"Check Failed (ID Validity) on line {i}: Value "
+                    f"Check Failed (ID Validity) on line {i + 1}: Value "
                     f"'{id_value}' in column '{id_field}' "
                     f"does not match pattern '{pattern}'."
                 )
@@ -61,17 +62,15 @@ def line_length_checker(expected_length: int) -> CheckFunc:
     Returns a checker that verifies each row has an exact number of columns.
     """
 
-    def check_line_length(header: Header, data: Data) -> bool:
-        is_valid = True
-        for i, line in enumerate(data, start=2):  # Start from 2 to account for header
-            if len(line) != expected_length:
-                log.warning(
-                    f"Check Failed (Line Length) on line {i}: "
-                    f"Expected {expected_length} columns, but found "
-                    f"{len(line)}."
-                )
-                is_valid = False
-        return is_valid
+    def check_line_length(df: pl.DataFrame) -> bool:
+        if df.width == expected_length:
+            return True
+        else:
+            log.warning(
+                f"Check Failed (Line Length): Expected {expected_length} columns, "
+                f"but found {df.width}."
+            )
+            return False
 
     return check_line_length
 
@@ -79,8 +78,8 @@ def line_length_checker(expected_length: int) -> CheckFunc:
 def line_number_checker(expected_line_count: int) -> CheckFunc:
     """Returns a checker that verifies the total number of data rows."""
 
-    def check_line_number(header: Header, data: Data) -> bool:
-        actual_line_count = len(data)
+    def check_line_number(df: pl.DataFrame) -> bool:
+        actual_line_count = len(df)
         if actual_line_count != expected_line_count:
             log.warning(
                 f"Check Failed (Line Count): Expected {expected_line_count} "
@@ -98,19 +97,19 @@ def cell_len_checker(max_cell_len: int) -> CheckFunc:
     Returns a checker that verifies no cell exceeds a maximum character length.
     """
 
-    def check_max_cell_len(header: Header, data: Data) -> bool:
+    def check_max_cell_len(df: pl.DataFrame) -> bool:
         is_valid = True
-        for i, line in enumerate(data, start=2):
-            # Start from 2 to account for header
-            for j, cell in enumerate(line):
-                if len(cell) > max_cell_len:
-                    column_name = header[j] if j < len(header) else f"column {j + 1}"
-                    log.warning(
-                        f"Check Failed (Cell Length) on line {i}, column "
-                        f"'{column_name}': Cell length is {len(cell)}, "
-                        f"which exceeds the max of {max_cell_len}."
-                    )
+        for col in df.columns:
+            if df[col].dtype == pl.Utf8:
+                mask = df[col].str.len_chars() > max_cell_len
+                if mask.any():
                     is_valid = False
+                    offending_rows = df.filter(mask)
+                    for row in offending_rows.iter_rows(named=True):
+                        log.warning(
+                            f"Check Failed (Cell Length) in column '{col}': "
+                            f"Cell value '{row[col]}' exceeds max length of {max_cell_len}."
+                        )
         return is_valid
 
     return check_max_cell_len

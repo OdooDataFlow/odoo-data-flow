@@ -159,7 +159,7 @@ def tests(session: nox.Session) -> None:
         external=True,
     )
 
-    session.install("pytest", "coverage", "pytest-mock")
+    session.install("pytest", "coverage", "pytest-mock", "click")
     session.install("-e", ".")
     session.run("pytest", *session.posargs)
 
