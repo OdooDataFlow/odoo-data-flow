@@ -49,11 +49,9 @@ def _install_languages_legacy(
         try:
             log.info(f"Installing language: {lang_code}")
             wizard_id = wizard_obj.create({"lang": lang_code})
-            # In legacy versions, the method is called on the model proxy with the ID.
             wizard_obj.lang_install([wizard_id])
             log.info(f"Triggered installation for '{lang_code}'.")
         except Exception as e:
-            # Log the error for the specific language but continue with others.
             log.error(f"Failed to install language '{lang_code}': {e}")
 
 
@@ -71,6 +69,9 @@ def run_language_installation(config: str, languages: list[str]) -> None:
         # New logic for Odoo 18 and newer
         if odoo_version >= 18:
             _install_languages_v18_plus(connection, languages)
+            log.info("Language installation process triggered successfully.")
+            log.info("--- Language Installation Finished ---")
+            return
 
         # Logic for Odoo 15, 16, 17
         elif odoo_version >= 15:

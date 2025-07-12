@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, call, patch
 
+import pytest
+
 from odoo_data_flow.lib.actions.language_installer import (
     run_language_installation,
 )
@@ -100,3 +102,169 @@ def test_run_language_installation_api_error(
     logged_message = mock_log_error.call_args[0][0]
     assert "Failed to install language 'en_US'" in logged_message
     assert "Odoo API Error" in logged_message
+
+
+@patch("odoo_data_flow.lib.actions.language_installer.odoo_lib.get_odoo_version")
+@patch(
+    "odoo_data_flow.lib.actions.language_installer.conf_lib.get_connection_from_config"
+)
+def test_run_installation_v18_success(
+    mock_get_connection: MagicMock, mock_get_odoo_version: MagicMock
+) -> None:
+    """Tests the successful installation path for Odoo 18+."""
+    # 1. Setup
+    mock_get_odoo_version.return_value = 18
+    mock_lang_model = MagicMock()
+    mock_lang_model.search.return_value = [101, 102]  # Dummy DB IDs
+
+    mock_connection = MagicMock()
+    mock_connection.get_model.return_value = mock_lang_model
+    mock_get_connection.return_value = mock_connection
+
+    # 2. Action
+    run_language_installation(config="dummy.conf", languages=["de_DE", "es_ES"])
+
+    # 3. Assert
+    mock_connection.get_model.assert_called_once_with("res.lang")
+    mock_lang_model.search.assert_called_once_with(
+        [("code", "in", ["de_DE", "es_ES"]), ("active", "=", False)]
+    )
+    mock_lang_model.write.assert_called_once_with([101, 102], {"active": True})
+
+
+@pytest.mark.parametrize("version", [15, 16, 17])
+@patch("odoo_data_flow.lib.actions.language_installer.odoo_lib.get_odoo_version")
+@patch(
+    "odoo_data_flow.lib.actions.language_installer.conf_lib.get_connection_from_config"
+)
+def test_run_installation_v15_to_v17_success(
+    mock_get_connection: MagicMock,
+    mock_get_odoo_version: MagicMock,
+    version: int,
+) -> None:
+    """Tests the successful installation path for Odoo 15, 16, and 17."""
+    # 1. Setup
+    mock_get_odoo_version.return_value = version
+
+    # Define separate mocks for each model we'll interact with
+    mock_lang_model = MagicMock()
+    mock_lang_model.search.return_value = [101, 102]
+
+    mock_wizard_obj = MagicMock()
+    mock_wizard_obj.create.return_value = 42
+
+    mock_connection = MagicMock()
+
+    def get_model_side_effect(model_name: str) -> MagicMock:
+        if model_name == "res.lang":
+            return mock_lang_model
+        if model_name == "base.language.install":
+            return mock_wizard_obj
+        # Return a default mock for any other unexpected calls
+        return MagicMock()
+
+    mock_connection.get_model.side_effect = get_model_side_effect
+    mock_get_connection.return_value = mock_connection
+
+    # 2. Action
+    run_language_installation(config="dummy.conf", languages=["de_DE", "es_ES"])
+
+    # 3. Assertions
+    # Check that the correct search was performed on the lang model
+    mock_lang_model.search.assert_called_once_with([("code", "in", ["de_DE", "es_ES"])])
+
+    # Check that the wizard was created with the correct IDs from the search
+    mock_wizard_obj.create.assert_called_once_with({"langs": [(6, 0, [101, 102])]})
+
+    # Check that the installation method was executed on the created wizard
+    mock_wizard_obj.browse(42).lang_install.assert_called_once()
+
+
+@patch("odoo_data_flow.lib.actions.language_installer.log.warning")
+@patch("odoo_data_flow.lib.actions.language_installer.odoo_lib.get_odoo_version")
+@patch(
+    "odoo_data_flow.lib.actions.language_installer.conf_lib.get_connection_from_config"
+)
+def test_run_installation_v18_already_active(
+    mock_get_connection: MagicMock,
+    mock_get_odoo_version: MagicMock,
+    mock_log_warning: MagicMock,
+) -> None:
+    """Tests the warning log when languages are already active in Odoo 18."""
+    # 1. Setup
+    mock_get_odoo_version.return_value = 18
+    mock_lang_model = MagicMock()
+    mock_lang_model.search.return_value = []  # Simulate no inactive languages found
+
+    mock_connection = MagicMock()
+    mock_connection.get_model.return_value = mock_lang_model
+    mock_get_connection.return_value = mock_connection
+
+    # 2. Action
+    run_language_installation(config="dummy.conf", languages=["de_DE"])
+
+    # 3. Assert
+    mock_log_warning.assert_called_once()
+    assert "already active or do not exist" in mock_log_warning.call_args[0][0]
+
+
+@patch("odoo_data_flow.lib.actions.language_installer.log.warning")
+@patch("odoo_data_flow.lib.actions.language_installer.odoo_lib.get_odoo_version")
+@patch(
+    "odoo_data_flow.lib.actions.language_installer.conf_lib.get_connection_from_config"
+)
+def test_run_installation_v15_not_found(
+    mock_get_connection: MagicMock,
+    mock_get_odoo_version: MagicMock,
+    mock_log_warning: MagicMock,
+) -> None:
+    """Tests the warning log when languages are not found in Odoo 15-17."""
+    # 1. Setup
+    mock_get_odoo_version.return_value = 15
+    mock_lang_model = MagicMock()
+    mock_lang_model.search.return_value = []  # Simulate no languages found
+
+    mock_connection = MagicMock()
+
+    def get_model_side_effect(model_name: str) -> MagicMock:
+        if model_name == "res.lang":
+            return mock_lang_model
+        return MagicMock()
+
+    mock_connection.get_model.side_effect = get_model_side_effect
+    mock_get_connection.return_value = mock_connection
+
+    # 2. Action
+    run_language_installation(config="dummy.conf", languages=["xx_XX"])
+
+    # 3. Assert
+    mock_log_warning.assert_called_once()
+    assert (
+        "None of the specified languages were found" in mock_log_warning.call_args[0][0]
+    )
+
+
+@patch("odoo_data_flow.lib.actions.language_installer.log.error")
+@patch("odoo_data_flow.lib.actions.language_installer.odoo_lib.get_odoo_version")
+@patch(
+    "odoo_data_flow.lib.actions.language_installer.conf_lib.get_connection_from_config"
+)
+def test_run_installation_main_exception(
+    mock_get_connection: MagicMock,
+    mock_get_odoo_version: MagicMock,
+    mock_log_error: MagicMock,
+) -> None:
+    """Tests the main exception handler in run_language_installation."""
+    # 1. Setup
+    mock_get_odoo_version.return_value = 14  # Use any path
+    mock_connection = MagicMock()
+    # Simulate a failure when trying to get any model
+    mock_connection.get_model.side_effect = Exception("Generic API Error")
+    mock_get_connection.return_value = mock_connection
+
+    # 2. Action
+    run_language_installation(config="dummy.conf", languages=["nl_NL"])
+
+    # 3. Assert
+    mock_log_error.assert_called_once()
+    assert "An unexpected error occurred" in mock_log_error.call_args[0][0]
