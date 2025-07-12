@@ -5,6 +5,7 @@ from . import (
     conf_lib,
     internal,
     mapper,
+    odoo_lib,
     transform,
     workflow,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "conf_lib",
     "internal",
     "mapper",
+    "odoo_lib",
     "transform",
     "workflow",
 ]
