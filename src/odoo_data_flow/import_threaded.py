@@ -143,6 +143,12 @@ class RPCThreadImport(RpcThread):
 
                 if res.get("messages"):
                     failed_lines = self._handle_odoo_messages(res["messages"], lines)
+                    # NEW: Check for critical, batch-level errors
+                    is_critical = any("record" not in msg for msg in res["messages"])
+                    if is_critical:
+                        log.error("Critical mapping error detected. Aborting import...")
+                        self.abort_flag = True
+
                 elif do_check and len(res.get("ids", [])) != len(lines):
                     failed_lines = self._handle_record_mismatch(res, lines)
 
@@ -243,11 +249,7 @@ def _create_batches(
     batch_size: int,
     o2m: bool,
 ) -> Generator[tuple[Any, list[list[Any]]], None, None]:
-    """A generator that yields batches of data.
-
-    If split_by_col is provided, it
-    groups records with the same value in that column into the same batch.
-    """
+    """A generator that yields batches of data."""
     if not split_by_col:
         # Simple batching without grouping
         for i, data_batch in enumerate(batch(data, batch_size)):
@@ -291,7 +293,11 @@ def _create_batches(
 
 
 def _setup_fail_file(
-    fail_file: str, header: list[str], is_fail_run: bool, separator: str, encoding: str
+    fail_file: str,
+    header: list[str],
+    is_fail_run: bool,
+    separator: str,
+    encoding: str,
 ) -> tuple[Optional[Any], Optional[TextIO]]:
     """Opens the fail file and returns the writer and file handle."""
     try:
@@ -413,6 +419,7 @@ def import_data(
     """
     _ignore = ignore or []
     _context = context or {}
+    start_time = time()
 
     if file_csv:
         header, data = _read_data_file(file_csv, separator, encoding, skip)
@@ -424,7 +431,6 @@ def import_data(
             "Please provide either a data file or both 'header' and 'data'."
         )
 
-    # Filter out ignored columns from both header and data
     final_header, final_data = _filter_ignored_columns(_ignore, header, data)
 
     try:
@@ -456,7 +462,6 @@ def import_data(
         check,
         model,
     )
-    start_time = time()
 
     if fail_file_handle:
         fail_file_handle.close()
