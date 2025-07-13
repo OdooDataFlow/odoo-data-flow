@@ -30,7 +30,31 @@ This is highly recommended as it allows you to "fail fast" with a clear error me
 ```bash
 odoo-data-flow import --file path/to/my_data.csv --model res.partner --verify-fields
 ```
-If `my_data.csv` contains a column that does not exist on the `res.partner` model, the command will abort with an error message listing the invalid fields.
+
+
+## Pre-flight Checks
+
+To save time and prevent common errors, `odoo-data-flow` automatically runs a series of pre-flight checks before starting the import process. These checks validate your environment and data to catch systemic issues that would otherwise cause the entire import to fail record by record.
+
+Currently, the following checks are performed by default:
+
+* **Field Existence Check**: Verifies that every column in your CSV header corresponds to an actual field on the target Odoo model. This immediately catches typos or field name changes between Odoo versions.
+* **Language Check**: For imports into `res.partner` or `res.users`, this check scans the `lang` column in your CSV. It then verifies that all required languages are installed and active on the target Odoo database.
+
+### Managing Pre-flight Checks
+
+* **Disabling Checks**: If you need to bypass these validations for any reason, you can use the `--no-preflight-checks` flag.
+
+    ```bash
+    odoo-data-flow import --file ... --no-preflight-checks
+    ```
+
+* **Headless Mode**: The language check may prompt you to install missing languages. To run the import in a non-interactive environment (like a CI/CD pipeline), use the `--headless` flag. This will automatically approve the installation of any missing languages.
+
+    ```bash
+    odoo-data-flow import --file ... --headless
+    ```
+
 
 ## The "Upsert" Strategy: How External IDs Work
 
