@@ -34,19 +34,6 @@ IMAGE_PATH_PREFIX = "tests/origin/img/"
 
 # --- Main Logic ---
 
-# STEP 1: Initialize the processor with the source file
-source_file = os.path.join("tests", "origin", "contact.csv")
-processor = Processor(
-    mapping={},
-    filename=source_file,
-    separator=";",
-)
-
-# Print the 1-to-1 mapping for debugging purposes
-print("--- Auto-detected o2o Mapping ---")
-pprint.pprint(processor.get_o2o_mapping())
-print("---------------------------------")
-
 
 # STEP 2: Define the mapping for every object to import
 mapping = {
@@ -71,6 +58,20 @@ mapping = {
     "image_1920": mapper.binary("Image", "origin/img/"),
 }
 
+# STEP 1: Initialize the processor with the source file
+source_file = os.path.join("tests", "origin", "contact.csv")
+processor = Processor(
+    mapping=mapping,
+    source_filename=source_file,
+    separator=";",
+)
+
+# Print the 1-to-1 mapping for debugging purposes
+print("--- Auto-detected o2o Mapping ---")
+pprint.pprint(processor.get_o2o_mapping())
+print("---------------------------------")
+
+
 # Step 3: Check data quality (Optional)
 print("Running data quality checks...")
 processor.check(checker.cell_len_checker(30))
@@ -82,6 +83,6 @@ processor.check(checker.line_number_checker(21))
 print("Processing data transformation...")
 output_file = os.path.join("data", "res.partner.from_file.csv")
 params = {"model": "res.partner", "worker": 2, "batch_size": 5}
-processor.process(mapping, output_file, params)
+processor.process(output_file, params)
 
 print(f"File transformation complete. Output at: {output_file}")

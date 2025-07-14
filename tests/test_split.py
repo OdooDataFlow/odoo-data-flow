@@ -39,16 +39,20 @@ tag_mapping = {
 # Mapping to create the partner records.
 partner_mapping = {
     "id": mapper.concat(PARTNER_PREFIX, "_", "id"),
-    "name": mapper.val("id", postprocess=lambda x: f"Partner {x}"),
-    "phone": mapper.val("id", postprocess=lambda x: f"0032{int(x) * 11}"),
-    "website": mapper.val("id", postprocess=lambda x: f"http://website-{x}.com"),
-    "street": mapper.val("id", postprocess=lambda x: f"Street {x}"),
-    "city": mapper.val("id", postprocess=lambda x: f"City {x}"),
-    "zip": mapper.val("id", postprocess=lambda x: str(x).zfill(6)),
+    "name": mapper.val("id", postprocess=lambda x, _: f"Partner {x}"),
+    "phone": mapper.val(
+        "id", postprocess=lambda x, _: f"0032{int(x) * 11}" if x else None
+    ),
+    "website": mapper.val("id", postprocess=lambda x, _: f"http://website-{x}.com"),
+    "street": mapper.val("id", postprocess=lambda x, _: f"Street {x}"),
+    "city": mapper.val("id", postprocess=lambda x, _: f"City {x}"),
+    "zip": mapper.val("id", postprocess=lambda x, _: str(x).zfill(6)),
     "country_id/id": mapper.const("base.be"),
     "company_type": mapper.const("company"),
-    "customer": mapper.val("id", postprocess=lambda x: int(x) % 2),
-    "supplier": mapper.val("id", postprocess=lambda x: (int(x) + 1) % 2),
+    "customer": mapper.val("id", postprocess=lambda x, _: int(x) % 2 if x else None),
+    "supplier": mapper.val(
+        "id", postprocess=lambda x, _: (int(x) + 1) % 2 if x else None
+    ),
     "lang": mapper.const("en_US"),
     "category_id/id": mapper.m2m(TAG_PREFIX, "tags"),
 }
@@ -68,12 +72,29 @@ processor_dictionary = processor.split(mapper.split_file_number(8))
 
 # First, process the tags into a single file from the main processor.
 print(f"Generating single tag file for all splits at: {TAG_OUTPUT}")
-processor.process(
-    tag_mapping,
-    TAG_OUTPUT,
-    {"model": "res.partner.category"},
-    m2m=True,
+# 1. Prepare the data: Split the 'tags' string and explode into separate rows.
+tags_df = df.clone().with_columns(pl.col("tags").str.split(",")).explode("tags")
+
+# 2. Define a simple mapping that works on the prepared data.
+simple_tag_mapping = {
+    "id": mapper.m2o_map(TAG_PREFIX, "tags"),
+    "name": mapper.val("tags"),
+    "parent_id/id": mapper.const("base.res_partner_category_0"),
+}
+
+# 3. Process the prepared data. 'm2m=True' is no longer needed.
+tag_processor = transform.Processor(mapping=simple_tag_mapping, dataframe=tags_df)
+tag_processor.process(
+    filename_out=TAG_OUTPUT,
+    params={"model": "res.partner.category"},
+    t="set",  # Use 'set' to get the unique tags across all records
 )
+
+# Create a second, separate processor for the partner splitting task.
+print("Splitting data into 8 files...")
+partner_processor = transform.Processor(mapping=partner_mapping, dataframe=df)
+processor_dictionary = partner_processor.split(mapper.split_file_number(8))
+
 
 # Now, loop through the dictionary of split processors and have each one
 # generate its own numbered output file.
@@ -82,9 +103,8 @@ for index, p in processor_dictionary.items():
     output_filename = f"{PARTNER_OUTPUT_PREFIX}.{index}.csv"
     print(f"  - Generating {output_filename}")
     p.process(
-        partner_mapping,
         output_filename,
-        {"model": "res.partner"},
+        params={"model": "res.partner"},
     )
 
 print("Split file generation complete.")

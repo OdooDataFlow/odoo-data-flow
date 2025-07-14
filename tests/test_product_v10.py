@@ -7,9 +7,9 @@ This is based on the v10 product structure.
 
 import os
 
-from odoo_data_flow.lib import mapper
+import polars as pl
 
-# We assume ProductProcessorV10 is a custom class inheriting from Processor
+from odoo_data_flow.lib import mapper
 from odoo_data_flow.lib.transform import ProductProcessorV10
 
 # --- Configuration ---
@@ -25,14 +25,6 @@ attribute_list = ["Color", "Gender", "Size_H", "Size_W"]
 source_file = os.path.join("tests", "origin", "product.csv")
 context = {"create_product_variant": True, "tracking_disable": True}
 
-
-# --- Main Logic ---
-# STEP 1: Initialize the custom processor with the source file
-print(f"Initializing processor for product import from: {source_file}")
-processor = ProductProcessorV10(filename=source_file, mapping={}, separator=",")
-
-# STEP 2: Generate data for Parent and Child Categories
-print("Generating data for product categories...")
 categ_parent_map = {
     "id": mapper.m2o_map(CATEGORY_PREFIX, "categoy"),
     "name": mapper.val("categoy"),
@@ -42,23 +34,7 @@ categ_map = {
     "parent_id/id": mapper.m2o_map(CATEGORY_PREFIX, "categoy"),
     "name": mapper.val("Sub Category"),
 }
-processor.process(
-    categ_parent_map,
-    os.path.join("data", "product.category.parent.csv"),
-    {"model": "product.category", "worker": 1, "batch_size": 5},
-    "set",
-    m2m=True,  # Use m2m=True to get a unique set of parent categories
-)
-processor.process(
-    categ_map,
-    os.path.join("data", "product.category.csv"),
-    {"model": "product.category", "worker": 1, "batch_size": 20},
-    "set",
-    m2m=True,  # Use m2m=True to get a unique set of child categories
-)
 
-# STEP 3: Generate data for Product Templates
-print("Generating data for product templates...")
 template_map = {
     "id": mapper.m2o_map(TEMPLATE_PREFIX, "ref"),
     "categ_id/id": mapper.m2o_map(CATEGORY_PREFIX, "Sub Category"),
@@ -68,35 +44,6 @@ template_map = {
     "name": mapper.val("name"),
     "type": mapper.const("product"),
 }
-processor.process(
-    template_map,
-    os.path.join("data", "product.template.csv"),
-    {
-        "model": "product.template",
-        "worker": 4,
-        "batch_size": 10,
-        "context": context,
-    },
-    m2m=True,  # A product template should only be created once per ref
-)
-
-# STEP 4: Generate data for Attributes
-print("Generating data for product attributes...")
-# The custom processor method handles creating a simple list of attributes
-processor.process_attribute_data(
-    attribute_list,
-    ATTRIBUTE_PREFIX,
-    os.path.join("data", "product.attribute.csv"),
-    {
-        "model": "product.attribute",
-        "worker": 4,
-        "batch_size": 10,
-        "context": context,
-    },
-)
-
-# STEP 5: Generate data for Attribute Values
-print("Generating data for product attribute values...")
 attribute_value_mapping = {
     "id": mapper.m2m_template_attribute_value(ATTRIBUTE_VALUE_PREFIX, *attribute_list),
     "name": mapper.m2m_value_list(*attribute_list),
@@ -104,21 +51,6 @@ attribute_value_mapping = {
         ATTRIBUTE_PREFIX, *[mapper.field(f) for f in attribute_list]
     ),
 }
-processor.process(
-    attribute_value_mapping,
-    os.path.join("data", "product.attribute.value.csv"),
-    {
-        "model": "product.attribute.value",
-        "worker": 3,
-        "batch_size": 50,
-        "context": context,
-        "groupby": "attribute_id/id",
-    },
-    m2m=True,
-)
-
-# STEP 6: Generate data for Attribute Lines (linking attributes to templates)
-print("Generating data for product attribute lines...")
 line_mapping = {
     "id": mapper.m2m_id_list(
         ATTRIBUTE_LINE_PREFIX,
@@ -135,12 +67,140 @@ line_mapping = {
         ATTRIBUTE_VALUE_PREFIX, "Color", "Gender", "Size_H", "Size_W"
     ),
 }
+product_mapping = {
+    "id": mapper.m2o_map(PRODUCT_PREFIX, "barcode", skip=True),
+    "barcode": mapper.val("barcode"),
+    "product_tmpl_id/id": mapper.m2o_map(TEMPLATE_PREFIX, "ref"),
+    "attribute_value_ids/id": mapper.m2m_template_attribute_value(
+        ATTRIBUTE_VALUE_PREFIX, "Color", "Gender", "Size_H", "Size_W"
+    ),
+    "default_code": mapper.val("ref"),
+    "standard_price": mapper.num("cost"),
+}
+# --- Main Logic ---
+print(f"Loading source data from: {source_file}")
+source_df = pl.read_csv(source_file, separator=",")
+
+
+# STEP 1: Parent Categories
+print("Generating data for product categories (parents)...")
+parent_categ_processor = ProductProcessorV10(
+    mapping=categ_parent_map, dataframe=source_df.clone()
+)
+parent_categ_processor.process(
+    filename_out=os.path.join("data", "product.category.parent.csv"),
+    params={"model": "product.category", "worker": 1, "batch_size": 5},
+    t="set",
+)
+
+# STEP 2: Child Categories
+print("Generating data for product categories (children)...")
+child_categ_processor = ProductProcessorV10(
+    mapping=categ_map, dataframe=source_df.clone()
+)
+child_categ_processor.process(
+    filename_out=os.path.join("data", "product.category.csv"),
+    params={"model": "product.category", "worker": 1, "batch_size": 20},
+    t="set",
+)
+
+# STEP 3: Product Templates
+print("Generating data for product templates...")
+template_processor = ProductProcessorV10(
+    mapping=template_map, dataframe=source_df.clone()
+)
+template_processor.process(
+    filename_out=os.path.join("data", "product.template.csv"),
+    params={
+        "model": "product.template",
+        "worker": 4,
+        "batch_size": 10,
+        "context": context,
+    },
+    t="set",
+)
+
+# STEP 4: Product Attributes
+print("Generating data for product attributes...")
+# Provide an empty mapping to satisfy the constructor
+attribute_processor = ProductProcessorV10(mapping={}, dataframe=source_df.clone())
+attribute_processor.process_attribute_data(
+    attribute_list,
+    ATTRIBUTE_PREFIX,
+    os.path.join("data", "product.attribute.csv"),
+    {
+        "model": "product.attribute",
+        "worker": 4,
+        "batch_size": 10,
+        "context": context,
+    },
+)
+
+# STEP 5: Product Attribute Values
+print("Generating data for product attribute values...")
+simple_value_mapping = {
+    "id": mapper.concat(
+        ATTRIBUTE_VALUE_PREFIX,
+        "_",
+        "m2m_source_column",
+        "_",
+        "m2m_source_value",
+    ),
+    "name": mapper.val("m2m_source_value"),
+    "attribute_id/id": mapper.m2o_map(ATTRIBUTE_PREFIX, "m2m_source_column"),
+}
+
+# The Processor now takes the simple mapping.
+attr_value_processor = ProductProcessorV10(
+    mapping=simple_value_mapping, dataframe=source_df.clone()
+)
+
+# The process call is clean. It just needs to know which columns to unpivot.
+attr_value_processor.process(
+    filename_out=os.path.join("data", "product.attribute.value.csv"),
+    params={
+        "model": "product.attribute.value",
+        "worker": 3,
+        "batch_size": 50,
+        "context": context,
+        "groupby": "attribute_id/id",
+    },
+    t="set",
+    m2m=True,
+    m2m_columns=attribute_list,
+)
+
+
+# STEP 6: Product Attribute Lines
+print("Generating data for product attribute lines...")
+
+# Define a new, simple mapping that works on the long-format data
+# generated internally by the m2m processor.
+simple_line_mapping = {
+    "id": mapper.concat(ATTRIBUTE_LINE_PREFIX, "_", "m2m_source_column", "_", "ref"),
+    "product_tmpl_id/id": mapper.m2o_map(TEMPLATE_PREFIX, "ref"),
+    "attribute_id/id": mapper.m2o_map(ATTRIBUTE_PREFIX, "m2m_source_column"),
+    "value_ids/id": mapper.concat(
+        ATTRIBUTE_VALUE_PREFIX,
+        "_",
+        "m2m_source_column",
+        "_",
+        "m2m_source_value",
+    ),
+}
+
 context_with_update = context.copy()
 context_with_update["update_many2many"] = True
-processor.process(
-    line_mapping,
-    os.path.join("data", "product.attribute.line.csv"),
-    {
+
+# The Processor now takes the new, simple mapping.
+line_processor = ProductProcessorV10(
+    mapping=simple_line_mapping, dataframe=source_df.clone()
+)
+
+# The process call now includes the 'm2m_columns' argument.
+line_processor.process(
+    filename_out=os.path.join("data", "product.attribute.line.csv"),
+    params={
         "model": "product.attribute.line",
         "worker": 3,
         "batch_size": 50,
@@ -148,26 +208,17 @@ processor.process(
         "groupby": "product_tmpl_id/id",
     },
     m2m=True,
+    m2m_columns=attribute_list,
 )
 
-# STEP 7: Generate data for final Product Variants (product.product)
+# STEP 7: Product Variants
 print("Generating data for product variants...")
-product_mapping = {
-    "id": mapper.m2o_map(PRODUCT_PREFIX, "barcode", skip=True),
-    "barcode": mapper.val("barcode"),
-    "product_tmpl_id/id": mapper.m2o_map(TEMPLATE_PREFIX, "ref"),
-    # This mapper seems to handle the complex logic of finding the correct
-    # attribute values for a given variant.
-    "attribute_value_ids/id": mapper.m2m_template_attribute_value(
-        ATTRIBUTE_VALUE_PREFIX, "Color", "Gender", "Size_H", "Size_W"
-    ),
-    "default_code": mapper.val("ref"),
-    "standard_price": mapper.num("cost"),
-}
-processor.process(
-    product_mapping,
-    os.path.join("data", "product.product.csv"),
-    {
+product_processor = ProductProcessorV10(
+    mapping=product_mapping, dataframe=source_df.clone()
+)
+product_processor.process(
+    filename_out=os.path.join("data", "product.product.csv"),
+    params={
         "model": "product.product",
         "worker": 3,
         "batch_size": 50,

@@ -41,16 +41,20 @@ tag_mapping = {
 # Mapping to create the partner records, linking them to the tags created above.
 partner_mapping = {
     "id": mapper.concat(PARTNER_PREFIX, "_", "id"),
-    "name": mapper.val("id", postprocess=lambda x: f"Partner {x}"),
-    "phone": mapper.val("id", postprocess=lambda x: f"0032{int(x) * 11}"),
-    "website": mapper.val("id", postprocess=lambda x: f"http://website-{x}.com"),
-    "street": mapper.val("id", postprocess=lambda x: f"Street {x}"),
-    "city": mapper.val("id", postprocess=lambda x: f"City {x}"),
-    "zip": mapper.val("id", postprocess=lambda x: str(x).zfill(6)),
+    "name": mapper.val("id", postprocess=lambda x, _: f"Partner {x}"),
+    "phone": mapper.val(
+        "id", postprocess=lambda x, _: f"0032{int(x) * 11}" if x else None
+    ),
+    "website": mapper.val("id", postprocess=lambda x, _: f"http://website-{x}.com"),
+    "street": mapper.val("id", postprocess=lambda x, _: f"Street {x}"),
+    "city": mapper.val("id", postprocess=lambda x, _: f"City {x}"),
+    "zip": mapper.val("id", postprocess=lambda x, _: str(x).zfill(6)),
     "country_id/id": mapper.const("base.be"),
     "company_type": mapper.const("company"),
-    "customer_rank": mapper.val("id", postprocess=lambda x: int(x) % 2),
-    "supplier_rank": mapper.val("id", postprocess=lambda x: (int(x) + 1) % 2),
+    "customer_rank": mapper.val("id", postprocess=lambda x, _: int(x) % 2 if x else 0),
+    "supplier_rank": mapper.val(
+        "id", postprocess=lambda x, _: (int(x) + 1) % 2 if x else 0
+    ),
     "lang": mapper.const("en_US"),
     "category_id/id": mapper.m2m(TAG_PREFIX, "tags"),
 }
@@ -68,19 +72,20 @@ processor = transform.Processor(
 # This will find all unique tags from the 'tags' column and create a clean
 # CSV file with one row for each unique tag.
 print(f"Generating partner category data at: {TAG_OUTPUT}")
-processor.process(
-    tag_mapping,
-    TAG_OUTPUT,
-    {"model": "res.partner.category"},
-    m2m=True,
+tag_processor = transform.Processor(mapping=tag_mapping, dataframe=df.clone())
+tag_processor.process_m2m(
+    id_column="id",
+    m2m_columns=["tags"],
+    filename_out=TAG_OUTPUT,
+    params={"model": "res.partner.category"},
 )
 
 # Next, process the main partner records.
 print(f"Generating partner data at: {PARTNER_OUTPUT}")
-processor.process(
-    partner_mapping,
-    PARTNER_OUTPUT,
-    {"model": "res.partner"},
+partner_processor = transform.Processor(mapping=partner_mapping, dataframe=df)
+partner_processor.process(
+    filename_out=PARTNER_OUTPUT,
+    params={"model": "res.partner"},
 )
 
 print("Test data generation complete.")

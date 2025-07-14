@@ -35,22 +35,22 @@ mapping = {
 # and the whole list is inside a root tag (e.g., <data>).
 print(f"Initializing XML processor for source file: {SOURCE_FILE}")
 processor = Processor(
-    SOURCE_FILE,
-    mapping={},
+    mapping=mapping,
+    source_filename=SOURCE_FILE,
     separator=";",
-    xml_root_tag="data",  # The root element containing all records
-    xml_record_tag="country",  # The tag representing a single record
+    xml_root_tag="data",
+    xml_record_tag="country",
 )
 
 # Define the parameters for the eventual import.
 params = {
-    "model": "res.country.info",  # Example model
+    "model": "res.country.info",
     "worker": 2,
     "batch_size": 5,
 }
 
 # Process the XML data using the mapping and write to a CSV file.
 print(f"Processing XML data and writing to: {OUTPUT_FILE}")
-processor.process(mapping, OUTPUT_FILE, params)
+processor.process(OUTPUT_FILE, params=params)
 
 print("XML file transformation complete.")

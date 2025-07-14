@@ -125,6 +125,7 @@ def test_run_url_to_image(mock_requests_get: MagicMock, tmp_path: Path) -> None:
         file=str(source_csv),
         fields="image_url",
         out=str(output_csv),
+        delimiter=";",
     )
 
     # 3. Assertions
