@@ -8,7 +8,6 @@ Processor for each row of the source data.
 """
 
 import base64
-import inspect
 import os
 from typing import Any, Callable, Optional, cast
 
@@ -104,16 +103,11 @@ def val(
 
         final_value = value or default
         try:
-            sig = inspect.signature(postprocess)
-            if len(sig.parameters) == 1:
-                return postprocess(final_value)
-            else:
-                return postprocess(final_value, state)
-        except (ValueError, TypeError):
-            try:
-                return postprocess(final_value, state)
-            except TypeError:
-                return postprocess(final_value)
+            # Try calling postprocess with 2 arguments first
+            return postprocess(final_value, state)
+        except TypeError:
+            # If it fails, fall back to calling with 1 argument
+            return postprocess(final_value)
 
     return val_fun
 

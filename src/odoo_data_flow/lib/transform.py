@@ -481,7 +481,7 @@ class Processor:
         params_copy["dataframe"] = dataframe
         self.file_to_write[filename_out] = params_copy
 
-    def _process_mapping(
+    def _process_mapping(  # noqa: C901
         self,
         mapping: Mapping[str, Union[Callable[..., Any], pl.Expr]],
         null_values: list[Any],
@@ -505,11 +505,22 @@ class Processor:
                 ) -> Callable[[dict[str, Any]], Any]:
                     def wrapper(row_struct: dict[str, Any]) -> Any:
                         try:
-                            if len(signature.parameters) == 1:
-                                return f(row_struct)
-                            else:
+                            # First, try calling with both the row and state,
+                            # as this is the richer interface.
+                            if len(signature.parameters) > 1:
                                 return f(row_struct, state)
+                            return f(row_struct)
+                        except TypeError as e:
+                            # If that fails, check if it's a signature mismatch
+                            # and fall back to calling with just the row.
+                            if "takes 1 positional argument but 2 were given" in str(
+                                e
+                            ) or "missing 1 required positional argument" in str(e):
+                                return f(row_struct)
+                            # If it's a different TypeError, re-raise it.
+                            raise e
                         except SkippingError:
+                            # This is a controlled way to skip a row.
                             return None
 
                     return wrapper

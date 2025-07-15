@@ -1,7 +1,8 @@
 """Test the core Processor class and its subclasses."""
 
+import inspect
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 from unittest.mock import MagicMock, patch
 
 import polars as pl
@@ -13,6 +14,7 @@ from odoo_data_flow.lib.transform import (
     MapperRepr,
     Processor,
     ProductProcessorV9,
+    ProductProcessorV10,
 )
 
 
@@ -154,7 +156,9 @@ def test_read_file_xml_syntax_error(tmp_path: Path) -> None:
     xml_file = tmp_path / "malformed.xml"
     xml_file.write_text("<root><record>a</record></root")  # Malformed XML
     processor = Processor(
-        mapping={}, source_filename=str(xml_file), xml_root_tag="./record"
+        mapping={},
+        source_filename=str(xml_file),
+        xml_root_tag="./record",
     )
     assert processor.dataframe.is_empty()
 
@@ -237,3 +241,138 @@ def test_v9_extract_attribute_value_data_malformed_mapping() -> None:
     }
     result = processor._extract_attribute_value_data(malformed_mapping, ["col1"])
     assert not result.is_empty()
+
+
+def test_processor_with_callable_in_concat() -> None:
+    """Tests that Processor handles mappers with callable arguments."""
+    df = pl.DataFrame({"col1": ["A"], "col2": ["B"]})
+
+    def custom_mapper(line: dict[str, Any], state: dict[str, Any]) -> str:
+        return str(line["col2"])
+
+    mapping = {"concatenated": mapper.concat("-", "col1", custom_mapper)}
+    processor = Processor(mapping=mapping, dataframe=df)
+    result_df = processor.process(filename_out="")
+    assert result_df["concatenated"].to_list() == ["A-B"]
+
+
+def test_processor_val_postprocess_type_error_fallback() -> None:
+    """Tests that Processor.val handles TypeError in postprocess."""
+    df = pl.DataFrame({"value": ["test"]})
+
+    # This postprocess function will fail if called with two arguments (the state dict)
+    # but will succeed if called with just one (the value).
+    def fallback_postprocess(val: str, state: Optional[dict[str, Any]] = None) -> str:
+        if state is not None:
+            raise TypeError(
+                "This function should have been called with only one argument"
+            )
+        return val.upper()
+
+    # Patch inspect.signature to simulate a function that *looks* like it takes 2 args
+    # but actually raises TypeError when called with 2 args. This forces the fallback.
+    with patch("inspect.signature") as mock_signature:
+        mock_signature.return_value.parameters = {
+            "arg1": MagicMock(kind=inspect.Parameter.POSITIONAL_OR_KEYWORD),
+            "arg2": MagicMock(kind=inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        }
+        # Assign the fallback_postprocess to the mapper. The code should initially
+        # try to call it with two arguments, hit the TypeError, and then
+        # successfully call it with one argument.
+        mapping = {"processed": mapper.val("value", postprocess=fallback_postprocess)}
+        processor = Processor(mapping=mapping, dataframe=df)
+        result_df = processor.process(filename_out="")
+
+        # The actual result should come from the successful 1-arg fallback call.
+        assert result_df["processed"].to_list() == ["TEST"]
+
+
+def test_read_file_unsupported_type(tmp_path: Path) -> None:
+    """Tests that reading an unsupported file type returns an empty DataFrame."""
+    unsupported_file = tmp_path / "data.unsupported"
+    unsupported_file.touch()
+    processor = Processor(mapping={}, source_filename=str(unsupported_file))
+    assert processor.dataframe.is_empty()
+
+
+def test_read_file_xml_no_nodes(tmp_path: Path) -> None:
+    """Test malformed xml file.
+
+    Tests that reading an XML file with no matching nodes returns
+    an empty DataFrame.
+    """
+    xml_file = tmp_path / "test.xml"
+    xml_file.write_text("<root><item>a</item></root>")
+    processor = Processor(
+        mapping={},
+        source_filename=str(xml_file),
+        xml_root_tag="./nonexistent",
+    )
+    assert processor.dataframe.is_empty()
+
+
+def test_process_with_empty_mapping() -> None:
+    """Tests that processing with an empty mapping returns the original DataFrame."""
+    df = pl.DataFrame({"col1": [1, 2]})
+    processor = Processor(mapping={}, dataframe=df)
+    result_df = processor.process(filename_out="")
+    assert result_df.equals(df)
+
+
+def test_process_m2m_no_columns() -> None:
+    """Tests that calling process with m2m=True and no m2m_columns raises ValueError."""
+    processor = Processor(mapping={}, dataframe=pl.DataFrame())
+    with pytest.raises(ValueError):
+        processor.process(filename_out="", m2m=True)
+
+
+def test_process_m2m_method() -> None:
+    """Tests the dedicated process_m2m method."""
+    df = pl.DataFrame({"id": [1], "tags": ["a,b,c"]})
+    mapping = {"id": mapper.val("id"), "tag": mapper.val("tags")}
+    processor = Processor(mapping=mapping, dataframe=df)
+    processor.process_m2m(id_column="id", m2m_columns=["tags"], filename_out="out.csv")
+    assert "out.csv" in processor.file_to_write
+    result_df = processor.file_to_write["out.csv"]["dataframe"]
+    assert result_df.shape == (3, 2)
+    assert result_df["tag"].to_list() == ["a", "b", "c"]
+
+
+def test_product_processor_v10() -> None:
+    """Tests the ProductProcessorV10 methods."""
+    df = pl.DataFrame({"Color": ["Blue"], "Size": ["L"]})
+    processor = ProductProcessorV10(mapping={}, dataframe=df)
+    processor.process_attribute_data(
+        attributes_list=["Color", "Size"],
+        attribute_prefix="pa",
+        filename_out="attrib.csv",
+        import_args={},
+    )
+    processor.process_attribute_value_data(
+        attribute_list=["Color", "Size"],
+        attribute_prefix="pa",
+        attribute_value_prefix="pav",
+        filename_out="values.csv",
+        import_args={},
+    )
+    assert "attrib.csv" in processor.file_to_write
+    assert "values.csv" in processor.file_to_write
+
+
+def test_product_processor_v9() -> None:
+    """Tests the ProductProcessorV9 methods."""
+    df = pl.DataFrame({"Color": ["Blue"], "Size": ["L"]})
+    mapping = {"name": mapper.val("attribute_value_name")}
+    line_mapping = {"product_id": mapper.val("id")}
+    processor = ProductProcessorV9(mapping=mapping, dataframe=df)
+    processor.process_attribute_mapping(
+        mapping=mapping,
+        line_mapping=line_mapping,
+        attributes_list=["Color", "Size"],
+        attribute_prefix="pa",
+        path="",
+        import_args={},
+    )
+    assert "product.attribute.csv" in processor.file_to_write
+    assert "product.attribute.value.csv" in processor.file_to_write
+    assert "product.attribute.line.csv" in processor.file_to_write
