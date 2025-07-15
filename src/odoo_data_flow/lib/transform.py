@@ -12,6 +12,8 @@ from typing import (
     Union,
 )
 
+from .odoo_lib import build_polars_schema
+
 if sys.version_info < (3, 10):
     from typing import Union as TypeUnion
 else:
@@ -60,13 +62,7 @@ class Processor:
 
     def __init__(
         self,
-        filename: Optional[str] = None,
-        config_file: Optional[str] = None,  # Added for fallback
-        separator: str = ";",
-        encoding: str = "utf-8",
-    def __init__(
-        self,
-        filename: Optional[str] = None,
+        source_filename: Optional[str] = None,
         config_file: Optional[str] = None,  # Added for fallback
         separator: str = ";",
         encoding: str = "utf-8",
@@ -80,11 +76,11 @@ class Processor:
     ) -> None:
         """Initializes the Processor.
 
-        The Processor can be initialized either by providing a `filename` to read
+        The Processor can be initialized either by providing a `source_filename` to read
         from disk, or by providing a `dataframe` to work with in-memory data.
 
         Args:
-            filename: The path to the source CSV or XML file.
+            source_filename: The path to the source CSV or XML file.
             config_file: Path to the Odoo connection configuration file. Used as a
                            fallback for operations that require a DB connection if
                            no specific config is provided later.
@@ -103,35 +99,43 @@ class Processor:
         self.config_file = config_file
         self.dataframe: pl.DataFrame
 
-        # NEW: Parse the mapping to separate logic from type hints
-        self.schema_overrides, self.logic_mapping = self._parse_mapping(
-            mapping if mapping is not None else {}
-        )
+        parsed_overrides, self.logic_mapping = self._parse_mapping(mapping)
 
-        if filename:
+        final_schema = parsed_overrides
+        if connection and model:
+            base_schema = build_polars_schema(connection, model)
+            final_schema = {**base_schema, **parsed_overrides}
+
+        self.schema_overrides = final_schema
+
+        if source_filename:
             self.dataframe = self._read_file(
-                filename, separator, encoding, schema_overrides, **kwargs
+                source_filename, separator, self.schema_overrides, **kwargs
             )
         elif dataframe is not None:
             self.dataframe = dataframe
         else:
             raise ValueError(
                 "Processor must be initialized with either "
-                "a 'filename' or a 'dataframe'."
+                "a 'source_filename' or a 'dataframe'."
             )
         self.dataframe = preprocess(self.dataframe)
 
     def _parse_mapping(
-        self, mapping: Mapping[str, Any]
-    ) -> tuple[dict[str, pl.DataType], dict[str, Any]]:
+        self, mapping: Optional[Mapping[str, Any]]
+    ) -> tuple[dict[str, type[pl.DataType]], dict[str, Any]]:
         """Parses a mapping dict to separate Polars types from mapper functions."""
-        schema_overrides: dict[str, pl.DataType] = {}
+        schema_overrides: dict[str, type[pl.DataType]] = {}
         logic_mapping: dict[str, Any] = {}
+        if not mapping:
+            return schema_overrides, logic_mapping
+
         for key, value in mapping.items():
             if (
                 isinstance(value, tuple)
                 and len(value) == 2
-                and isinstance(value[0], pl.DataType)
+                and isinstance(value[0], type)
+                and issubclass(value[0], pl.DataType)
             ):
                 # It's a typed mapping: (pl.DataType, function)
                 schema_overrides[key] = value[0]
@@ -141,13 +145,11 @@ class Processor:
                 logic_mapping[key] = value
         return schema_overrides, logic_mapping
 
-    # MODIFIED: _read_file now takes schema_overrides from __init__
     def _read_file(
         self,
         filename: str,
         separator: str,
-        encoding: str,
-        schema_overrides: Optional[dict[str, pl.DataType]] = None,
+        schema_overrides: Optional[dict[str, type[pl.DataType]]] = None,
         **kwargs: Any,
     ) -> pl.DataFrame:
         """Reads a CSV or XML file and returns its content as a DataFrame."""
@@ -160,7 +162,7 @@ class Processor:
                 return pl.read_csv(
                     filename,
                     separator=separator,
-                    encoding=encoding,
+                    encoding="utf-8",
                     schema_overrides=schema_overrides,
                 )
             except Exception as e:
@@ -190,12 +192,7 @@ class Processor:
             except etree.XMLSyntaxError as e:
                 log.error(f"Failed to parse XML file {filename}: {e}")
                 return pl.DataFrame()
-            except Exception as e:
-                log.error(
-                    "An unexpected error occurred while reading XML file "
-                    f"{filename}: {e}"
-                )
-                return pl.DataFrame()
+
         return pl.DataFrame()
 
     def check(
@@ -230,13 +227,31 @@ class Processor:
             Processor instances containing the grouped data.
         """
         # Group by the key and create new processors
-        grouped = self.dataframe.group_by(
+        df_with_index = self.dataframe.with_row_index()
+
+        grouped = df_with_index.group_by(
             pl.struct(pl.all()).map_elements(
-                lambda row: split_fun(row, 0), return_dtype=pl.Int64
+                # FIX: Cast the result to a string and specify the return dtype
+                lambda row: str(split_fun(row, row.get("index"))),
+                return_dtype=pl.String,
             )
         )
+
+        new_mapping = {
+            **{k: v for k, v in self.logic_mapping.items()},
+            **{
+                k: (v, self.logic_mapping.get(k))
+                for k, v in self.schema_overrides.items()
+                if self.logic_mapping.get(k)
+            },
+        }
+
         return {
-            key: Processor(dataframe=group, mapping=self.logic_mapping)
+            str(key[0]): Processor(
+                mapping=new_mapping,
+                # 3. Drop the temporary index column from the final grouped DataFrames.
+                dataframe=group.drop("index"),
+            )
             for key, group in grouped
         }
 
@@ -250,12 +265,12 @@ class Processor:
 
     def process(
         self,
-        mapping: Mapping[str, Union[Callable[..., Any], pl.Expr]],
         filename_out: str,
         params: Optional[dict[str, Any]] = None,
         t: str = "list",
         null_values: Optional[list[Any]] = None,
         m2m: bool = False,
+        m2m_columns: Optional[list[str]] = None,  # <-- Add this new parameter
         dry_run: bool = False,
     ) -> pl.DataFrame:
         """Processes the data using a mapping and prepares it for writing.
@@ -268,8 +283,10 @@ class Processor:
             t: The type of collection to return data in ('list' or 'set').
             null_values: A list of values to be treated as empty.
             m2m: If True, activates special processing for many-to-many data.
+            m2m_columns: A list of column names to unpivot when `m2m=True`.
             dry_run: If True, prints a sample of the output to the console
                 instead of writing files.
+
 
         Returns:
             A Dataframe containing the header list and the transformed data.
@@ -281,9 +298,15 @@ class Processor:
 
         result_df: pl.DataFrame
         if m2m:
-            result_df = self._process_mapping_m2m(mapping, null_values=null_values)
+            result_df = self._process_mapping_m2m(
+                self.logic_mapping,
+                null_values=null_values,
+                m2m_columns=m2m_columns,
+            )
         else:
-            result_df = self._process_mapping(mapping, null_values=null_values)
+            result_df = self._process_mapping(
+                self.logic_mapping, null_values=null_values
+            )
 
         if t == "set":
             result_df = result_df.unique()
@@ -308,6 +331,46 @@ class Processor:
 
         self._add_data(result_df, filename_out, params)
         return result_df
+
+    def process_m2m(
+        self,
+        id_column: str,
+        m2m_columns: list[str],
+        filename_out: str,
+        params: Optional[dict[str, Any]] = None,
+        separator: str = ",",
+    ) -> None:
+        """Processes many-to-many data by first unpivoting the source data.
+
+        This is a robust alternative to using the m2m=True flag. It unnests
+        comma-separated values from the 'm2m_columns' into individual rows
+        before processing.
+
+        Args:
+            id_column: The column to use as the stable ID (e.g., 'id' or 'ref').
+            m2m_columns: A list of columns that contain the m2m values.
+            filename_out: The path where the output CSV file will be saved.
+            params: A dictionary of parameters for the `odoo-data-flow import` command.
+            separator: The separator for the values within the m2m columns.
+        """
+        log.info(f"Processing m2m data for columns: {m2m_columns}")
+
+        # 1. Explode the comma-separated strings into lists of strings
+        df_with_lists = self.dataframe.with_columns(
+            [pl.col(c).str.split(separator) for c in m2m_columns]
+        )
+
+        # 2. Explode the DataFrame on the list columns to create new rows
+        exploded_df = df_with_lists.explode(m2m_columns)
+
+        # 3. Create a new processor with this "tidy" data and the stored mapping
+        m2m_processor = Processor(mapping=self.logic_mapping, dataframe=exploded_df)
+
+        # 4. Process the data (no m2m=True flag needed) and add to write queue
+        result_df = m2m_processor.process(
+            filename_out=filename_out, params=params, t="set"
+        )
+        self._add_data(result_df, filename_out, params or {})
 
     def write_to_file(
         self,
@@ -353,7 +416,7 @@ class Processor:
         header_prefix: str = "child",
         separator: str = ";",
         encoding: str = "utf-8",
-        schema_overrides: Optional[dict[str, pl.DataType]] = None,
+        schema_overrides: Optional[dict[str, type[pl.DataType]]] = None,
         dry_run: bool = False,
     ) -> None:
         """Joins data from a secondary file into the processor's main data.
@@ -370,18 +433,21 @@ class Processor:
             dry_run: If True, prints a sample of the joined data to the
                 console without modifying the processor's state.
         """
-        child_df = self._read_file(
-            filename, separator, encoding, schema_overrides=schema_overrides
-        )
+        log.info(f"Joining with secondary file: {filename}")
+        child_df = self._read_file(filename, separator, schema_overrides)
+
+        # This part correctly renames all columns EXCEPT the join key
         child_df = child_df.rename(
-            {col: f"{header_prefix}_{col}" for col in child_df.columns}
+            {
+                col: f"{header_prefix}_{col}"
+                for col in child_df.columns
+                if col != child_key
+            }
         )
 
         if dry_run:
             joined_df = self.dataframe.join(
-                child_df,
-                left_on=master_key,
-                right_on=f"{header_prefix}_{child_key}",
+                child_df, left_on=master_key, right_on=child_key
             )
             log.info("--- DRY RUN MODE (Outputting sample of joined data) ---")
             console = Console()
@@ -398,9 +464,7 @@ class Processor:
             log.info(f"Total rows that would be generated: {len(joined_df)}")
         else:
             self.dataframe = self.dataframe.join(
-                child_df,
-                left_on=master_key,
-                right_on=f"{header_prefix}_{child_key}",
+                child_df, left_on=master_key, right_on=child_key
             )
 
     def _add_data(
@@ -421,63 +485,83 @@ class Processor:
         self,
         mapping: Mapping[str, Union[Callable[..., Any], pl.Expr]],
         null_values: list[Any],
+        list_return_dtype: Optional[pl.DataType] = None,
     ) -> pl.DataFrame:
         """The core transformation loop."""
-        import inspect
+        if not mapping:
+            return self.dataframe.clone()
 
-        state: dict[str, Any] = {}
         exprs = []
-
-        def create_apply_func(
-            func: Callable[..., Any],
-            sig: "inspect.Signature",
-            state: dict[str, Any],
-        ) -> Callable[[dict[str, Any]], Any]:
-            def apply_func(row: dict[str, Any]) -> Any:
-                try:
-                    if len(sig.parameters) == 1:
-                        return func(row)
-                    else:
-                        return func(row, state)
-                except SkippingError:
-                    return ""
-
-            return apply_func
+        state: dict[str, Any] = {}
 
         for key, func in mapping.items():
             if isinstance(func, pl.Expr):
                 expr = func.alias(key)
             else:
                 sig = inspect.signature(func)
-                apply_func = create_apply_func(func, sig, state)
+
+                def _create_wrapper(
+                    f: Callable[..., Any], signature: inspect.Signature
+                ) -> Callable[[dict[str, Any]], Any]:
+                    def wrapper(row_struct: dict[str, Any]) -> Any:
+                        try:
+                            if len(signature.parameters) == 1:
+                                return f(row_struct)
+                            else:
+                                return f(row_struct, state)
+                        except SkippingError:
+                            return None
+
+                    return wrapper
+
+                wrapper_func = _create_wrapper(func, sig)
+
                 expr = (
                     pl.struct(pl.all())
-                    .map_elements(apply_func, return_dtype=pl.Object)
+                    .map_elements(
+                        wrapper_func,
+                        return_dtype=list_return_dtype or pl.Object,
+                    )
                     .alias(key)
                 )
             exprs.append(expr)
 
+        # This correctly handles cases where all columns are being transformed.
         if not exprs:
             return pl.DataFrame()
 
-        return self.dataframe.with_columns(exprs).drop_nulls()
+        return self.dataframe.select(exprs)
 
     def _process_mapping_m2m(
         self,
         mapping: Mapping[str, Union[Callable[..., Any], pl.Expr]],
         null_values: list[Any],
+        m2m_columns: Optional[list[str]],
     ) -> pl.DataFrame:
-        """Handles special m2m mapping by expanding list values into unique rows."""
-        result_df = self._process_mapping(mapping, null_values)
+        """Specific m2m processor.
 
-        list_cols = [
-            col for col in result_df.columns if result_df[col].dtype == pl.List
-        ]
+        Handles m2m mapping by unpivoting data to a long format internally
+        before applying a simple mapping.
+        """
+        if not m2m_columns:
+            raise ValueError(
+                "The 'm2m_columns' argument must be provided when m2m=True."
+            )
 
-        if not list_cols:
-            return result_df
+        # 1. Unpivot the specified columns to create a robust long-format DataFrame
+        id_vars = [col for col in self.dataframe.columns if col not in m2m_columns]
+        unpivoted_df = self.dataframe.unpivot(
+            index=id_vars,
+            on=m2m_columns,
+            variable_name="m2m_source_column",  # e.g., 'Color', 'Size_H'
+            value_name="m2m_source_value",  # e.g., 'Blue', 'L'
+        ).filter(pl.col("m2m_source_value").is_not_null())
 
-        return result_df.explode(list_cols)
+        # 2. Create a temporary processor with this simple, unpivoted data
+        temp_processor = Processor(mapping=mapping, dataframe=unpivoted_df)
+
+        # 3. Apply the original mapping logic, which now works on simple rows
+        return temp_processor._process_mapping(mapping, null_values=null_values)
 
 
 class ProductProcessorV10(Processor):

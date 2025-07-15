@@ -29,42 +29,41 @@ def run_path_to_image(
     out: str,
     path: str,
     delimiter: str = ";",
-    encoding: str = "utf-8",
 ) -> None:
     """Path to image.
 
-    Takes a CSV file and converts columns containing local file paths
+    Converts local file paths in specified columns
     into base64 encoded strings.
     """
     log.info(f"Starting path-to-image conversion for file: {file}")
-    field_list = fields.split(",")
-    processor = Processor(filename=file, separator=delimiter, encoding=encoding)
+    o2o_mapping = Processor(
+        source_filename=file, mapping={}, separator=delimiter
+    ).get_o2o_mapping()
 
+    # Create the final mapping, overriding the image path fields
     mapping = {
-        **{
-            field: mapper.binary(field, path)
-            for field in field_list
-            if field in processor.dataframe.columns
-        },
-        **{
-            col: mapper.val(col)
-            for col in processor.dataframe.columns
-            if col not in field_list
-        },
+        **o2o_mapping,
+        **{f: mapper.path_to_image(f, path=path) for f in fields.split(",")},
     }
-    result_df = processor.process(mapping, filename_out=out)
 
-    # Cast object columns to string before writing to CSV
-    for col_name in result_df.columns:
-        if result_df[col_name].dtype == pl.Object:
-            result_df = result_df.with_columns(
-                pl.col(col_name).map_elements(
-                    lambda x: str(x) if x is not None else None, return_dtype=pl.String
-                )
-            )
+    processor = Processor(
+        mapping=mapping,
+        source_filename=file,
+        separator=delimiter,
+    )
+
+    result_df = processor.process(filename_out=out)
+    cast_expressions = [
+        pl.col(c.name).map_elements(
+            lambda x: str(x) if x is not None else "", return_dtype=pl.String
+        )
+        for c in result_df
+        if c.dtype == pl.Object
+    ]
+    if cast_expressions:
+        result_df = result_df.with_columns(cast_expressions)
 
     result_df.write_csv(out, separator=delimiter)
-    log.info(f"Conversion complete. Output written to: {out}")
 
 
 def run_url_to_image(
@@ -72,40 +71,39 @@ def run_url_to_image(
     fields: str,
     out: str,
     delimiter: str = ";",
-    encoding: str = "utf-8",
     b64: bool = False,
 ) -> None:
     """URL to image.
 
-    Takes a CSV file and converts columns containing URLs
-    into base64 encoded strings by downloading the content.
+    Downloads images from URLs in specified columns and converts them to base64.
     """
     log.info(f"Starting URL-to-image conversion for file: {file}")
-    field_list = fields.split(",")
-    processor = Processor(filename=file, separator=delimiter, encoding=encoding)
-
+    o2o_mapping = Processor(
+        mapping={}, source_filename=file, separator=delimiter
+    ).get_o2o_mapping()
     mapping = {
-        **{
-            field: mapper.binary_url_map(field, b64)
-            for field in field_list
-            if field in processor.dataframe.columns
-        },
-        **{
-            col: mapper.val(col)
-            for col in processor.dataframe.columns
-            if col not in field_list
-        },
+        **o2o_mapping,
+        **{f: mapper.url_to_image(f) for f in fields.split(",")},
     }
 
-    result_df = processor.process(mapping, filename_out=out)
-    # Cast object columns to string before writing to CSV
-    for col_name in result_df.columns:
-        if result_df[col_name].dtype == pl.Object:
-            result_df = result_df.with_columns(
-                pl.col(col_name).map_elements(
-                    lambda x: str(x) if x is not None else None, return_dtype=pl.String
-                )
-            )
+    # FIX: Initialize processor with the correct mapping
+    processor = Processor(
+        mapping=mapping,
+        source_filename=file,
+        separator=delimiter,
+    )
+
+    # FIX: Get the resulting DataFrame and write it directly to a CSV
+    result_df = processor.process(filename_out=out)
+
+    cast_expressions = [
+        pl.col(c.name).map_elements(
+            lambda x: str(x) if x is not None else "", return_dtype=pl.String
+        )
+        for c in result_df
+        if c.dtype == pl.Object
+    ]
+    if cast_expressions:
+        result_df = result_df.with_columns(cast_expressions)
 
     result_df.write_csv(out, separator=delimiter)
-    log.info(f"Conversion complete. Output written to: {out}")

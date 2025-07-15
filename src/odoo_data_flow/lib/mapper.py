@@ -770,3 +770,57 @@ def split_file_number(file_nb: int) -> Callable[[LineDict, int], int]:
         return i % file_nb
 
     return split
+
+
+def path_to_image(
+    field: str, path: str
+) -> Callable[[dict[str, Any], dict[str, Any]], Optional[str]]:
+    """Returns a mapper that converts a local file path to a base64 string.
+
+    Args:
+        field: The column name containing the relative path to the image.
+        path: The base directory where the image files are located.
+    """
+
+    def _mapper(row: dict[str, Any], state: dict[str, Any]) -> Optional[str]:
+        relative_path = row.get(field)
+        if not relative_path:
+            return None
+
+        full_path = os.path.join(path, relative_path)
+        if not os.path.exists(full_path):
+            log.warning(f"Image file not found at: {full_path}")
+            return None
+
+        try:
+            with open(full_path, "rb") as image_file:
+                content = image_file.read()
+            return base64.b64encode(content).decode("utf-8")
+        except OSError as e:
+            log.error(f"Could not read file {full_path}: {e}")
+            return None
+
+    return _mapper
+
+
+def url_to_image(
+    field: str,
+) -> Callable[[dict[str, Any], dict[str, Any]], Optional[str]]:
+    """Returns a mapper that downloads an image from a URL to a base64 string."""
+
+    def _mapper(row: dict[str, Any], state: dict[str, Any]) -> Optional[str]:
+        url = row.get(field)
+        if not url:
+            return None
+
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            # Raises an exception for bad status codes (4xx or 5xx)
+            content = response.content
+            return base64.b64encode(content).decode("utf-8")
+        except requests.exceptions.RequestException as e:
+            log.warning(f"Failed to download image from {url}: {e}")
+            return None
+
+    return _mapper

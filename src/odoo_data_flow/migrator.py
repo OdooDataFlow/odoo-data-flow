@@ -55,20 +55,22 @@ def run_migration(
     # Step 2: Transform the data in memory
     log.info("Transforming data in memory...")
     df = pl.DataFrame(data, schema=header, orient="row")
-    processor = Processor(dataframe=df)
 
     final_mapping: Mapping[str, Union[Callable[..., Any], pl.Expr]]
     if not mapping:
         log.info("No mapping provided, using 1-to-1 mapping.")
-        # Convert the MapperRepr dict to a callable dict for the process method
-        final_mapping = processor.get_o2o_mapping()
+        # Create a temporary processor just to generate the o2o map
+        temp_processor = Processor(mapping={}, dataframe=df)
+        final_mapping = temp_processor.get_o2o_mapping()
     else:
         final_mapping = mapping
 
-    # The process method returns the transformed header and data
-    result_df = processor.process(final_mapping, filename_out="")
+    # Create the Processor with the final mapping provided at initialization.
+    processor = Processor(mapping=final_mapping, dataframe=df)
 
-    # Ensure to_import_data is a list of lists
+    # Call process() with keyword arguments and WITHOUT the mapping.
+    result_df = processor.process(filename_out="")
+
     to_import_header = result_df.columns
     to_import_data_list = [list(row) for row in result_df.rows()]
 
