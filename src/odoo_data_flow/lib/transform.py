@@ -64,9 +64,7 @@ class Processor:
         config_file: Optional[str] = None,  # Added for fallback
         separator: str = ";",
         encoding: str = "utf-8",
-<<<<<<< HEAD
-<<<<<<< HEAD
-        def __init__(
+    def __init__(
         self,
         filename: Optional[str] = None,
         config_file: Optional[str] = None,  # Added for fallback
@@ -100,18 +98,6 @@ class Processor:
             mapping: A dictionary defining the transformation rules, potentially including schema overrides.
             **kwargs: Catches other arguments, primarily for XML processing.
         """
-=======
-=======
-        model: Optional[str] = None,
->>>>>>> bf19abc ([ENH]: Allow Schema overrides)
-        dataframe: Optional[pl.DataFrame] = None,
-        preprocess: Callable[[pl.DataFrame], pl.DataFrame] = lambda df: df,
-        schema_overrides: Optional[dict[str, pl.DataType]] = None,
-        connection: Optional[Any] = None,
-        mapping: Optional[Mapping[str, Any]] = None,
-        **kwargs: Any,
-    ) -> None:
-        """Initializes the Processor."""
 >>>>>>> 84590e6 (fix(transform): Correctly initialize dataframe in Processor)
         self.file_to_write: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self.config_file = config_file
