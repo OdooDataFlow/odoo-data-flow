@@ -55,6 +55,7 @@ class Processor:
         encoding: str = "utf-8",
         header: Optional[list[str]] = None,
         data: Optional[list[list[Any]]] = None,
+        dataframe: Optional[pl.DataFrame] = None,
         preprocess: Callable[
             [list[str], list[list[Any]]], tuple[list[str], list[list[Any]]]
         ] = lambda h, d: (h, d),
@@ -75,28 +76,25 @@ class Processor:
             encoding: The character encoding of the source file.
             header: A list of strings for the header row (for in-memory data).
             data: A list of lists representing the data rows (for in-memory data).
+            dataframe: A Polars DataFrame to initialize the Processor with.
             preprocess: A function to modify the raw data before mapping begins.
             **kwargs: Catches other arguments, primarily for XML processing.
         """
         self.file_to_write: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self.config_file = config_file
-        self.header: list[str]
-        self.data: list[list[Any]]
+        self.dataframe: pl.DataFrame
 
         if filename:
-            self.header, self.data = self._read_file(
-                filename, separator, encoding, **kwargs
-            )
-        elif header is not None and data is not None:
-            self.header = header
-            self.data = data
+            self.dataframe = self._read_file(filename, separator, encoding, **kwargs)
+        elif dataframe is not None:
+            self.dataframe = dataframe
         else:
             raise ValueError(
-                "Processor must be initialized with either a 'filename' or both"
-                " 'header' and 'data'."
+                "Processor must be initialized with either "
+                "a 'filename' or a 'dataframe'."
             )
 
-        self.header, self.data = preprocess(self.header, self.data)
+        self.dataframe = preprocess(self.dataframe)
 
     def _read_file(
         self, filename: str, separator: str, encoding: str, **kwargs: Any
