@@ -287,7 +287,7 @@ class Processor:
             info_copy = info.copy()
             # NEW: Use the config from params if available,
             #  otherwise use the processor's default
-            info_copy["config"] = info.get("config") or self.config_file
+            info_copy["conf_file"] = str(info.get("config")) or self.config_file
             info_copy.update(
                 {
                     "model": info.get("model", "auto"),
