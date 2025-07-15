@@ -49,6 +49,7 @@ class Processor:
     def __init__(
         self,
         filename: Optional[str] = None,
+        config_file: Optional[str] = None,  # Added for fallback
         separator: str = ";",
         encoding: str = "utf-8",
         header: Optional[list[str]] = None,
@@ -66,6 +67,9 @@ class Processor:
 
         Args:
             filename: The path to the source CSV or XML file.
+            config_file: Path to the Odoo connection configuration file. Used as a
+                           fallback for operations that require a DB connection if
+                           no specific config is provided later.
             separator: The column delimiter for CSV files.
             encoding: The character encoding of the source file.
             header: A list of strings for the header row (for in-memory data).
@@ -74,6 +78,7 @@ class Processor:
             **kwargs: Catches other arguments, primarily for XML processing.
         """
         self.file_to_write: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self.config_file = config_file
         self.header: list[str]
         self.data: list[list[Any]]
 
@@ -280,6 +285,9 @@ class Processor:
         init = not append
         for _, info in self.file_to_write.items():
             info_copy = info.copy()
+            # NEW: Use the config from params if available,
+            #  otherwise use the processor's default
+            info_copy["config"] = info.get("config") or self.config_file
             info_copy.update(
                 {
                     "model": info.get("model", "auto"),
