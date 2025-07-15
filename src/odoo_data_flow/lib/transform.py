@@ -53,19 +53,15 @@ class Processor:
         config_file: Optional[str] = None,  # Added for fallback
         separator: str = ";",
         encoding: str = "utf-8",
-        header: Optional[list[str]] = None,
-        data: Optional[list[list[Any]]] = None,
+<<<<<<< HEAD
         dataframe: Optional[pl.DataFrame] = None,
-        preprocess: Callable[
-            [list[str], list[list[Any]]], tuple[list[str], list[list[Any]]]
-        ] = lambda h, d: (h, d),
+        preprocess: Callable[[pl.DataFrame], pl.DataFrame] = lambda df: df,
         **kwargs: Any,
     ) -> None:
         """Initializes the Processor.
 
         The Processor can be initialized either by providing a `filename` to read
-        from disk, or by providing `header` and `data` lists to work with
-        in-memory data.
+        from disk, or by providing a `dataframe` to work with in-memory data.
 
         Args:
             filename: The path to the source CSV or XML file.
@@ -74,12 +70,17 @@ class Processor:
                            no specific config is provided later.
             separator: The column delimiter for CSV files.
             encoding: The character encoding of the source file.
-            header: A list of strings for the header row (for in-memory data).
-            data: A list of lists representing the data rows (for in-memory data).
             dataframe: A Polars DataFrame to initialize the Processor with.
-            preprocess: A function to modify the raw data before mapping begins.
+            preprocess: A function to modify the raw data (Polars DataFrame) before mapping begins.
             **kwargs: Catches other arguments, primarily for XML processing.
         """
+=======
+        dataframe: Optional[pl.DataFrame] = None,
+        preprocess: Callable[[pl.DataFrame], pl.DataFrame] = lambda df: df,
+        **kwargs: Any,
+    ) -> None:
+        """Initializes the Processor."""
+>>>>>>> 84590e6 (fix(transform): Correctly initialize dataframe in Processor)
         self.file_to_write: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self.config_file = config_file
         self.dataframe: pl.DataFrame
