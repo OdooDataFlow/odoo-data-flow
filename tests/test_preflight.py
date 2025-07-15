@@ -3,8 +3,8 @@
 from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 
-import polars as pl
 import pytest
+from polars.exceptions import ColumnNotFoundError
 
 from odoo_data_flow.lib import preflight
 
@@ -84,9 +84,7 @@ class TestLanguageCheck:
         self, mock_polars_read_csv: MagicMock
     ) -> None:
         """Tests that the check is skipped if the 'lang' column is not present."""
-        mock_polars_read_csv.return_value.get_column.side_effect = (
-            pl.ColumnNotFoundError
-        )
+        mock_polars_read_csv.return_value.get_column.side_effect = ColumnNotFoundError
         result = preflight.language_check(
             model="res.partner", filename="file.csv", config="", headless=False
         )

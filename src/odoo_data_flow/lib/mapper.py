@@ -127,7 +127,7 @@ def concat(separator: str, *fields: Any, skip: bool = False) -> MapperFunc:
         skip: If True, raises SkippingError if the final result is empty.
 
     Returns:
-        A mapper function that returns the concatenated string.
+        MapperFunc: A mapper function that returns the concatenated string.
     """
     mappers = _list_to_mappers(fields)
 
@@ -152,6 +152,7 @@ def concat_mapper_all(separator: str, *fields: Any) -> MapperFunc:
         *fields: A variable number of source column names or static strings.
 
     Returns:
+        Returns:
         A mapper function that returns the concatenated string or an empty string.
     """
     mappers = _list_to_mappers(fields)
@@ -174,7 +175,7 @@ def cond(field: str, true_mapper: Any, false_mapper: Any) -> MapperFunc:
         false_mapper: The mapper to apply if the value in `field` is falsy.
 
     Returns:
-        A mapper function that returns the result of the chosen mapper.
+        MapperFunc: A mapper function that returns the result of the chosen mapper.
     """
     true_m = _str_to_mapper(true_mapper)
     false_m = _str_to_mapper(false_mapper)
@@ -210,7 +211,7 @@ def bool_val(
         default: The default boolean value to return if no other condition is met.
 
     Returns:
-        A mapper function that returns "1" or "0".
+        MapperFunc: A mapper function that returns "1" or "0".
     """
     true_vals = true_values or []
     false_vals = false_values or []
@@ -238,7 +239,7 @@ def num(field: str, default: str = "0.0") -> MapperFunc:
         default: The default value to use if the source value is empty.
 
     Returns:
-        A mapper function that returns the standardized numeric string.
+        MapperFunc: A mapper function that returns the standardized numeric string.
     """
 
     def num_fun(line: LineDict, state: StateDict) -> str:
@@ -257,7 +258,7 @@ def field(col: str) -> MapperFunc:
         col: The name of the column to check.
 
     Returns:
-        A mapper function that returns the column name or an empty string.
+        MapperFunc: A mapper function that returns the column name or an empty string.
     """
 
     def field_fun(line: LineDict, state: StateDict) -> str:
@@ -396,7 +397,7 @@ def m2m_map(prefix: str, mapper_func: MapperFunc) -> MapperFunc:
         mapper_func: The inner mapper function to execute first.
 
     Returns:
-        A mapper function that returns a formatted m2m external ID list.
+        MapperFunc: A mapper function that returns a formatted m2m external ID list.
     """
 
     def m2m_map_fun(line: LineDict, state: StateDict) -> str:
@@ -428,7 +429,10 @@ def m2o_att_name(prefix: str, att_list: list[str]) -> MapperFunc:
 
 
 def m2m_id_list(
-    prefix: str, *args: Any, sep: str = ",", const_values: Optional[list[str]] = None
+    prefix: str,
+    *args: Any,
+    sep: str = ",",
+    const_values: Optional[list[str]] = None,
 ) -> ListMapperFunc:
     """Returns a mapper for creating a list of M2M external IDs.
 
@@ -527,7 +531,7 @@ def map_val(
         m2m: If True, splits the key by commas and translates each part.
 
     Returns:
-        A mapper function that returns the translated value.
+        MapperFunc: A mapper function that returns the translated value.
     """
     key_m = _str_to_mapper(key_mapper)
 
@@ -550,7 +554,8 @@ def record(mapping: dict[str, MapperFunc]) -> MapperFunc:
         mapping: A mapping dictionary for the related record.
 
     Returns:
-        A mapper function that returns a dictionary of the processed sub-record.
+        MapperFunc: A mapper function that returns a dictionary of the
+        processed sub-record.
     """
 
     def record_fun(line: LineDict, state: StateDict) -> dict[str, Any]:
@@ -678,7 +683,7 @@ def concat_field_value_m2m(separator: str, *fields: str) -> MapperFunc:
         *fields: The attribute columns to process.
 
     Returns:
-        A mapper function that returns the concatenated string.
+        MapperFunc: A mapper function that returns the concatenated string.
     """
 
     def concat_fun(line: LineDict, state: StateDict) -> str:
@@ -702,7 +707,7 @@ def m2m_attribute_value(prefix: str, *fields: str) -> MapperFunc:
         *fields: The attribute columns to process.
 
     Returns:
-        A mapper that returns a comma-separated string of external IDs.
+        MapperFunc: A mapper that returns a comma-separated string of external IDs.
     """
     return m2m_map(prefix, concat_field_value_m2m("_", *fields))
 
@@ -722,7 +727,7 @@ def m2m_template_attribute_value(prefix: str, *fields: Any) -> MapperFunc:
         *fields: The attribute columns (e.g. 'Color', 'Size') to get values from.
 
     Returns:
-        A mapper that returns a comma-separated string of attribute values.
+        MapperFunc: A mapper that returns a comma-separated string of attribute values.
     """
     concat_m = concat(",", *fields)
 

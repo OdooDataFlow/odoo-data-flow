@@ -16,7 +16,7 @@ print(f"Initializing processor with primary file: {SOURCE_FILE_1}")
 # The 'filename' argument is deprecated, but we keep it for now
 # to match the existing test file structure.
 # A future refactor could update the Processor to use a more explicit name.
-processor = transform.Processor(filename=SOURCE_FILE_1)
+processor = transform.Processor(filename=SOURCE_FILE_1, mapping={})
 
 print(f"Joining with secondary file: {SOURCE_FILE_2}")
 # Join the second file into the processor's data buffer.

@@ -56,7 +56,7 @@ partner_mapping = {
 # --- Processing ---
 print("Initializing processor with 10,000 records.")
 df = pl.DataFrame(data, schema=header, orient="row")
-processor = transform.Processor(dataframe=df)
+processor = transform.Processor(mapping={}, dataframe=df)
 
 # This first split is primarily for test coverage purposes.
 print("Running split by line number (for coverage)...")

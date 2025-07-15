@@ -29,7 +29,7 @@ context = {"create_product_variant": True, "tracking_disable": True}
 # --- Main Logic ---
 # STEP 1: Initialize the custom processor with the source file
 print(f"Initializing processor for product import from: {source_file}")
-processor = ProductProcessorV10(source_file, separator=",")
+processor = ProductProcessorV10(filename=source_file, mapping={}, separator=",")
 
 # STEP 2: Generate data for Parent and Child Categories
 print("Generating data for product categories...")
@@ -132,7 +132,7 @@ line_mapping = {
         ATTRIBUTE_PREFIX, *[mapper.field(f) for f in attribute_list]
     ),
     "value_ids/id": mapper.m2m_template_attribute_value(
-        ATTRIBUTE_VALUE_PREFIX, *attribute_list
+        ATTRIBUTE_VALUE_PREFIX, "Color", "Gender", "Size_H", "Size_W"
     ),
 }
 context_with_update = context.copy()

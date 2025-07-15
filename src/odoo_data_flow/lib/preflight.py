@@ -7,6 +7,7 @@ systemic errors early (e.g., missing languages, incorrect configuration).
 from typing import Any, Callable
 
 import polars as pl
+from polars.exceptions import ColumnNotFoundError
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm
@@ -73,7 +74,7 @@ def language_check(
             .drop_nulls()
             .to_list()
         )
-    except pl.ColumnNotFoundError:
+    except ColumnNotFoundError:
         log.debug("No 'lang' column found in source file. Skipping language check.")
         return True
     except Exception as e:

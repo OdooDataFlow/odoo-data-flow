@@ -59,7 +59,10 @@ partner_mapping = {
 
 # Initialize the processor with the in-memory data
 df = pl.DataFrame(data, schema=header, orient="row")
-processor = transform.Processor(dataframe=df)
+processor = transform.Processor(
+    dataframe=df,
+    mapping={},
+)
 
 # Process the tags first, using the special m2m=True mode.
 # This will find all unique tags from the 'tags' column and create a clean

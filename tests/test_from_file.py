@@ -36,7 +36,11 @@ IMAGE_PATH_PREFIX = "tests/origin/img/"
 
 # STEP 1: Initialize the processor with the source file
 source_file = os.path.join("tests", "origin", "contact.csv")
-processor = Processor(source_file)
+processor = Processor(
+    mapping={},
+    filename=source_file,
+    separator=";",
+)
 
 # Print the 1-to-1 mapping for debugging purposes
 print("--- Auto-detected o2o Mapping ---")

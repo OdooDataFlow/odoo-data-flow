@@ -32,7 +32,7 @@ def test_processor_init_fails_without_args() -> None:
         ValueError,
         match="must be initialized with either a 'filename' or a 'dataframe'",
     ):
-        Processor()
+        Processor(mapping={})
 
 
 def test_read_file_xml_syntax_error(tmp_path: Path) -> None:
@@ -40,7 +40,7 @@ def test_read_file_xml_syntax_error(tmp_path: Path) -> None:
     xml_file = tmp_path / "malformed.xml"
     xml_file.write_text("<root><record>a</record></root")  # Malformed XML
 
-    processor = Processor(filename=str(xml_file), xml_root_tag="./record")
+    processor = Processor(mapping={}, filename=str(xml_file), xml_root_tag="./record")
     # Expect empty dataframe due to the parsing error
     assert processor.dataframe.shape == (0, 0)
 
@@ -52,13 +52,13 @@ def test_read_file_xml_generic_exception(mock_parse: MagicMock, tmp_path: Path) 
     xml_file = tmp_path / "any.xml"
     xml_file.touch()
 
-    processor = Processor(filename=str(xml_file), xml_root_tag="./record")
+    processor = Processor(mapping={}, filename=str(xml_file), xml_root_tag="./record")
     assert processor.dataframe.is_empty()
 
 
 def test_read_file_csv_not_found() -> None:
     """Tests that a non-existent CSV file is handled correctly."""
-    processor = Processor(filename="non_existent_file.csv")
+    processor = Processor(mapping={}, filename="non_existent_file.csv")
     assert processor.dataframe.is_empty()
 
 
@@ -71,14 +71,14 @@ def test_read_file_csv_generic_exception(
     csv_file = tmp_path / "any.csv"
     csv_file.touch()
 
-    processor = Processor(filename=str(csv_file))
+    processor = Processor(mapping={}, filename=str(csv_file))
     assert processor.dataframe.is_empty()
 
 
 @patch("odoo_data_flow.lib.transform.log.warning")
 def test_check_failure(mock_log_warning: MagicMock) -> None:
     """Tests that the check method logs a warning when a check fails."""
-    processor = Processor(dataframe=pl.DataFrame())
+    processor = Processor(mapping={}, dataframe=pl.DataFrame())
 
     def failing_check(df: pl.DataFrame) -> bool:
         return False
@@ -97,7 +97,7 @@ def test_join_file_success(tmp_path: Path) -> None:
     child_file = tmp_path / "child.csv"
     child_file.write_text("child_id,value\n1,child_value")
 
-    processor = Processor(filename=str(master_file), separator=",")
+    processor = Processor(mapping={}, filename=str(master_file), separator=",")
     processor.join_file(
         str(child_file),
         master_key="id",
@@ -116,7 +116,7 @@ def test_join_file_missing_key(tmp_path: Path) -> None:
     child_file = tmp_path / "child.csv"
     child_file.write_text("child_id,value\n1,child_value")
 
-    processor = Processor(filename=str(master_file), separator=",")
+    processor = Processor(mapping={}, filename=str(master_file), separator=",")
     with pytest.raises(ColumnNotFoundError):
         processor.join_file(
             str(child_file),
@@ -132,7 +132,7 @@ def test_join_file_dry_run(mock_console_class: MagicMock, tmp_path: Path) -> Non
     # 1. Setup
     # Initialize a processor with some master data in memory
     master_df = pl.DataFrame({"id": [1], "name": ["master_record"]})
-    processor = Processor(dataframe=master_df)
+    processor = Processor(mapping={}, dataframe=master_df)
     original_df = processor.dataframe.clone()
 
     # Create a child file
@@ -157,7 +157,7 @@ def test_join_file_dry_run(mock_console_class: MagicMock, tmp_path: Path) -> Non
 def test_process_with_legacy_mapper() -> None:
     """Tests that process works with a legacy mapper that only accepts one arg."""
     df = pl.DataFrame({"col1": ["A"]})
-    processor = Processor(dataframe=df)
+    processor = Processor(mapping={}, dataframe=df)
 
     # This lambda only accepts one argument, which would cause a TypeError
     # without the backward-compatibility logic in _process_mapping.
@@ -169,7 +169,7 @@ def test_process_with_legacy_mapper() -> None:
 def test_process_returns_set() -> None:
     """Tests that process correctly returns unique rows when t='set'."""
     df = pl.DataFrame({"col1": ["A", "B", "A"]})
-    processor = Processor(dataframe=df)
+    processor = Processor(mapping={}, dataframe=df)
     result_df = processor.process(
         {"new_col": mapper.val("col1")}, filename_out="", t="set"
     )
@@ -183,7 +183,7 @@ def test_process_returns_set() -> None:
 def test_process_dry_run(mock_console_class: MagicMock) -> None:
     """Tests that dry_run mode prints a table and does not write files."""
     df = pl.DataFrame({"col1": ["A"]})
-    processor = Processor(dataframe=df)
+    processor = Processor(mapping={}, dataframe=df)
     mapping = {"new_col": mapper.val("col1")}
     mock_console_instance = mock_console_class.return_value
     processor.process(mapping, "file.csv", dry_run=True)
@@ -197,7 +197,7 @@ def test_process_dry_run(mock_console_class: MagicMock) -> None:
 def test_write_to_file_append_and_no_fail(mock_write_file: MagicMock) -> None:
     """Tests write_to_file with append=True and fail=False."""
     df = pl.DataFrame({"id": ["1"]})
-    processor = Processor(dataframe=df)
+    processor = Processor(mapping={}, dataframe=df)
     processor.process({"id": mapper.val("id")}, "file1.csv", params={"model": "model1"})
     processor.process({"id": mapper.val("id")}, "file2.csv", params={"model": "model2"})
 
@@ -211,7 +211,7 @@ def test_write_to_file_append_and_no_fail(mock_write_file: MagicMock) -> None:
 def test_v10_process_attribute_value_data() -> None:
     """Tests the attribute value data processing for the V10+ workflow."""
     df = pl.DataFrame({"Color": ["Blue", "Red", "Blue"], "Size": ["L", "L", "M"]})
-    processor = ProductProcessorV10(dataframe=df)
+    processor = ProductProcessorV10(mapping={}, dataframe=df)
 
     processor.process_attribute_value_data(
         attribute_list=["Color", "Size"],

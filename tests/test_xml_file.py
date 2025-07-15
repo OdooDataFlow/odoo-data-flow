@@ -36,6 +36,8 @@ mapping = {
 print(f"Initializing XML processor for source file: {SOURCE_FILE}")
 processor = Processor(
     SOURCE_FILE,
+    mapping={},
+    separator=";",
     xml_root_tag="data",  # The root element containing all records
     xml_record_tag="country",  # The tag representing a single record
 )

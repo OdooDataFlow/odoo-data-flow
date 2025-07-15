@@ -27,7 +27,7 @@ context = {"create_product_variant": True, "tracking_disable": True}
 # --- Main Logic ---
 # STEP 1: Initialize the custom processor with the source file
 print(f"Initializing processor for v9 product import from: {source_file}")
-processor = ProductProcessorV9(source_file, separator=",")
+processor = ProductProcessorV9(source_file, mapping={}, separator=",")
 
 # STEP 2: Generate data for Parent and Child Categories
 print("Generating data for product categories...")
