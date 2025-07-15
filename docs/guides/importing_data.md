@@ -139,6 +139,7 @@ processor = Processor(
 The constructor takes the following arguments:
 
 * **`filename` (str)**: The path to the CSV or XML file you want to transform.
+* **`config_file` (str, optional)**: Path to the Odoo connection configuration file. This is used for operations that need to read metadata from the source database (e.g., when using `--verify-fields`).
 * **`separator` (str, optional)**: The column separator for CSV files. Defaults to `;`.
 * **`preprocess` (function, optional)**: A function to modify the raw data _before_ mapping begins. See the [Data Transformations Guide](./data_transformations.md) for details.
 * **`xml_root_tag` (str, optional)**: Required argument for processing XML files. See the [Advanced usage Guide](./advanced_usage.md) for details.
@@ -199,6 +200,7 @@ The `params` dictionary allows you to control the behavior of the import client 
 
 | `params` Key | `odoo-data-flow import` Option | Description                                                                                                       |
 | ------------ | ------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `config`     | `--config`                     | **For Migrations**. Path to the destination config file. Overrides the `config_file` from the Processor for the final import script. |
 | `model`      | `--model`                      | **Optional**. The technical name of the Odoo model (e.g., `sale.order`). If you omit this, the tool infers it from the filename. |
 | `context`    | `--context`                    | An Odoo context dictionary string. Essential for disabling mail threads, etc. (e.g., `"{'tracking_disable': True}"`) |
 | `worker`     | `--worker`                     | The number of parallel processes to use for the import.                                                           |
@@ -216,7 +218,7 @@ processor.write_to_file("load_my_data.sh")
 
 This method takes a single argument: the path where the `load.sh` script should be saved. It automatically uses the `filename_out` and `params` you provided to the `process()` method to construct the correct commands.
 
-## Full Example
+## Full Example for a Data Migration
 
 Here is a complete `transform.py` script that ties everything together.
 
@@ -224,6 +226,7 @@ Here is a complete `transform.py` script that ties everything together.
 :caption: transform.py
 from odoo_data_flow.lib.transform import Processor
 from odoo_data_flow.lib import mapper
+from files import * # Imports source_config_file and destination_config_file
 
 # 1. Define the mapping rules
 sales_order_mapping = {
@@ -234,15 +237,21 @@ sales_order_mapping = {
 }
 
 # 2. Define the parameters for the load script
+#    Note that we specify the destination config file here.
 import_params = {
     'model': 'sale.order',
+    'config': destination_config_file, # <-- USES DESTINATION CONFIG
     'context': "{'tracking_disable': True, 'mail_notrack': True}",
     'worker': 4,
     'size': 500
 }
 
-# 3. Initialize the processor
-processor = Processor('origin/sales_orders.csv', separator=',')
+# 3. Initialize the processor using the SOURCE config file
+processor = Processor(
+    filename=src_sales_orders.csv,
+    config_file=source_config_file, # <-- USES SOURCE CONFIG
+    separator=','
+)
 
 # 4. Run the transformation
 processor.process(
@@ -251,7 +260,7 @@ processor.process(
     params=import_params
 )
 
-# 5. Generate the final script
+# 5. Generate the final script. This will now use the destination config.
 processor.write_to_file("load_sales_orders.sh")
 
 print("Transformation complete.")
