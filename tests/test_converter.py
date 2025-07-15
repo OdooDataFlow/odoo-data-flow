@@ -9,9 +9,10 @@ import csv
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import polars as pl
 import requests  # type: ignore[import-untyped]
 
-from odoo_data_flow.converter import run_path_to_image, run_url_to_image
+from odoo_data_flow.converter import run_path_to_image, run_url_to_image, to_base64
 
 
 def test_run_path_to_image(tmp_path: Path) -> None:
@@ -140,3 +141,36 @@ def test_run_url_to_image(mock_requests_get: MagicMock, tmp_path: Path) -> None:
 
     assert result_data[1]["name"] == "Product E"
     assert result_data[1]["image_url"] == "", "URL for failed download should be empty"
+
+
+def test_to_base64(tmp_path: Path) -> None:
+    """Tests the to_base64 function."""
+    # Test with an existing file
+    file_path = tmp_path / "test.txt"
+    file_path.write_text("hello")
+    assert to_base64(str(file_path)) == "aGVsbG8="
+
+    # Test with a non-existing file
+    assert to_base64("non_existing_file.txt") == ""
+
+
+@patch("odoo_data_flow.converter.Processor.process")
+def test_run_path_to_image_with_cast(mock_process: MagicMock, tmp_path: Path) -> None:
+    """Tests run_path_to_image with a dataframe that needs casting."""
+    mock_process.return_value = pl.DataFrame({"col1": [1], "col2": ["a"]})
+    file = tmp_path / "in.csv"
+    file.touch()
+    out = tmp_path / "out.csv"
+    run_path_to_image(str(file), "col1", str(out), str(tmp_path))
+    assert out.exists()
+
+
+@patch("odoo_data_flow.converter.Processor.process")
+def test_run_url_to_image_with_cast(mock_process: MagicMock, tmp_path: Path) -> None:
+    """Tests run_url_to_image with a dataframe that needs casting."""
+    mock_process.return_value = pl.DataFrame({"col1": [1], "col2": ["a"]})
+    file = tmp_path / "in.csv"
+    file.touch()
+    out = tmp_path / "out.csv"
+    run_url_to_image(str(file), "col1", str(out))
+    assert out.exists()
