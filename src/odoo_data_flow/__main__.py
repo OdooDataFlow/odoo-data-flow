@@ -198,11 +198,10 @@ def invoice_v9_cmd(**kwargs: Any) -> None:
     help="Odoo model to import into. If not provided, it's inferred from the filename.",
 )
 @click.option(
-    "--verify-fields",
+    "--no-preflight-checks",
     is_flag=True,
     default=False,
-    help="Connect to Odoo and verify that all CSV columns "
-    "exist on the model before importing.",
+    help="Skip all pre-flight checks before starting the import.",
 )
 @click.option(
     "--worker", default=1, type=int, help="Number of simultaneous connections."
@@ -220,6 +219,11 @@ def invoice_v9_cmd(**kwargs: Any) -> None:
     is_flag=True,
     default=False,
     help="Run in fail mode, retrying records from the _fail.csv file.",
+)
+@click.option(
+    "--headless",
+    help="Run in headless mode, auto-confirming any prompts "
+    "(e.g., installing languages).",
 )
 @click.option("-s", "--sep", "separator", default=";", help="CSV separator character.")
 @click.option(

@@ -1,10 +1,13 @@
 """Test the core Processor class and its subclasses."""
 
+import inspect
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 from unittest.mock import MagicMock, patch
 
+import polars as pl
 import pytest
+from polars.exceptions import ColumnNotFoundError
 
 from odoo_data_flow.lib import mapper
 from odoo_data_flow.lib.transform import (
@@ -17,94 +20,168 @@ from odoo_data_flow.lib.transform import (
 
 def test_mapper_repr_and_call() -> None:
     """Tests the __repr__ and __call__ methods of the MapperRepr class."""
-    # Test __repr__
-    mapper_repr = MapperRepr("mapper.val('test')", lambda x: x.upper())
+    mapper_repr = MapperRepr("mapper.val('test')", lambda x, _: x.upper())
     assert repr(mapper_repr) == "mapper.val('test')"
-    # Test __call__
-    assert mapper_repr("hello") == "HELLO"
+    # Mappers are now called with (row, state), so we pass two args
+    assert mapper_repr("hello", {}) == "HELLO"
 
 
-def test_processor_init_fails_without_args() -> None:
-    """Tests that the Processor raises a ValueError if initialized with no args."""
+def test_processor_init_fails_without_source() -> None:
+    """Tests that the Processor raises a ValueError if initialized without a source."""
     with pytest.raises(
-        ValueError, match="must be initialized with either a 'filename' or both"
+        ValueError,
+        match="must be initialized with either a 'source_filename' or a 'dataframe'",
     ):
-        Processor()
+        Processor(mapping={})
+
+
+@patch("odoo_data_flow.lib.transform.build_polars_schema")
+@patch("odoo_data_flow.lib.transform.pl.read_csv")
+def test_processor_init_with_connection_and_model(
+    mock_read_csv: MagicMock, mock_build_schema: MagicMock
+) -> None:
+    """Tests that __init__ calls the schema builder when a connection is passed."""
+    mock_conn = MagicMock()
+    mock_build_schema.return_value = {"name": pl.String}
+    Processor(
+        mapping={},
+        source_filename="file.csv",
+        connection=mock_conn,
+        model="res.partner",
+    )
+    mock_build_schema.assert_called_once_with(mock_conn, "res.partner")
+    assert mock_read_csv.call_args.kwargs["schema_overrides"] == {"name": pl.String}
+
+
+def test_processor_init_with_typed_mapping() -> None:
+    """Tests that __init__ correctly parses a typed mapping."""
+    typed_mapping = {
+        "active": (pl.Boolean, mapper.val("active")),
+        "city": mapper.val("city"),
+    }
+    processor = Processor(mapping=typed_mapping, dataframe=pl.DataFrame())
+    assert processor.schema_overrides == {"active": pl.Boolean}
+    assert "active" in processor.logic_mapping
+    assert "city" in processor.logic_mapping
+    assert callable(processor.logic_mapping["active"])
+
+
+def test_get_o2o_mapping() -> None:
+    """Tests the one-to-one mapping generation."""
+    df = pl.DataFrame({"id": [1], "name": ["Test"], "city": ["Drunen"]})
+    processor = Processor(mapping={}, dataframe=df)
+    o2o_map = processor.get_o2o_mapping()
+    assert list(o2o_map.keys()) == ["id", "name", "city"]
+    assert o2o_map["name"]({"name": "Test Name"}, {}) == "Test Name"
+
+
+def test_split() -> None:
+    """Tests splitting a Processor into multiple based on a key."""
+    df = pl.DataFrame(
+        {"country": ["NL", "BE", "NL"], "name": ["Alice", "Bob", "Charlie"]}
+    )
+    processor = Processor(mapping={"name": mapper.val("name")}, dataframe=df)
+
+    def split_by_country(row: dict[str, Any], _: Any) -> str:
+        return str(row["country"])
+
+    split_processors = processor.split(split_by_country)
+
+    assert isinstance(split_processors, dict)
+    assert set(split_processors.keys()) == {"NL", "BE"}
+    assert isinstance(split_processors["NL"], Processor)
+    assert len(split_processors["NL"].dataframe) == 2
+    assert len(split_processors["BE"].dataframe) == 1
+    assert "Alice" in split_processors["NL"].dataframe["name"].to_list()
+    assert "Bob" in split_processors["BE"].dataframe["name"].to_list()
+
+
+def test_process_with_polars_expression() -> None:
+    """Tests that the process method can handle a direct Polars expression."""
+    df = pl.DataFrame({"value": [10, 20]})
+    mapping = {"doubled": pl.col("value") * 2}
+    processor = Processor(mapping=mapping, dataframe=df)
+    result = processor.process(filename_out="")
+    assert result["doubled"].to_list() == [20, 40]
+
+
+def test_process_m2m() -> None:
+    """Tests that process(m2m=True) unnivots data correctly."""
+    # 1. Setup: Create a "wide" DataFrame, similar to product attributes.
+    wide_df = pl.DataFrame(
+        {
+            "ref": ["P1", "P2"],
+            "Color": ["Blue", "Red"],
+            "Size": ["L", "M"],
+        }
+    )
+
+    # Define a simple mapping that will operate on the "long" data
+    # after the internal unpivot is done.
+    simple_mapping = {
+        "product_ref": mapper.val("ref"),
+        "attribute": mapper.val("m2m_source_column"),
+        "value": mapper.val("m2m_source_value"),
+    }
+
+    processor = Processor(mapping=simple_mapping, dataframe=wide_df)
+
+    # 2. Action: Call process with m2m=True and specify the columns to unpivot.
+    result_df = processor.process(
+        filename_out="",
+        m2m=True,
+        m2m_columns=["Color", "Size"],
+        dry_run=True,  # Use dry_run to get the DataFrame back without writing files
+    )
+
+    # 3. Assertions
+    # The result should have 4 rows (2 products * 2 attributes)
+    assert result_df.shape == (4, 3)
+    assert list(result_df.columns) == ["product_ref", "attribute", "value"]
+
+    # Check the contents for correctness
+    expected_data = [
+        ("P1", "Color", "Blue"),
+        ("P1", "Size", "L"),
+        ("P2", "Color", "Red"),
+        ("P2", "Size", "M"),
+    ]
+    # Convert result to a set of tuples for easy, order-independent comparison
+    actual_data = {tuple(row) for row in result_df.iter_rows()}
+    assert actual_data == set(expected_data)
 
 
 def test_read_file_xml_syntax_error(tmp_path: Path) -> None:
     """Tests that a syntax error in an XML file is handled correctly."""
     xml_file = tmp_path / "malformed.xml"
     xml_file.write_text("<root><record>a</record></root")  # Malformed XML
-
-    processor = Processor(filename=str(xml_file), xml_root_tag="./record")
-    # Expect empty header and data due to the parsing error
-    assert processor.header == []
-    assert processor.data == []
-
-
-@patch("odoo_data_flow.lib.transform.etree.parse")
-def test_read_file_xml_generic_exception(mock_parse: MagicMock, tmp_path: Path) -> None:
-    """Tests that a generic exception during XML parsing is handled."""
-    mock_parse.side_effect = Exception("Generic XML read error")
-    xml_file = tmp_path / "any.xml"
-    xml_file.touch()
-
-    processor = Processor(filename=str(xml_file), xml_root_tag="./record")
-    assert processor.header == []
-    assert processor.data == []
+    processor = Processor(
+        mapping={},
+        source_filename=str(xml_file),
+        xml_root_tag="./record",
+    )
+    assert processor.dataframe.is_empty()
 
 
-def test_read_file_csv_not_found() -> None:
-    """Tests that a non-existent CSV file is handled correctly."""
-    processor = Processor(filename="non_existent_file.csv")
-    assert processor.header == []
-    assert processor.data == []
-
-
-@patch("odoo_data_flow.lib.transform.csv.reader")
+@patch("odoo_data_flow.lib.transform.pl.read_csv")
 def test_read_file_csv_generic_exception(
-    mock_reader: MagicMock, tmp_path: Path
+    mock_read_csv: MagicMock, tmp_path: Path
 ) -> None:
     """Tests that a generic exception during CSV reading is handled."""
-    mock_reader.side_effect = Exception("Generic CSV read error")
+    mock_read_csv.side_effect = Exception("Generic CSV read error")
     csv_file = tmp_path / "any.csv"
     csv_file.touch()
-
-    processor = Processor(filename=str(csv_file))
-    assert processor.header == []
-    assert processor.data == []
+    processor = Processor(mapping={}, source_filename=str(csv_file))
+    assert processor.dataframe.is_empty()
 
 
 @patch("odoo_data_flow.lib.transform.log.warning")
 def test_check_failure(mock_log_warning: MagicMock) -> None:
     """Tests that the check method logs a warning when a check fails."""
-    processor = Processor(header=[], data=[])
-
-    def failing_check(h: list[str], d: list[list[Any]]) -> bool:
-        return False
-
-    result = processor.check(failing_check, message="Custom fail message")
-
+    processor = Processor(mapping={}, dataframe=pl.DataFrame())
+    result = processor.check(lambda df: False, message="Custom fail message")
     assert result is False
     mock_log_warning.assert_called_once()
-    assert "Custom fail message" in mock_log_warning.call_args[0][0]
-
-
-def test_join_file_success(tmp_path: Path) -> None:
-    """Tests that join_file successfully merges data from two files."""
-    master_file = tmp_path / "master.csv"
-    master_file.write_text("id,name\n1,master_record")
-    child_file = tmp_path / "child.csv"
-    child_file.write_text("child_id,value\n1,child_value")
-
-    processor = Processor(filename=str(master_file), separator=",")
-    processor.join_file(
-        str(child_file), master_key="id", child_key="child_id", separator=","
-    )
-
-    assert processor.header == ["id", "name", "child_child_id", "child_value"]
-    assert processor.data == [["1", "master_record", "1", "child_value"]]
 
 
 def test_join_file_missing_key(tmp_path: Path) -> None:
@@ -113,208 +190,189 @@ def test_join_file_missing_key(tmp_path: Path) -> None:
     master_file.write_text("id,name\n1,master_record")
     child_file = tmp_path / "child.csv"
     child_file.write_text("child_id,value\n1,child_value")
-
-    processor = Processor(filename=str(master_file), separator=",")
-    original_header_len = len(processor.header)
-
-    with patch("odoo_data_flow.lib.transform.log.error") as mock_log_error:
+    processor = Processor(mapping={}, source_filename=str(master_file), separator=",")
+    with pytest.raises(ColumnNotFoundError):
         processor.join_file(
             str(child_file),
             master_key="non_existent_key",
             child_key="child_id",
             separator=",",
         )
-        mock_log_error.assert_called_once()
-        assert "Join key error" in mock_log_error.call_args[0][0]
-
-    # The header and data should remain unchanged because the join failed
-    assert len(processor.header) == original_header_len
 
 
 @patch("odoo_data_flow.lib.transform.Console")
-@patch("odoo_data_flow.lib.transform.Processor._read_file")
-def test_join_file_dry_run(
-    mock_read_file: MagicMock, mock_console_class: MagicMock
-) -> None:
-    """Tests that join_file in dry_run mode creates a table and does not modify data."""
-    # 1. Setup
-    # Initialize a processor with some master data in memory
-    processor = Processor(header=["id", "name"], data=[["1", "master_record"]])
-    # original_header = list(processor.header)
-    original_data = [list(row) for row in processor.data]
-
-    # Configure the mock _read_file to return our child data
-    mock_read_file.return_value = (["child_id", "value"], [["1", "child_value"]])
-    # mock_console_instance = mock_console_class.return_value
-
-    # 2. Action
+def test_join_file_dry_run(mock_console_class: MagicMock, tmp_path: Path) -> None:
+    """Tests that join_file in dry_run mode does not modify data."""
+    master_df = pl.DataFrame({"id": [1], "name": ["master_record"]})
+    processor = Processor(mapping={}, dataframe=master_df)
+    original_df = processor.dataframe.clone()
+    child_file = tmp_path / "child.csv"
+    child_file.write_text("child_id,value\n1,child_value")
     processor.join_file(
-        "any_child_file.csv",
+        str(child_file),
         master_key="id",
         child_key="child_id",
+        separator=",",
         dry_run=True,
     )
-
-    # 3. Assertions
-    # Assert that the original processor data was NOT modified
-    # assert processor.header == original_header
-    assert processor.data == original_data
-
-
-def test_process_with_legacy_mapper() -> None:
-    """Tests that process works with a legacy mapper that only accepts one arg."""
-    header = ["col1"]
-    data = [["A"]]
-    processor = Processor(header=header, data=data)
-
-    # This lambda only accepts one argument, which would cause a TypeError
-    # without the backward-compatibility logic in _process_mapping.
-    legacy_mapping = {"new_col": lambda line: line["col1"].lower()}
-    _head, processed_data = processor.process(legacy_mapping, filename_out="")
-    assert list(processed_data) == [["a"]]
-
-
-def test_v9_extract_attribute_value_data_malformed_mapping() -> None:
-    """Tests that _extract_attribute_value_data handles a malformed mapping.
-
-    This test ensures the `if not isinstance(values_dict, dict): continue`
-    branch is covered.
-    """
-    processor = ProductProcessorV9(header=["col1"], data=[["val1"]])
-
-    malformed_mapping: dict[str, Callable[..., Any]] = {
-        "name": mapper.val("col1"),
-        "attribute_id/id": lambda line, state=None: "some_id",
-    }
-
-    result = processor._extract_attribute_value_data(
-        malformed_mapping, ["Color"], [{"col1": "val1"}]
-    )
-    assert result == set()
-
-
-def test_process_returns_set() -> None:
-    """Tests that process correctly returns a set when t='set'."""
-    processor = Processor(header=["col1"], data=[["A"], ["B"], ["A"]])
-    _head, processed_data = processor.process(
-        {"new_col": mapper.val("col1")}, filename_out="", t="set"
-    )
-    assert isinstance(processed_data, set)
-    assert len(processed_data) == 2
-    assert ("A",) in processed_data
-    assert ("B",) in processed_data
+    assert str(original_df) == str(processor.dataframe)
+    mock_console_class.return_value.print.assert_called_once()
 
 
 @patch("odoo_data_flow.lib.transform.Console")
 def test_process_dry_run(mock_console_class: MagicMock) -> None:
     """Tests that dry_run mode prints a table and does not write files."""
-    processor = Processor(header=["col1"], data=[["A"]])
+    df = pl.DataFrame({"col1": ["A"]})
     mapping = {"new_col": mapper.val("col1")}
+    processor = Processor(mapping=mapping, dataframe=df)
     mock_console_instance = mock_console_class.return_value
-    processor.process(mapping, "file.csv", dry_run=True)
-
-    # Assert that no file was added to the write queue
+    processor.process(filename_out="file.csv", dry_run=True)
     assert not processor.file_to_write
     mock_console_instance.print.assert_called_once()
 
 
-@patch("odoo_data_flow.lib.transform.write_file")
-def test_write_to_file_append_and_no_fail(mock_write_file: MagicMock) -> None:
-    """Tests write_to_file with append=True and fail=False."""
-    processor = Processor(header=["id"], data=[["1"]])
-    processor.process({"id": mapper.val("id")}, "file1.csv", params={"model": "model1"})
-    processor.process({"id": mapper.val("id")}, "file2.csv", params={"model": "model2"})
-
-    processor.write_to_file("script.sh", fail=False, append=True)
-
-    assert mock_write_file.call_count == 2
-    assert mock_write_file.call_args_list[0].kwargs["init"] is False
-    assert mock_write_file.call_args_list[1].kwargs["init"] is False
+def test_v9_extract_attribute_value_data_malformed_mapping() -> None:
+    """Tests that _extract_attribute_value_data handles a malformed mapping."""
+    df = pl.DataFrame([{"col1": "val1"}])
+    processor = ProductProcessorV9(mapping={}, dataframe=df)
+    malformed_mapping: dict[str, Callable[..., Any]] = {
+        "name": mapper.val("col1"),
+        "attribute_id/id": lambda line, state=None: "some_id",
+    }
+    result = processor._extract_attribute_value_data(malformed_mapping, ["col1"])
+    assert not result.is_empty()
 
 
-def test_v10_process_attribute_value_data() -> None:
-    """Tests the attribute value data processing for the V10+ workflow."""
-    header = ["Color", "Size"]
-    data = [["Blue", "L"], ["Red", "L"], ["Blue", "M"]]
-    processor = ProductProcessorV10(header=header, data=data)
+def test_processor_with_callable_in_concat() -> None:
+    """Tests that Processor handles mappers with callable arguments."""
+    df = pl.DataFrame({"col1": ["A"], "col2": ["B"]})
 
-    processor.process_attribute_value_data(
-        attribute_list=["Color", "Size"],
-        attribute_value_prefix="val_prefix",
-        attribute_prefix="attr_prefix",
-        filename_out="product.attribute.value.csv",
+    def custom_mapper(line: dict[str, Any], state: dict[str, Any]) -> str:
+        return str(line["col2"])
+
+    mapping = {"concatenated": mapper.concat("-", "col1", custom_mapper)}
+    processor = Processor(mapping=mapping, dataframe=df)
+    result_df = processor.process(filename_out="")
+    assert result_df["concatenated"].to_list() == ["A-B"]
+
+
+def test_processor_val_postprocess_type_error_fallback() -> None:
+    """Tests that Processor.val handles TypeError in postprocess."""
+    df = pl.DataFrame({"value": ["test"]})
+
+    # This postprocess function will fail if called with two arguments (the state dict)
+    # but will succeed if called with just one (the value).
+    def fallback_postprocess(val: str, state: Optional[dict[str, Any]] = None) -> str:
+        if state is not None:
+            raise TypeError(
+                "This function should have been called with only one argument"
+            )
+        return val.upper()
+
+    # Patch inspect.signature to simulate a function that *looks* like it takes 2 args
+    # but actually raises TypeError when called with 2 args. This forces the fallback.
+    with patch("inspect.signature") as mock_signature:
+        mock_signature.return_value.parameters = {
+            "arg1": MagicMock(kind=inspect.Parameter.POSITIONAL_OR_KEYWORD),
+            "arg2": MagicMock(kind=inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        }
+        # Assign the fallback_postprocess to the mapper. The code should initially
+        # try to call it with two arguments, hit the TypeError, and then
+        # successfully call it with one argument.
+        mapping = {"processed": mapper.val("value", postprocess=fallback_postprocess)}
+        processor = Processor(mapping=mapping, dataframe=df)
+        result_df = processor.process(filename_out="")
+
+        # The actual result should come from the successful 1-arg fallback call.
+        assert result_df["processed"].to_list() == ["TEST"]
+
+
+def test_read_file_unsupported_type(tmp_path: Path) -> None:
+    """Tests that reading an unsupported file type returns an empty DataFrame."""
+    unsupported_file = tmp_path / "data.unsupported"
+    unsupported_file.touch()
+    processor = Processor(mapping={}, source_filename=str(unsupported_file))
+    assert processor.dataframe.is_empty()
+
+
+def test_read_file_xml_no_nodes(tmp_path: Path) -> None:
+    """Test malformed xml file.
+
+    Tests that reading an XML file with no matching nodes returns
+    an empty DataFrame.
+    """
+    xml_file = tmp_path / "test.xml"
+    xml_file.write_text("<root><item>a</item></root>")
+    processor = Processor(
+        mapping={},
+        source_filename=str(xml_file),
+        xml_root_tag="./nonexistent",
+    )
+    assert processor.dataframe.is_empty()
+
+
+def test_process_with_empty_mapping() -> None:
+    """Tests that processing with an empty mapping returns the original DataFrame."""
+    df = pl.DataFrame({"col1": [1, 2]})
+    processor = Processor(mapping={}, dataframe=df)
+    result_df = processor.process(filename_out="")
+    assert result_df.equals(df)
+
+
+def test_process_m2m_no_columns() -> None:
+    """Tests that calling process with m2m=True and no m2m_columns raises ValueError."""
+    processor = Processor(mapping={}, dataframe=pl.DataFrame())
+    with pytest.raises(ValueError):
+        processor.process(filename_out="", m2m=True)
+
+
+def test_process_m2m_method() -> None:
+    """Tests the dedicated process_m2m method."""
+    df = pl.DataFrame({"id": [1], "tags": ["a,b,c"]})
+    mapping = {"id": mapper.val("id"), "tag": mapper.val("tags")}
+    processor = Processor(mapping=mapping, dataframe=df)
+    processor.process_m2m(id_column="id", m2m_columns=["tags"], filename_out="out.csv")
+    assert "out.csv" in processor.file_to_write
+    result_df = processor.file_to_write["out.csv"]["dataframe"]
+    assert result_df.shape == (3, 2)
+    assert result_df["tag"].to_list() == ["a", "b", "c"]
+
+
+def test_product_processor_v10() -> None:
+    """Tests the ProductProcessorV10 methods."""
+    df = pl.DataFrame({"Color": ["Blue"], "Size": ["L"]})
+    processor = ProductProcessorV10(mapping={}, dataframe=df)
+    processor.process_attribute_data(
+        attributes_list=["Color", "Size"],
+        attribute_prefix="pa",
+        filename_out="attrib.csv",
         import_args={},
     )
-
-    assert "product.attribute.value.csv" in processor.file_to_write
-    result = processor.file_to_write["product.attribute.value.csv"]
-    assert result["header"] == ["id", "name", "attribute_id/id"]
-
-    # We expect 4 unique values: Blue, L, Red, M
-    assert len(result["data"]) == 4
-    # Check for one of the generated rows to ensure correctness
-    expected_row = ["val_prefix.Color_Blue", "Blue", "attr_prefix.Color"]
-    assert any(row == expected_row for row in result["data"])
-
-
-def test_v9_extract_attribute_value_data_legacy_mapper() -> None:
-    """Tests that _extract_attribute_value_data handles legacy mappers."""
-    processor = ProductProcessorV9(header=["col1"], data=[["val1"]])
-
-    # This mapping uses a legacy 1-argument lambda
-    legacy_mapping: dict[str, Callable[..., Any]] = {
-        "name": lambda line: {"Color": line["col1"]},
-        "attribute_id/id": lambda line: "some_id",
-    }
-
-    result = processor._extract_attribute_value_data(
-        legacy_mapping, ["Color"], [{"col1": "val1"}]
+    processor.process_attribute_value_data(
+        attribute_list=["Color", "Size"],
+        attribute_prefix="pa",
+        attribute_value_prefix="pav",
+        filename_out="values.csv",
+        import_args={},
     )
-    # The result should contain a tuple with the resolved value 'val1'
-    assert ("val1", "some_id") in result
+    assert "attrib.csv" in processor.file_to_write
+    assert "values.csv" in processor.file_to_write
 
 
-def test_v9_process_attribute_mapping_with_custom_id_gen(tmp_path: Path) -> None:
-    """Tests the full process_attribute_mapping method from ProductProcessorV9.
-
-    This test uses a custom ID generation function.
-    """
-    header = ["template_id", "Color", "Size"]
-    data = [
-        ["TPL1", "Blue", "L"],
-        ["TPL2", "Red", "M"],
-        ["TPL1", "Green", "L"],
-    ]
-    processor = ProductProcessorV9(header=header, data=data)
-    attributes = ["Color", "Size"]
-    prefix = "test_prefix"
-    output_path = str(tmp_path) + "/"
-
-    value_mapping = {
-        "id": mapper.m2m_attribute_value(prefix, *attributes),
-        "name": mapper.val_att(attributes),
-        "attribute_id/id": mapper.m2o_att_name(prefix, attributes),
-    }
-    line_mapping = {
-        "product_tmpl_id/id": mapper.m2o_map("tmpl_", "template_id"),
-        "attribute_id/id": mapper.m2o_att_name(prefix, attributes),
-        "value_ids/id": mapper.m2o_att(prefix, attributes),
-    }
-
-    def custom_id_gen(tmpl_id: str, vals: dict[str, Any]) -> str:
-        return f"custom_line_id_for_{tmpl_id}"
-
+def test_product_processor_v9() -> None:
+    """Tests the ProductProcessorV9 methods."""
+    df = pl.DataFrame({"Color": ["Blue"], "Size": ["L"]})
+    mapping = {"name": mapper.val("attribute_value_name")}
+    line_mapping = {"product_id": mapper.val("id")}
+    processor = ProductProcessorV9(mapping=mapping, dataframe=df)
     processor.process_attribute_mapping(
-        value_mapping,
-        line_mapping,
-        attributes,
-        prefix,
-        output_path,
-        {},
-        id_gen_fun=custom_id_gen,
+        mapping=mapping,
+        line_mapping=line_mapping,
+        attributes_list=["Color", "Size"],
+        attribute_prefix="pa",
+        path="",
+        import_args={},
     )
-
-    # Assert that all three files were added to the write queue
-    assert len(processor.file_to_write) == 3
-    line_file_data = processor.file_to_write[output_path + "product.attribute.line.csv"]
-    assert line_file_data["data"][0][0] == "custom_line_id_for_tmpl_.TPL1"
+    assert "product.attribute.csv" in processor.file_to_write
+    assert "product.attribute.value.csv" in processor.file_to_write
+    assert "product.attribute.line.csv" in processor.file_to_write

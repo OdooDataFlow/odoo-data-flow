@@ -8,7 +8,6 @@ Processor for each row of the source data.
 """
 
 import base64
-import inspect
 import os
 from typing import Any, Callable, Optional, cast
 
@@ -104,16 +103,11 @@ def val(
 
         final_value = value or default
         try:
-            sig = inspect.signature(postprocess)
-            if len(sig.parameters) == 1:
-                return postprocess(final_value)
-            else:
-                return postprocess(final_value, state)
-        except (ValueError, TypeError):
-            try:
-                return postprocess(final_value, state)
-            except TypeError:
-                return postprocess(final_value)
+            # Try calling postprocess with 2 arguments first
+            return postprocess(final_value, state)
+        except TypeError:
+            # If it fails, fall back to calling with 1 argument
+            return postprocess(final_value)
 
     return val_fun
 
@@ -127,7 +121,7 @@ def concat(separator: str, *fields: Any, skip: bool = False) -> MapperFunc:
         skip: If True, raises SkippingError if the final result is empty.
 
     Returns:
-        A mapper function that returns the concatenated string.
+        MapperFunc: A mapper function that returns the concatenated string.
     """
     mappers = _list_to_mappers(fields)
 
@@ -152,6 +146,7 @@ def concat_mapper_all(separator: str, *fields: Any) -> MapperFunc:
         *fields: A variable number of source column names or static strings.
 
     Returns:
+        Returns:
         A mapper function that returns the concatenated string or an empty string.
     """
     mappers = _list_to_mappers(fields)
@@ -174,7 +169,7 @@ def cond(field: str, true_mapper: Any, false_mapper: Any) -> MapperFunc:
         false_mapper: The mapper to apply if the value in `field` is falsy.
 
     Returns:
-        A mapper function that returns the result of the chosen mapper.
+        MapperFunc: A mapper function that returns the result of the chosen mapper.
     """
     true_m = _str_to_mapper(true_mapper)
     false_m = _str_to_mapper(false_mapper)
@@ -210,7 +205,7 @@ def bool_val(
         default: The default boolean value to return if no other condition is met.
 
     Returns:
-        A mapper function that returns "1" or "0".
+        MapperFunc: A mapper function that returns "1" or "0".
     """
     true_vals = true_values or []
     false_vals = false_values or []
@@ -238,7 +233,7 @@ def num(field: str, default: str = "0.0") -> MapperFunc:
         default: The default value to use if the source value is empty.
 
     Returns:
-        A mapper function that returns the standardized numeric string.
+        MapperFunc: A mapper function that returns the standardized numeric string.
     """
 
     def num_fun(line: LineDict, state: StateDict) -> str:
@@ -257,7 +252,7 @@ def field(col: str) -> MapperFunc:
         col: The name of the column to check.
 
     Returns:
-        A mapper function that returns the column name or an empty string.
+        MapperFunc: A mapper function that returns the column name or an empty string.
     """
 
     def field_fun(line: LineDict, state: StateDict) -> str:
@@ -396,7 +391,7 @@ def m2m_map(prefix: str, mapper_func: MapperFunc) -> MapperFunc:
         mapper_func: The inner mapper function to execute first.
 
     Returns:
-        A mapper function that returns a formatted m2m external ID list.
+        MapperFunc: A mapper function that returns a formatted m2m external ID list.
     """
 
     def m2m_map_fun(line: LineDict, state: StateDict) -> str:
@@ -428,7 +423,10 @@ def m2o_att_name(prefix: str, att_list: list[str]) -> MapperFunc:
 
 
 def m2m_id_list(
-    prefix: str, *args: Any, sep: str = ",", const_values: Optional[list[str]] = None
+    prefix: str,
+    *args: Any,
+    sep: str = ",",
+    const_values: Optional[list[str]] = None,
 ) -> ListMapperFunc:
     """Returns a mapper for creating a list of M2M external IDs.
 
@@ -527,7 +525,7 @@ def map_val(
         m2m: If True, splits the key by commas and translates each part.
 
     Returns:
-        A mapper function that returns the translated value.
+        MapperFunc: A mapper function that returns the translated value.
     """
     key_m = _str_to_mapper(key_mapper)
 
@@ -550,7 +548,8 @@ def record(mapping: dict[str, MapperFunc]) -> MapperFunc:
         mapping: A mapping dictionary for the related record.
 
     Returns:
-        A mapper function that returns a dictionary of the processed sub-record.
+        MapperFunc: A mapper function that returns a dictionary of the
+        processed sub-record.
     """
 
     def record_fun(line: LineDict, state: StateDict) -> dict[str, Any]:
@@ -678,7 +677,7 @@ def concat_field_value_m2m(separator: str, *fields: str) -> MapperFunc:
         *fields: The attribute columns to process.
 
     Returns:
-        A mapper function that returns the concatenated string.
+        MapperFunc: A mapper function that returns the concatenated string.
     """
 
     def concat_fun(line: LineDict, state: StateDict) -> str:
@@ -702,7 +701,7 @@ def m2m_attribute_value(prefix: str, *fields: str) -> MapperFunc:
         *fields: The attribute columns to process.
 
     Returns:
-        A mapper that returns a comma-separated string of external IDs.
+        MapperFunc: A mapper that returns a comma-separated string of external IDs.
     """
     return m2m_map(prefix, concat_field_value_m2m("_", *fields))
 
@@ -722,7 +721,7 @@ def m2m_template_attribute_value(prefix: str, *fields: Any) -> MapperFunc:
         *fields: The attribute columns (e.g. 'Color', 'Size') to get values from.
 
     Returns:
-        A mapper that returns a comma-separated string of attribute values.
+        MapperFunc: A mapper that returns a comma-separated string of attribute values.
     """
     concat_m = concat(",", *fields)
 
@@ -765,3 +764,57 @@ def split_file_number(file_nb: int) -> Callable[[LineDict, int], int]:
         return i % file_nb
 
     return split
+
+
+def path_to_image(
+    field: str, path: str
+) -> Callable[[dict[str, Any], dict[str, Any]], Optional[str]]:
+    """Returns a mapper that converts a local file path to a base64 string.
+
+    Args:
+        field: The column name containing the relative path to the image.
+        path: The base directory where the image files are located.
+    """
+
+    def _mapper(row: dict[str, Any], state: dict[str, Any]) -> Optional[str]:
+        relative_path = row.get(field)
+        if not relative_path:
+            return None
+
+        full_path = os.path.join(path, relative_path)
+        if not os.path.exists(full_path):
+            log.warning(f"Image file not found at: {full_path}")
+            return None
+
+        try:
+            with open(full_path, "rb") as image_file:
+                content = image_file.read()
+            return base64.b64encode(content).decode("utf-8")
+        except OSError as e:
+            log.error(f"Could not read file {full_path}: {e}")
+            return None
+
+    return _mapper
+
+
+def url_to_image(
+    field: str,
+) -> Callable[[dict[str, Any], dict[str, Any]], Optional[str]]:
+    """Returns a mapper that downloads an image from a URL to a base64 string."""
+
+    def _mapper(row: dict[str, Any], state: dict[str, Any]) -> Optional[str]:
+        url = row.get(field)
+        if not url:
+            return None
+
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            # Raises an exception for bad status codes (4xx or 5xx)
+            content = response.content
+            return base64.b64encode(content).decode("utf-8")
+        except requests.exceptions.RequestException as e:
+            log.warning(f"Failed to download image from {url}: {e}")
+            return None
+
+    return _mapper

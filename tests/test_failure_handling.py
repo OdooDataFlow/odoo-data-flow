@@ -8,7 +8,8 @@ from unittest.mock import MagicMock, patch
 from odoo_data_flow.importer import run_import
 
 
-def test_two_step_failure_handling(tmp_path: Path) -> None:
+@patch("odoo_data_flow.importer._run_preflight_checks", return_value=True)
+def test_two_step_failure_handling(mock_run_checks: MagicMock, tmp_path: Path) -> None:
     """Tests the complete two-tier failure handling process.
 
     This test verifies that:
@@ -107,9 +108,7 @@ def test_two_step_failure_handling(tmp_path: Path) -> None:
     ):
         run_import(
             config="dummy_config.conf",
-            filename=str(
-                source_file
-            ),  # The original filename is still used to derive paths
+            filename=str(source_file),
             model=model_name,
             fail=True,
             separator=",",
