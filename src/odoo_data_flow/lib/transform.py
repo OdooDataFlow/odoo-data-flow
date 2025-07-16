@@ -88,13 +88,14 @@ class Processor:
             encoding: The character encoding of the source file.
             model: The Odoo model name (e.g., 'product.template').
             dataframe: A Polars DataFrame to initialize the Processor with.
-            preprocess: A function to modify the raw data (Polars DataFrame) before mapping begins.
+            preprocess: A function to modify the raw data (Polars DataFrame)
+                before mapping begins.
             schema_overrides: A dictionary to override Polars' inferred data types.
             connection: An optional Odoo connection object.
-            mapping: A dictionary defining the transformation rules, potentially including schema overrides.
+            mapping: A dictionary defining the transformation rules, potentially
+                including schema overrides.
             **kwargs: Catches other arguments, primarily for XML processing.
         """
->>>>>>> 84590e6 (fix(transform): Correctly initialize dataframe in Processor)
         self.file_to_write: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self.config_file = config_file
         self.dataframe: pl.DataFrame
