@@ -101,7 +101,11 @@ class RPCThreadExport(RpcThread):
                 return [dict(zip(self.header, row)) for row in exported_data]
 
         except Exception as e:
-            error_data = e.args[0].get("data", {}) if e.args else {}
+            error_data = (
+                e.args[0].get("data", {})
+                if e.args and isinstance(e.args[0], dict)
+                else {}
+            )
             is_memory_error = error_data.get("name") == "builtins.MemoryError"
 
             if is_memory_error and len(ids_to_export) > 1:
