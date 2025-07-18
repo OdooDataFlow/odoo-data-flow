@@ -1,13 +1,44 @@
+# virtualenv
+.venv/
+
+# mypy
+.mypy_cache/
+
+# pytest
+.pytest_cache/
+.coverage
+
+# ruff
+.ruff_cache/
+
+# nox
+.nox/
+
+# build
+build/
+dist/
+*.egg-info/
+
+# misc
 *.pyc
-.project
-.pydevproject
-.cache
-node_modules
-*.egg-info
-.ruff_cache
-.nox
-.venv
-__pycache__
-_build
-docs/_build
-coverage.xml
+*.log
+*.bak
+*.swp
+*~
+
+# IDEs
+.idea/
+.vscode/
+
+# Odoo Data Flow specific
+*_fail.csv
+*_failed.csv
+
+# uv lock file
+uv.lock
+
+# pydoclint baseline
+pydoclint-baseline.txt
+
+# docs build output
+docs/_build/
