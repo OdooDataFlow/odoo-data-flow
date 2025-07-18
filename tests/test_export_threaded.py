@@ -11,6 +11,7 @@ from polars.testing import assert_frame_equal
 from odoo_data_flow.export_threaded import (
     RPCThreadExport,
     _clean_batch,
+    _initialize_export,
     _process_export_batches,
     export_data,
 )
@@ -56,6 +57,22 @@ class TestRPCThreadExport:
         mock_model.read.assert_not_called()
         assert result == [{"name": "Test"}]
 
+    def test_rpc_thread_export_memory_error(self) -> None:
+        """Test for memory errors.
+
+        Test that the RPCThreadExport class handles MemoryError and subsequent failures.
+        """
+        mock_model = MagicMock()
+        mock_model.read.side_effect = [
+            Exception({"data": {"name": "builtins.MemoryError"}}),
+            [{"id": 1}],
+            Exception("A permanent error"),
+        ]
+        thread = RPCThreadExport(1, mock_model, ["id"], technical_names=True)
+        result = thread._execute_batch([1, 2], 1)
+        assert result == [{"id": 1}]
+        assert mock_model.read.call_count == 3
+
 
 class TestCleanBatch:
     """Tests for the _clean_batch helper function."""
@@ -86,6 +103,13 @@ class TestCleanBatch:
     def test_clean_batch_empty_input(self) -> None:
         """Tests that an empty list is handled correctly."""
         assert _clean_batch([], {}).is_empty()
+
+    def test_clean_batch_with_boolean(self) -> None:
+        """Test that _clean_batch handles boolean values correctly."""
+        data = [{"id": 1, "active": True}, {"id": 2, "active": False}]
+        field_types = {"id": "integer", "active": "boolean"}
+        df = _clean_batch(data, field_types)
+        assert df.to_dicts() == data
 
 
 class TestExportData:
@@ -216,20 +240,20 @@ class TestExportData:
         expected_df = pl.DataFrame({"id": [1, 2], "name": ["Test 1", "Test 2"]})
         assert_frame_equal(on_disk_df.sort("id"), expected_df.sort("id"))
 
-        def test_export_handles_connection_failure(self) -> None:  # type: ignore[no-untyped-def]
-            """Tests that None is returned if the initial connection fails."""
-            with patch(
-                "odoo_data_flow.export_threaded.conf_lib.get_connection_from_config",
-                side_effect=Exception("Connection Error"),
-            ):
-                result = export_data(
-                    config_file="bad.conf",
-                    model="res.partner",
-                    domain=[],
-                    header=["id"],
-                    output="fail.csv",
-                )
-            assert result is None
+    def test_export_handles_connection_failure(self) -> None:
+        """Tests that None is returned if the initial connection fails."""
+        with patch(
+            "odoo_data_flow.export_threaded.conf_lib.get_connection_from_config",
+            side_effect=Exception("Connection Error"),
+        ):
+            result = export_data(
+                config_file="bad.conf",
+                model="res.partner",
+                domain=[],
+                header=["id"],
+                output="fail.csv",
+            )
+        assert result is None
 
     def test_export_handles_no_records_found(
         self, mock_conf_lib: MagicMock, tmp_path: Path
@@ -375,6 +399,79 @@ class TestExportData:
         assert output_file.exists()
         on_disk_df = pl.read_csv(output_file, separator=";")
         assert len(on_disk_df) == 1
+
+    def test_initialize_export_connection_error(self) -> None:
+        """Test that _initialize_export handles connection errors."""
+        with patch(
+            "odoo_data_flow.export_threaded.conf_lib.get_connection_from_config",
+            side_effect=Exception("Conn error"),
+        ):
+            model, field_types = _initialize_export("dummy.conf", "res.partner", ["id"])
+            assert model is None
+            assert field_types is None
+
+    @patch("concurrent.futures.as_completed")
+    def test_process_export_batches_task_failure(
+        self, mock_as_completed: MagicMock
+    ) -> None:
+        """Test that _process_export_batches handles a failing future."""
+        mock_future = MagicMock()
+        mock_future.result.side_effect = Exception("Task failed")
+        mock_as_completed.return_value = [mock_future]
+        mock_rpc_thread = MagicMock()
+        mock_rpc_thread.futures = [mock_future]
+
+        result = _process_export_batches(
+            mock_rpc_thread, 1, "res.partner", None, {}, ";", False
+        )
+        if result is not None:
+            assert result.is_empty()
+
+    @patch("concurrent.futures.as_completed")
+    def test_process_export_batches_empty_result(
+        self, mock_as_completed: MagicMock
+    ) -> None:
+        """Test that _process_export_batches handles an empty result from a future."""
+        mock_future = MagicMock()
+        mock_future.result.return_value = []
+        mock_as_completed.return_value = [mock_future]
+        mock_rpc_thread = MagicMock()
+        mock_rpc_thread.futures = [mock_future]
+
+        result = _process_export_batches(
+            mock_rpc_thread, 1, "res.partner", None, {}, ";", False
+        )
+        if result is not None:
+            assert result.is_empty()
+
+    def test_process_export_batches_no_dfs_with_output(self) -> None:
+        """Test _process_export_batches with no dataframes and an output file."""
+        mock_rpc_thread = MagicMock()
+        mock_rpc_thread.futures = []
+        with patch("polars.DataFrame.write_csv") as mock_write_csv:
+            result = _process_export_batches(
+                mock_rpc_thread,
+                0,
+                "res.partner",
+                "out.csv",
+                {"id": "integer"},
+                ";",
+                False,
+            )
+            if result is not None:
+                assert result.is_empty()
+            mock_write_csv.assert_called_once_with("out.csv", separator=";")
+
+    def test_export_data_streaming_no_output(self) -> None:
+        """Test that export_data handles streaming with no output."""
+        with patch(
+            "odoo_data_flow.export_threaded._initialize_export",
+            return_value=(MagicMock(), {"id": "integer"}),
+        ):
+            result = export_data(
+                "dummy.conf", "res.partner", [], ["id"], None, streaming=True
+            )
+            assert result is None
 
 
 @patch("odoo_data_flow.export_threaded.concurrent.futures.as_completed")

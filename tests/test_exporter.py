@@ -5,7 +5,12 @@ from unittest.mock import MagicMock, patch
 import polars as pl
 from polars.testing import assert_frame_equal
 
-from odoo_data_flow.exporter import run_export, run_export_for_migration
+from odoo_data_flow.exporter import (
+    _show_error_panel,
+    _show_success_panel,
+    run_export,
+    run_export_for_migration,
+)
 
 
 @patch("odoo_data_flow.exporter.export_threaded.export_data")
@@ -130,6 +135,15 @@ def test_run_export_for_migration_no_data(mock_export_data: MagicMock) -> None:
     assert data == []
 
 
+@patch("odoo_data_flow.exporter.Console")
+def test_show_error_panel(mock_console: MagicMock) -> None:
+    """Test that the error panel is shown correctly."""
+    mock_print = MagicMock()
+    mock_console.return_value = MagicMock(print=mock_print)
+    _show_error_panel("Test Title", "Test Message")
+    mock_print.assert_called_once()
+
+
 def test_export_pre_casting_handles_string_booleans() -> None:
     """Test Export casting.
 
@@ -183,3 +197,89 @@ def test_export_pre_casting_handles_string_booleans() -> None:
     )
 
     assert_frame_equal(casted_df, expected)
+
+
+@patch("odoo_data_flow.exporter.Console")
+def test_show_success_panel(mock_console: MagicMock) -> None:
+    """Test that the success panel is shown correctly."""
+    mock_print = MagicMock()
+    mock_console.return_value = MagicMock(print=mock_print)
+    _show_success_panel("Test Message")
+    mock_print.assert_called_once()
+
+
+@patch("odoo_data_flow.exporter.export_threaded.export_data")
+@patch("odoo_data_flow.exporter._show_error_panel")
+def test_run_export_failure(
+    mock_show_error_panel: MagicMock, mock_export_data: MagicMock
+) -> None:
+    """Tests the main `run_export` function in a failure scenario."""
+    mock_export_data.return_value = None
+    run_export(
+        config="dummy.conf",
+        model="res.partner",
+        fields="id,name",
+        output="partners.csv",
+    )
+    mock_show_error_panel.assert_called_once()
+    assert "Export Failed" in mock_show_error_panel.call_args.args[0]
+
+
+@patch("odoo_data_flow.exporter.export_threaded.export_data")
+def test_run_export_for_migration_bad_context(
+    mock_export_data: MagicMock,
+) -> None:
+    """Tests `run_export_for_migration` with a bad context."""
+    mock_export_data.return_value = pl.DataFrame()
+    run_export_for_migration(
+        config="dummy.conf",
+        model="res.partner",
+        fields=["id"],
+        context="bad-context",
+    )
+    assert mock_export_data.call_args.kwargs["context"] == {}
+
+
+@patch("odoo_data_flow.exporter.export_threaded.export_data")
+def test_run_export_for_migration_none_df(mock_export_data: MagicMock) -> None:
+    """Tests `run_export_for_migration` when the dataframe is None."""
+    mock_export_data.return_value = None
+    header, data = run_export_for_migration(
+        config="dummy.conf",
+        model="res.partner",
+        fields=["id"],
+    )
+    assert header == ["id"]
+    assert data is None
+
+
+@patch("odoo_data_flow.exporter.export_threaded.export_data")
+@patch("odoo_data_flow.exporter._show_success_panel")
+def test_run_export_success_with_dataframe(
+    mock_show_success_panel: MagicMock, mock_export_data: MagicMock
+) -> None:
+    """Tests the main `run_export` function in a success scenario with a dataframe."""
+    mock_export_data.return_value = pl.DataFrame({"id": [1, 2]})
+    run_export(
+        config="dummy.conf",
+        model="res.partner",
+        fields="id,name",
+        output="partners.csv",
+    )
+    mock_show_success_panel.assert_called_once()
+
+
+@patch("odoo_data_flow.exporter.export_threaded.export_data")
+@patch("odoo_data_flow.exporter._show_success_panel")
+def test_run_export_with_empty_dataframe(
+    mock_show_success_panel: MagicMock, mock_export_data: MagicMock
+) -> None:
+    """Tests the main `run_export` function with an empty dataframe."""
+    mock_export_data.return_value = pl.DataFrame()
+    run_export(
+        config="dummy.conf",
+        model="res.partner",
+        fields="id,name",
+        output="partners.csv",
+    )
+    mock_show_success_panel.assert_called_once()
