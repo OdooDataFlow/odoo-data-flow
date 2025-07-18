@@ -10,6 +10,29 @@ The primary way to import data is through the `import` command. If your configur
 odoo-data-flow import --file path/to/res_partner.csv
 ```
 
+## Pre-flight Checks
+
+To save time and prevent common errors, `odoo-data-flow` automatically runs a series of pre-flight checks before starting the import process. These checks validate your environment and data to catch systemic issues that would otherwise cause the entire import to fail record by record.
+
+Currently, the following checks are performed by default:
+
+* **Field Existence Check**: Verifies that every column in your CSV header corresponds to an actual field on the target Odoo model. This immediately catches typos or field name changes between Odoo versions.
+* **Language Check**: For imports into `res.partner` or `res.users`, this check scans the `lang` column in your CSV. It then verifies that all required languages are installed and active on the target Odoo database.
+
+### Managing Pre-flight Checks
+
+* **Disabling Checks**: If you need to bypass these validations for any reason, you can use the `--no-preflight-checks` flag.
+
+    ```bash
+    odoo-data-flow import --file ... --no-preflight-checks
+    ```
+
+* **Headless Mode**: The language check may prompt you to install missing languages. To run the import in a non-interactive environment (like a CI/CD pipeline), use the `--headless` flag. This will automatically approve the installation of any missing languages.
+
+    ```bash
+    odoo-data-flow import --file ... --headless
+    ```
+
 ### Key Options for `import`
 
 * `--config`: **(Optional)** Path to your connection configuration file. **Defaults to `conf/connection.conf`**.
@@ -60,7 +83,7 @@ For a successful import into Odoo, the clean CSV file you generate (the `filenam
 * **One Model per File**: Each CSV file should only contain data for a single Odoo model (e.g., all `res.partner` records).
 * **Header Row**: The first line of the file must be the header row. All column names must be the technical field names from the Odoo model (e.g., `name`, `parent_id`, `list_price`).
 * **External ID**: All rows must have an `id` column containing a unique External ID (also known as an XML ID). This is essential for the "upsert" logic described above.
-* **Field Separator**: The character separating columns can be defined with the `--sep` command-line option. The default is a semicolon (`;`). **Crucially, if a field's value contains the separator character, the entire field value must be enclosed in double quotes (`"`).**
+* **Field Separator**: The character separating columns can be defined with the `--separator` command-line option. The default is a semicolon (`;`). **Crucially, if a field's value contains the separator character, the entire field value must be enclosed in double quotes (`"`).**
 * **Skipping Lines**: If your source file contains introductory lines before the header, you can use the `--skip` option to ignore them during the import process.
 
 ### Special Field Naming Conventions
@@ -139,7 +162,7 @@ processor = Processor(
 The constructor takes the following arguments:
 
 * **`filename` (str)**: The path to the CSV or XML file you want to transform.
-* **`config_file` (str, optional)**: Path to the Odoo connection configuration file. This is used for operations that need to read metadata from the source database (e.g., when using `--verify-fields`).
+* **`config_file` (str, optional)**: Path to the Odoo connection configuration file. This is used for operations that need to read metadata from the source database.
 * **`separator` (str, optional)**: The column separator for CSV files. Defaults to `;`.
 * **`preprocess` (function, optional)**: A function to modify the raw data _before_ mapping begins. See the [Data Transformations Guide](./data_transformations.md) for details.
 * **`xml_root_tag` (str, optional)**: Required argument for processing XML files. See the [Advanced usage Guide](./advanced_usage.md) for details.

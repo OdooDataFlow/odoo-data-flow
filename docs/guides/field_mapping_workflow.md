@@ -72,7 +72,7 @@ odoo-data-flow export \
   --model ir.model.fields \
   --domain "[('model', '=', 'res.partner')]" \
   --fields "name,field_description,ttype" \
-  --file source_res_partner_fields.csv
+  --output source_res_partner_fields.csv
 ```
 
 ### Step 2: Export Field Definitions from the Destination Database
@@ -85,7 +85,7 @@ odoo-data-flow export \
   --model ir.model.fields \
   --domain "[('model', '=', 'res.partner')]" \
   --fields "name,field_description,ttype" \
-  --file destination_res_partner_fields.csv
+  --output destination_res_partner_fields.csv
 ```
 
 ### Step 3: Compare the Files with a Diff Tool

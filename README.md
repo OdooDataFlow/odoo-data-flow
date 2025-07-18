@@ -37,7 +37,7 @@ A powerful Python library for defining robust, repeatable, and high-performance 
 - **Robust Error Handling and Recovery:** Verify the number of records processed in a batch against the number successfully imported, helping to quickly identify issues.
 - **Direct Server-to-Server Migration:** Perform a complete export, transform, and import from one Odoo instance to another in a single, in-memory step with the `migrate` command.
 - **Post-Import Workflows:** Run automated actions on your data _after_ it has been imported (e.g., validating invoices, registering payments) using the powerful `workflow` command.
-- **export data from Odoo** into CSV format. While specific details on export parameters are not extensively documented in the provided text, this capability complements the import functionality, offering a complete solution for Odoo data management.
+- **High-Performance Streaming Exports:** Export massive datasets from Odoo with confidence. The export process uses a streaming pipeline to keep memory usage low, and leverages the high-performance Polars engine for multi-threaded data cleaning and CSV writing. It intelligently handles data type issues, such as converting Odoo's `False` values to empty strings for non-boolean fields, ensuring your exported data is clean and accurate.
 - **Multiple Data Sources**: Natively supports CSV and XML files. Easily extendable to support other sources like databases or APIs.
 - **Data Validation:** Ensure data integrity before it even reaches Odoo.
 

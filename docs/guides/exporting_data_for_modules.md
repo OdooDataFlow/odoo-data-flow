@@ -60,7 +60,7 @@ odoo-data-flow export \
   --model res.country.state \
   --domain "[('country_id.code', '=', 'US')]" \
   --fields "name,code,country_id/id" \
-  --file temp_us_states.csv
+  --output temp_us_states.csv
 ```
 
 This command will create a file named `temp_us_states.csv` that looks something like this:

@@ -1,4 +1,4 @@
-"""This module contains the core logic for exporting data from Odoo."""
+"""This module contains the high-level logic for exporting data from Odoo."""
 
 import ast
 from typing import Any, Optional
@@ -16,35 +16,41 @@ def _show_error_panel(title: str, message: str) -> None:
     console.print(Panel(message, title=title, border_style="red"))
 
 
+def _show_success_panel(message: str) -> None:
+    """Displays a formatted success panel to the console."""
+    console = Console()
+    console.print(
+        Panel(
+            message,
+            title="[bold green]Export Complete[/bold green]",
+            border_style="green",
+        )
+    )
+
+
 def run_export(
     config: str,
-    filename: str,
     model: str,
     fields: str,
+    output: str,
     domain: str = "[]",
     worker: int = 1,
-    batch_size: int = 10,
+    batch_size: int = 1000,
+    context: str = "{}",
     separator: str = ";",
-    context: str = "{'tracking_disable' : True}",
     encoding: str = "utf-8",
     technical_names: bool = False,
+    streaming: bool = False,
 ) -> None:
-    """Export runner.
+    """Orchestrates the data export process."""
+    log.info(f"Starting export for model '{model}'...")
 
-    Orchestrates the data export process, writing the output to a CSV file.
-    This function is designed to be called from the main CLI.
-    """
-    log.info("Starting data export process...")
-
-    # Safely evaluate the domain and context strings
     try:
         parsed_domain = ast.literal_eval(domain)
-        if not isinstance(parsed_domain, list):
-            raise TypeError("Domain must be a list of tuples.")
-    except Exception as e:
+    except (ValueError, SyntaxError):
         _show_error_panel(
             "Invalid Domain",
-            f"The --domain argument must be a valid Python list string.\nError: {e}",
+            f"The provided domain string is not a valid Python literal: {domain}",
         )
         return
 
@@ -52,48 +58,41 @@ def run_export(
         parsed_context = ast.literal_eval(context)
         if not isinstance(parsed_context, dict):
             raise TypeError("Context must be a dictionary.")
-    except Exception as e:
+    except Exception:
         _show_error_panel(
             "Invalid Context",
-            "The --context argument must be a valid Python dictionary string."
-            f"\nError: {e}",
+            f"The --context argument must be a valid Python dictionary string: "
+            f"{context}",
         )
         return
 
-    # Process the fields string into a list
-    header = fields.split(",")
+    fields_list = fields.split(",")
 
-    log.info(f"Exporting from model: {model}")
-    log.info(f"Output file: {filename}")
-    log.info(f"Workers: {worker}, Batch Size: {batch_size}")
-
-    # Call the core export function with an output filename
-    success, message = export_threaded.export_data_to_file(
-        config,
-        model,
-        parsed_domain,
-        header,
-        output=filename,
+    result_df = export_threaded.export_data(
+        config_file=config,
+        model=model,
+        domain=parsed_domain,
+        header=fields_list,
         context=parsed_context,
+        output=output,
         max_connection=int(worker),
         batch_size=int(batch_size),
-        separator=separator,
         encoding=encoding,
+        separator=separator,
         technical_names=technical_names,
+        streaming=streaming,
     )
 
-    console = Console()
-    if success:
-        console.print(
-            Panel(
-                f"Export process for model [bold cyan]{model}[/bold cyan] "
-                f"finished successfully.",
-                title="[bold green]Export Complete[/bold green]",
-                border_style="green",
-            )
+    if result_df is not None:
+        _show_success_panel(
+            f"Successfully exported {len(result_df)} records to "
+            f"[bold cyan]{output}[/bold cyan]"
         )
     else:
-        _show_error_panel("Export Aborted", message)
+        _show_error_panel(
+            "Export Failed",
+            "The export process failed. Please check the logs above for details.",
+        )
 
 
 def run_export_for_migration(
@@ -128,37 +127,24 @@ def run_export_for_migration(
     except Exception:
         parsed_context = {}
 
-    header, data = export_threaded.export_data_for_migration(
-        config,
-        model,
-        parsed_domain,
-        fields,
+    result_df = export_threaded.export_data(
+        config_file=config,
+        model=model,
+        domain=parsed_domain,
+        header=fields,
         context=parsed_context,
+        output=None,  # This signals the function to return data
         max_connection=int(worker),
         batch_size=int(batch_size),
+        encoding=encoding,
+        separator=";",
         technical_names=technical_names,
     )
 
-    if data:
-        log.info(f"In-memory export complete. Fetched {len(data)} records.")
-    else:
-        log.info("In-memory export complete. No records fetched.")
+    if result_df is None:
+        return fields, None
 
+    header = result_df.columns
+    # Corrected: Use a list comprehension to convert tuples to lists.
+    data = [list(row) for row in result_df.iter_rows()]
     return header, data
-
-
-def run_export_from_file(
-    config: str,
-    filename: str,
-    worker: int = 1,
-    batch_size: int = 10,
-    separator: str = ";",
-    context: str = "{'tracking_disable' : True}",
-    encoding: str = "utf-8",
-) -> None:
-    """Export from file.
-
-    This function is not yet implemented.
-    It is intended to read export configurations from a file.
-    """
-    raise NotImplementedError("This feature is not implemented yet.")

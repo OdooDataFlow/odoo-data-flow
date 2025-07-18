@@ -1,7 +1,6 @@
 """This module contains the core logic for importing data into Odoo."""
 
 import ast
-import csv
 import os
 from datetime import datetime
 from typing import Any, Optional
@@ -10,64 +9,16 @@ from rich.console import Console
 from rich.panel import Panel
 
 from . import import_threaded
-from .lib import conf_lib
+from .lib import preflight
+from .lib.internal.ui import _show_error_panel
 from .logging_config import log
 
 
-def _show_error_panel(title: str, message: str) -> None:
-    """Displays a formatted error panel to the console."""
-    console = Console(stderr=True, style="bold red")
-    console.print(Panel(message, title=title, border_style="red"))
-
-
-def _verify_import_fields(
-    config: str, model: str, filename: str, separator: str, encoding: str
-) -> bool:
-    """Verify import fields.
-
-    Connects to Odoo and verifies that all columns in the CSV header
-    exist as fields on the target model.
-    """
-    log.info(f"Performing pre-flight check: Verifying fields for model '{model}'...")
-
-    # Step 1: Read the header from the local CSV file
-    try:
-        with open(filename, encoding=encoding) as f:
-            reader = csv.reader(f, delimiter=separator)
-            csv_header = next(reader)
-    except FileNotFoundError:
-        _show_error_panel("File Not Found", f"Input file not found at {filename}")
-        return False
-    except Exception as e:
-        _show_error_panel("File Read Error", f"Could not read CSV header. Error: {e}")
-        return False
-
-    # Step 2: Get the list of valid fields from the Odoo model
-    try:
-        connection: Any = conf_lib.get_connection_from_config(config_file=config)
-        model_fields_obj = connection.get_model("ir.model.fields")
-        domain = [("model", "=", model)]
-        odoo_fields_data = model_fields_obj.search_read(domain, ["name"])
-        odoo_field_names = {field["name"] for field in odoo_fields_data}
-    except Exception as e:
-        _show_error_panel(
-            "Odoo Connection Error",
-            f"Could not connect to Odoo to get model fields. Error: {e}",
-        )
-        return False
-
-    missing_fields = [field for field in csv_header if field not in odoo_field_names]
-
-    if missing_fields:
-        error_message = (
-            "The following columns in your CSV file do not exist on the Odoo model:\n"
-        )
-        for field in missing_fields:
-            error_message += f"  - '{field}' is not a valid field on model '{model}'\n"
-        _show_error_panel("Invalid Fields Found", error_message)
-        return False
-
-    log.info("Pre-flight Check Successful: All columns are valid fields on the model.")
+def _run_preflight_checks(**kwargs: Any) -> bool:
+    """Iterates through and runs all registered pre-flight checks."""
+    for check_func in preflight.PREFLIGHT_CHECKS:
+        if not check_func(**kwargs):
+            return False
     return True
 
 
@@ -75,7 +26,8 @@ def run_import(
     config: str,
     filename: str,
     model: Optional[str] = None,
-    verify_fields: bool = False,
+    no_preflight_checks: bool = False,
+    headless: bool = False,
     worker: int = 1,
     batch_size: int = 10,
     skip: int = 0,
@@ -95,12 +47,13 @@ def run_import(
         filename: Path to the source CSV file to import.
         model: The Odoo model to import data into. If not provided, it's inferred
                from the filename.
-        verify_fields: If True, connects to Odoo to verify all CSV columns
-                       exist on the model before starting the import.
+        no_preflight_checks: If True, skips all pre-flight validation checks.
+        headless: If True, runs in non-interactive mode, auto-confirming any
+                  prompts (e.g., installing languages).
         worker: The number of simultaneous connections to use.
         batch_size: The number of records to process in each batch.
         skip: The number of initial lines to skip in the source file.
-        fail: If True, runs in fail mode, retrying records from the _fail file.
+        fail: If True, runs in fail mode, retrying records from the _fail.csv file.
         separator: The delimiter used in the CSV file.
         split: The column name to group records by to avoid concurrent updates.
         ignore: A comma-separated string of column names to ignore.
@@ -125,12 +78,15 @@ def run_import(
         final_model = inferred_model
         log.info(f"No model provided. Inferred model '{final_model}' from filename.")
 
-    # --- Pre-flight Check ---
-    if verify_fields:
-        if not _verify_import_fields(
-            config, final_model, filename, separator, encoding
+    # --- Pre-flight Checks ---
+    if not no_preflight_checks:
+        if not _run_preflight_checks(
+            model=final_model,
+            filename=filename,
+            config=config,
+            headless=headless,
+            separator=separator,
         ):
-            log.error("Aborting import due to failed pre-flight check.")
             return
 
     try:
@@ -207,6 +163,7 @@ def run_import(
             )
         )
     else:
+        # log.error(
         _show_error_panel(
             "Import Aborted",
             "The import process was aborted due to a critical error. "

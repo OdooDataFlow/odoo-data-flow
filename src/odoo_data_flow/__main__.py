@@ -1,6 +1,7 @@
 """Command-line interface for odoo-data-flow."""
 
 import ast
+from importlib.metadata import version as get_version
 from typing import Any, Optional
 
 import click
@@ -23,7 +24,7 @@ from .workflow_runner import run_invoice_v9_workflow
     context_settings=dict(help_option_names=["-h", "--help"]),
     invoke_without_command=True,
 )
-@click.version_option()
+@click.version_option(version=get_version("odoo-data-flow"))
 @click.option(
     "-v", "--verbose", is_flag=True, help="Enable verbose, debug-level logging."
 )
@@ -198,11 +199,10 @@ def invoice_v9_cmd(**kwargs: Any) -> None:
     help="Odoo model to import into. If not provided, it's inferred from the filename.",
 )
 @click.option(
-    "--verify-fields",
+    "--no-preflight-checks",
     is_flag=True,
     default=False,
-    help="Connect to Odoo and verify that all CSV columns "
-    "exist on the model before importing.",
+    help="Skip all pre-flight checks before starting the import.",
 )
 @click.option(
     "--worker", default=1, type=int, help="Number of simultaneous connections."
@@ -210,7 +210,7 @@ def invoice_v9_cmd(**kwargs: Any) -> None:
 @click.option(
     "--size",
     "batch_size",
-    default=10,
+    default=500,
     type=int,
     help="Number of lines to import per connection.",
 )
@@ -220,6 +220,13 @@ def invoice_v9_cmd(**kwargs: Any) -> None:
     is_flag=True,
     default=False,
     help="Run in fail mode, retrying records from the _fail.csv file.",
+)
+@click.option(
+    "--headless",
+    is_flag=True,
+    default=False,
+    help="Run in headless mode, auto-confirming any prompts "
+    "(e.g., installing languages).",
 )
 @click.option("-s", "--sep", "separator", default=";", help="CSV separator character.")
 @click.option(
@@ -263,7 +270,7 @@ def import_cmd(**kwargs: Any) -> None:
     show_default=True,
     help="Configuration file for connection parameters.",
 )
-@click.option("--file", "filename", required=True, help="Output file path.")
+@click.option("--output", required=True, help="Output file path.")
 @click.option("--model", required=True, help="Odoo model to export from.")
 @click.option(
     "--fields", required=True, help="Comma-separated list of fields to export."
@@ -275,9 +282,14 @@ def import_cmd(**kwargs: Any) -> None:
 @click.option(
     "--size",
     "batch_size",
-    default=10,
+    default=4000,
     type=int,
     help="Number of records to process per batch.",
+)
+@click.option(  # Add this new option decorator
+    "--streaming",
+    is_flag=True,
+    help="Enable streaming to write data batch-by-batch. Use for very large datasets.",
 )
 @click.option("-s", "--sep", "separator", default=";", help="CSV separator character.")
 @click.option(
@@ -364,7 +376,7 @@ def url_to_image_cmd(**kwargs: Any) -> None:
 )
 @click.option(
     "--export-batch-size",
-    default=100,
+    default=2000,
     type=int,
     help="Batch size for the export phase.",
 )
@@ -376,7 +388,7 @@ def url_to_image_cmd(**kwargs: Any) -> None:
 )
 @click.option(
     "--import-batch-size",
-    default=10,
+    default=200,
     type=int,
     help="Batch size for the import phase.",
 )

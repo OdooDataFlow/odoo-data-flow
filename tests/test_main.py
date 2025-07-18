@@ -79,7 +79,7 @@ def test_export_command_calls_runner(
             "export",
             "--config",
             "my.conf",
-            "--file",
+            "--output",
             "my.csv",
             "--model",
             "res.partner",
@@ -89,6 +89,66 @@ def test_export_command_calls_runner(
     )
     assert result.exit_code == 0
     mock_run_export.assert_called_once()
+
+
+MOCK_TARGET = "odoo_data_flow.__main__.run_export"
+
+
+@patch(MOCK_TARGET)
+def test_export_cmd_default_mode(mock_run_export: MagicMock, runner: CliRunner) -> None:
+    """Verifies that --streaming is False by default."""
+    result = runner.invoke(
+        __main__.cli,
+        [
+            "export",
+            "--config",
+            "dummy.conf",
+            "--model",
+            "res.partner",
+            "--output",
+            "out.csv",
+            "--fields",
+            "id,name",
+            "--domain",
+            "[]",
+        ],
+    )
+
+    assert result.exit_code == 0
+    mock_run_export.assert_called_once()
+    call_kwargs = mock_run_export.call_args.kwargs
+    assert "streaming" in call_kwargs
+    assert call_kwargs["streaming"] is False
+
+
+@patch(MOCK_TARGET)
+def test_export_cmd_streaming_mode(
+    mock_run_export: MagicMock, runner: CliRunner
+) -> None:
+    """Verifies that --streaming flag sets the streaming argument to True."""
+    result = runner.invoke(
+        __main__.cli,
+        [
+            "export",
+            "--config",
+            "dummy.conf",
+            "--model",
+            "res.partner",
+            "--output",
+            "out.csv",
+            "--fields",
+            "id,name",
+            "--domain",
+            "[]",
+            "--streaming",
+        ],
+    )
+
+    assert result.exit_code == 0
+    mock_run_export.assert_called_once()
+    call_kwargs = mock_run_export.call_args.kwargs
+    assert "streaming" in call_kwargs
+    assert call_kwargs["streaming"] is True
 
 
 @patch("odoo_data_flow.__main__.run_path_to_image")

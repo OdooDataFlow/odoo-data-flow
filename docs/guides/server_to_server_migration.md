@@ -66,7 +66,10 @@ The command is configured using a set of options that combine parameters from bo
 | `--import-worker`     | The number of parallel workers to use for the import phase. Defaults to `1`.                                        |
 | `--import-batch-size` | The batch size for the import phase. Defaults to `10`.                                                              |
 
-> **Note on Data Integrity:** The migration process automatically exports the raw **technical values** for `Selection` fields (e.g., `delivery`) instead of the human-readable labels (e.g., `Shipping Address`). This is a deliberate design choice to ensure that the migration is robust and not dependent on the languages installed in the source or destination databases.
+> **Note on Data Integrity:** The migration process includes several features to ensure data is handled correctly between different Odoo versions and configurations.
+>
+> * **Technical Values for Selection Fields:** The migration automatically exports the raw **technical values** for `Selection` fields (e.g., `delivery`) instead of the human-readable labels (e.g., `Shipping Address`). This is a deliberate design choice to ensure that the migration is robust and not dependent on the languages installed in the source or destination databases.
+> * **Type-Aware Cleaning of Empty Fields:** The export process intelligently handles empty fields. It inspects the field types on your source model and corrects common data inconsistencies, such as converting Odoo's `False` values to empty strings for non-boolean fields (like `phone` or `website`), while preserving `False` for actual boolean fields. This prevents incorrect data from being imported into your destination database.
 
 ## Full Migration Example
 
