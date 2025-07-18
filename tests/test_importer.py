@@ -1,9 +1,37 @@
 """Test the high-level import orchestrator, including pre-flight checks."""
 
+from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
-from odoo_data_flow.importer import run_import, run_import_for_migration
+import polars as pl
+import pytest
+
+from odoo_data_flow.importer import (
+    _run_preflight_checks,
+    run_import,
+    run_import_for_migration,
+)
+
+
+@pytest.fixture
+def mock_conf_lib() -> Generator[MagicMock, None, None]:
+    """Fixture to mock conf_lib.get_connection_from_config."""
+    with patch(
+        "odoo_data_flow.importer.conf_lib.get_connection_from_config"
+    ) as mock_conn:
+        mock_model_obj = MagicMock()
+        mock_model_obj.fields_get.return_value = {
+            "id": {"type": "integer"},
+            "name": {"type": "char"},
+            "is_company": {"type": "boolean"},
+            "phone": {"type": "char"},
+        }
+        mock_connection = MagicMock()
+        mock_connection.get_model.return_value = mock_model_obj
+        mock_conn.return_value = mock_connection
+        yield mock_conn
 
 
 @patch("odoo_data_flow.importer._run_preflight_checks", return_value=True)
@@ -199,3 +227,122 @@ def test_import_aborts_on_preflight_failure(
 
     mock_run_checks.assert_called_once()
     mock_import_data.assert_not_called()
+
+
+@patch("odoo_data_flow.importer.import_threaded.import_data", return_value=False)
+@patch("odoo_data_flow.importer._show_error_panel")
+@patch("odoo_data_flow.importer._run_preflight_checks", return_value=True)
+@patch("os.path.exists", return_value=True)
+@patch("os.path.basename", return_value="dummy.csv")
+@patch("os.path.splitext", return_value=("dummy", ".csv"))
+def test_run_import_failure(
+    mock_splitext: MagicMock,
+    mock_basename: MagicMock,
+    mock_exists: MagicMock,
+    mock_run_preflight_checks: MagicMock,
+    mock_show_error_panel: MagicMock,
+    mock_import_data: MagicMock,
+) -> None:
+    """Test that run_import handles import failure."""
+    run_import(
+        config="dummy.conf",
+        filename="dummy.csv",
+        model="res.partner",
+    )
+    mock_show_error_panel.assert_called_once()
+    assert "Import Aborted" in mock_show_error_panel.call_args.args[0]
+
+
+@patch("odoo_data_flow.importer._show_error_panel")
+@patch("os.path.basename", return_value="invalid_file")
+@patch(
+    "os.path.splitext", return_value=("", "")
+)  # Modified to return empty string for inference failure
+@patch(
+    "os.path.exists", return_value=True
+)  # Added to allow preflight checks to proceed
+def test_run_import_model_inference_failure(
+    mock_splitext: MagicMock,
+    mock_basename: MagicMock,
+    mock_exists: MagicMock,
+    mock_show_error_panel: MagicMock,
+) -> None:
+    """Test that run_import handles model inference failure."""
+    run_import(
+        config="dummy.conf",
+        filename="invalid_file",
+    )
+    mock_show_error_panel.assert_called_once()
+    assert "Model Not Found" in mock_show_error_panel.call_args.args[0]
+
+
+@patch("odoo_data_flow.importer._show_error_panel")
+@patch("odoo_data_flow.importer._run_preflight_checks", return_value=True)
+@patch("os.path.exists", return_value=True)  # Added
+@patch(
+    "odoo_data_flow.importer.preflight.pl.read_csv",
+    return_value=pl.DataFrame({"id": [], "name": []}),
+)  # Added
+@patch("odoo_data_flow.importer.preflight.conf_lib.get_connection_from_config")  # Added
+@patch("odoo_data_flow.importer.preflight.language_check", return_value=True)  # Added
+@patch(
+    "odoo_data_flow.importer.preflight.field_existence_check", return_value=True
+)  # Added
+def test_run_import_invalid_context(
+    mock_run_preflight_checks: MagicMock,
+    mock_exists: MagicMock,
+    mock_read_csv: MagicMock,
+    mock_get_connection: MagicMock,
+    mock_language_check: MagicMock,
+    mock_field_existence_check: MagicMock,
+    mock_show_error_panel: MagicMock,
+) -> None:
+    """Test that run_import handles invalid context string."""
+    run_import(
+        config="dummy.conf",
+        filename="dummy.csv",
+        model="res.partner",
+        context="this-is-not-a-dict",
+    )
+    mock_show_error_panel.assert_called_once()
+    assert "Invalid Context" in mock_show_error_panel.call_args.args[0]
+
+
+def mock_preflight_check_fail(**kwargs: Any) -> bool:
+    """Mock a failling preflight check."""
+    return False
+
+
+def mock_preflight_check_pass(**kwargs: Any) -> bool:
+    """Mock a passing preflight check."""
+    return True
+
+
+@patch(
+    "odoo_data_flow.importer.preflight.PREFLIGHT_CHECKS",
+    [mock_preflight_check_fail],
+)
+def test_run_preflight_checks_fail() -> None:
+    """Test that _run_preflight_checks returns False if a check fails."""
+    assert not _run_preflight_checks(
+        model="test",
+        filename="test.csv",
+        config="test.conf",
+        headless=False,
+        separator=";",
+    )
+
+
+@patch(
+    "odoo_data_flow.importer.preflight.PREFLIGHT_CHECKS",
+    [mock_preflight_check_pass],
+)
+def test_run_preflight_checks_pass() -> None:
+    """Test that _run_preflight_checks returns True if all checks pass."""
+    assert _run_preflight_checks(
+        model="test",
+        filename="test.csv",
+        config="test.conf",
+        headless=False,
+        separator=";",
+    )
