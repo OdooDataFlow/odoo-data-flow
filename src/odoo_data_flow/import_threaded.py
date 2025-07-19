@@ -176,11 +176,13 @@ class RPCThreadImport(RpcThread):
             super().wait()
             return
 
+        shutdown_called = False
         for future in concurrent.futures.as_completed(self.futures):
             if self.abort_flag:
                 # If a critical error occurred, don't wait for other tasks.
                 # Cancel pending futures and shut down immediately.
                 self.executor.shutdown(wait=True, cancel_futures=True)
+                shutdown_called = True
                 break
             try:
                 # The number of processed lines is returned by the future
@@ -190,7 +192,8 @@ class RPCThreadImport(RpcThread):
             except Exception as e:
                 log.error(f"A task in a worker thread failed: {e}", exc_info=True)
 
-        self.executor.shutdown(wait=True)
+        if not shutdown_called:
+            self.executor.shutdown(wait=True)
 
 
 def _filter_ignored_columns(
@@ -231,6 +234,9 @@ def _read_data_file(
     except FileNotFoundError:
         log.error(f"Source file not found: {file_path}")
         return [], []
+    except ValueError as e:
+        log.error(f"Failed to read file {file_path}: {e}")
+        raise
     except Exception as e:
         log.error(f"Failed to read file {file_path}: {e}")
         return [], []
