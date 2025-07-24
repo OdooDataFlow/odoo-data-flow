@@ -214,9 +214,6 @@ class Processor:
 
                 data = [{elem.tag: elem.text for elem in node} for node in nodes]
                 return pl.DataFrame(data)
-            except etree.XMLSyntaxError as e:
-                log.error(f"Failed to parse XML file {filename}: {e}")
-                return pl.DataFrame()
             except Exception as e:
                 log.error(
                     f"An unexpected error occurred while reading XML file "
@@ -421,7 +418,7 @@ class Processor:
             info_copy = info.copy()
             # NEW: Use the config from params if available,
             #  otherwise use the processor's default
-            info_copy["conf_file"] = str(info.get("config")) or self.config_file
+            info_copy["conf_file"] = info.get("config") or self.config_file
             info_copy.update(
                 {
                     "model": info.get("model", "auto"),
@@ -531,7 +528,13 @@ class Processor:
                 return None
         if isinstance(dtype, pl.Boolean):
             if isinstance(result, str):
-                return result.lower() in ("true", "1", "t", "yes")
+                lower_result = result.strip().lower()
+                if lower_result in ("true", "1", "t", "yes"):
+                    return True
+                elif lower_result in ("false", "0", "f", "no"):
+                    return False
+                else:
+                    return False  # All other strings are False for pl.Boolean
             return bool(result)
         if isinstance(dtype, pl.String):
             return str(result)
@@ -545,10 +548,10 @@ class Processor:
     ) -> pl.DataFrame:
         """The core transformation loop."""
         if not mapping:
-            return self.dataframe.clone()
+            return pl.DataFrame()
 
         exprs = []
-        state: dict[str, Any] = {}
+        state: dict[str, Any] = {"null_values": null_values}
 
         for key, func in mapping.items():
             if isinstance(func, pl.Expr):

@@ -2,7 +2,7 @@
 
 import inspect
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, cast
 from unittest.mock import MagicMock, patch
 
 import polars as pl
@@ -11,6 +11,7 @@ from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal
 
 from odoo_data_flow.lib import mapper
+from odoo_data_flow.lib.internal.exceptions import SkippingError
 from odoo_data_flow.lib.transform import (
     MapperRepr,
     Processor,
@@ -65,6 +66,14 @@ def test_processor_init_with_typed_mapping() -> None:
     assert "active" in processor.logic_mapping
     assert "city" in processor.logic_mapping
     assert callable(processor.logic_mapping["active"])
+
+
+def test_processor_init_with_schema_overrides() -> None:
+    """Tests that Processor initialization correctly applies schema_overrides."""
+    df = pl.DataFrame({"col1": [1, 2]})
+    schema_overrides = {"col1": cast(pl.DataType, pl.Utf8())}
+    processor = Processor(mapping={}, dataframe=df, schema_overrides=schema_overrides)
+    assert processor.schema_overrides == {"col1": pl.Utf8()}
 
 
 def test_get_o2o_mapping() -> None:
@@ -152,14 +161,16 @@ def test_process_m2m() -> None:
     assert actual_data == set(expected_data)
 
 
-def test_read_file_xml_syntax_error(tmp_path: Path) -> None:
-    """Tests that a syntax error in an XML file is handled correctly."""
-    xml_file = tmp_path / "malformed.xml"
-    xml_file.write_text("<root><record>a</record></root")  # Malformed XML
+@patch("odoo_data_flow.lib.transform.etree")
+def test_read_file_xml_generic_exception(mock_etree: MagicMock, tmp_path: Path) -> None:
+    """Tests that a generic exception during XML reading is handled."""
+    mock_etree.parse.side_effect = RuntimeError("Generic XML read error")
+    xml_file = tmp_path / "any.xml"
+    xml_file.write_text("<root><item>data</item></root>")
     processor = Processor(
         mapping={},
         source_filename=str(xml_file),
-        xml_root_tag="./record",
+        xml_root_tag="./item",
     )
     assert processor.dataframe.is_empty()
 
@@ -317,7 +328,7 @@ def test_process_with_empty_mapping() -> None:
     df = pl.DataFrame({"col1": [1, 2]})
     processor = Processor(mapping={}, dataframe=df)
     result_df = processor.process(filename_out="")
-    assert result_df.equals(df)
+    assert result_df.is_empty()
 
 
 def test_process_m2m_no_columns() -> None:
@@ -427,6 +438,16 @@ def test_process_with_datatype_in_mapping_tuple() -> None:
     assert result["code_as_int"].to_list() == [1, 2, None, None]
 
 
+def test_process_with_datatype_class_in_mapping() -> None:
+    """Tests that providing a DataType class in a mapping tuple covers line 594."""
+    df = pl.DataFrame({"col1": ["hello"]})
+    mapping = {"new_col": (pl.String, lambda row: row["col1"])}
+    processor = Processor(mapping=mapping, dataframe=df)
+    result = processor.process(filename_out="")
+    assert result["new_col"].to_list() == ["hello"]
+    assert result["new_col"].dtype == pl.String
+
+
 def test_process_with_boolean_type_in_mapping() -> None:
     """Tests that boolean casting correctly handles various string inputs.
 
@@ -471,3 +492,135 @@ def test_process_with_boolean_type_in_mapping() -> None:
     )
 
     assert_frame_equal(result, expected)
+
+
+@patch("odoo_data_flow.lib.transform.write_file")
+def test_write_to_file_uses_default_config(mock_write_file: MagicMock) -> None:
+    """Test write file default conifg.
+
+    Tests that write_to_file uses the processor's default config_file when
+    no config is specified in the import parameters.
+    """
+    df = pl.DataFrame({"col1": ["A"]})
+    processor = Processor(mapping={}, dataframe=df, config_file="default.conf")
+    processor.process(filename_out="output.csv", params={"model": "res.partner"})
+    processor.write_to_file(script_filename="import.sh")
+
+    mock_write_file.assert_called_once()
+    call_kwargs = mock_write_file.call_args.kwargs
+    assert call_kwargs["conf_file"] == "default.conf"
+
+
+def test_process_with_integer_and_float_casting() -> None:
+    """Tests that casting to integer and float works correctly."""
+    df = pl.DataFrame({"val_str": ["123", "45.6", "bad", None, "True"]})
+    mapping = {
+        "as_int": (pl.Int32, mapper.val("val_str")),
+        "as_float": (pl.Float64, mapper.val("val_str")),
+    }
+    processor = Processor(mapping=mapping, dataframe=df)
+    result = processor.process(filename_out="")
+    assert result["as_int"].to_list() == [123, None, None, None, None]
+    assert result["as_float"].to_list() == [123.0, 45.6, None, None, None]
+    assert result["as_int"].dtype == pl.Int32
+    assert result["as_float"].dtype == pl.Float64
+
+
+def test_process_with_mapper_returning_none() -> None:
+    """Tests that a mapper returning None results in a null value."""
+    df = pl.DataFrame({"value": [1, 2]})
+    mapping = {"new_col": (pl.String, lambda row: None)}
+    processor = Processor(mapping=mapping, dataframe=df)
+    result = processor.process(filename_out="")
+    assert result["new_col"].is_null().all()
+
+
+def test_process_with_default_null_values_and_params() -> None:
+    """Test process with default null values.
+
+    Tests that process method correctly handles default null_values and params.
+    """
+    df = pl.DataFrame({"col1": ["NULL", "value"]})
+    mapping = {"col1": mapper.val("col1")}
+    processor = Processor(mapping=mapping, dataframe=df)
+    # Call process without providing null_values or params
+    result_df = processor.process(filename_out="output.csv")
+    assert result_df["col1"].to_list() == [None, "value"]
+    assert "output.csv" in processor.file_to_write
+
+
+def test_cast_result_for_polars_float_error() -> None:
+    """Tests _cast_result_for_polars handles float conversion errors."""
+    processor = Processor(mapping={}, dataframe=pl.DataFrame())
+    result = processor._cast_result_for_polars("not_a_float", pl.Float64())
+    assert result is None
+
+
+def test_cast_result_for_polars_boolean_non_string() -> None:
+    """Test the boolean casting.
+
+    Tests _cast_result_for_polars returns bool(result) for non-string values
+    when dtype is pl.Boolean.
+    """
+    processor = Processor(mapping={}, dataframe=pl.DataFrame())
+    result = processor._cast_result_for_polars(1, pl.Boolean())
+    assert result is True
+    result = processor._cast_result_for_polars(0, pl.Boolean())
+    assert result is False
+    result = processor._cast_result_for_polars([], pl.Boolean())
+    assert result is False
+    result = processor._cast_result_for_polars([1], pl.Boolean())
+    assert result is True
+
+
+def test_cast_result_for_polars_boolean_other_string() -> None:
+    """Test cast result polars bool to others.
+
+    Tests _cast_result_for_polars returns False for non-boolean strings when
+    dtype is pl.Boolean.
+    """
+    processor = Processor(mapping={}, dataframe=pl.DataFrame())
+    result = processor._cast_result_for_polars("some_other_string", pl.Boolean())
+    assert result is False
+
+
+def test_cast_result_for_polars_unhandled_dtype() -> None:
+    """Tests _cast_result_for_polars returns original result for unhandled dtypes."""
+    processor = Processor(mapping={}, dataframe=pl.DataFrame())
+    # Test with pl.Date
+    import datetime
+
+    date_obj = datetime.date(2023, 1, 1)
+    result = processor._cast_result_for_polars(date_obj, pl.Date())
+    assert result == date_obj
+
+    # Test with pl.Datetime
+    datetime_obj = datetime.datetime(2023, 1, 1, 10, 30, 0)
+    result = processor._cast_result_for_polars(datetime_obj, pl.Datetime())
+    assert result == datetime_obj
+
+
+def test_create_wrapper_mapper_returns_none() -> None:
+    """Tests that _create_wrapper handles mapper functions returning None."""
+    df = pl.DataFrame({"col1": [1, 2]})
+
+    def none_mapper(row: dict[str, Any], state: dict[str, Any]) -> None:
+        return None
+
+    mapping = {"new_col": (pl.Int32, none_mapper)}
+    processor = Processor(mapping=mapping, dataframe=df)
+    result_df = processor.process(filename_out="")
+    assert result_df["new_col"].is_null().all()
+
+
+def test_create_wrapper_mapper_raises_skipping_error() -> None:
+    """Tests that _create_wrapper handles mapper functions raising SkippingError."""
+    df = pl.DataFrame({"col1": [1, 2]})
+
+    def skipping_mapper(row: dict[str, Any], state: dict[str, Any]) -> None:
+        raise SkippingError("Skipping this row")
+
+    mapping = {"new_col": (pl.Int32, skipping_mapper)}
+    processor = Processor(mapping=mapping, dataframe=df)
+    result_df = processor.process(filename_out="")
+    assert result_df["new_col"].is_null().all()

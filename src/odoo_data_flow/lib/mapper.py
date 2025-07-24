@@ -55,7 +55,7 @@ MapperFunc = Callable[[LineDict, StateDict], Any]
 ListMapperFunc = Callable[[LineDict, StateDict], list[str]]
 
 
-def _get_field_value(line: LineDict, field: str, default: Any = "") -> Any:
+def _get_field_value(line: LineDict, field: str, default: Any = None) -> Any:
     """Safely retrieves a value from the current data row."""
     value = line.get(field, default)
     log.debug(
@@ -90,7 +90,7 @@ def const(value: Any) -> MapperFunc:
 
 def val(
     field: str,
-    default: Any = "",
+    default: Any = None,
     postprocess: Callable[..., Any] = lambda x, s: x,
     skip: bool = False,
 ) -> MapperFunc:
@@ -98,10 +98,14 @@ def val(
 
     def val_fun(line: LineDict, state: StateDict) -> Any:
         value = _get_field_value(line, field)
+        null_values = state.get("null_values", [])
+        if str(value) in null_values:
+            value = None
+
         if not value and skip:
             raise SkippingError(f"Missing required value for field '{field}'")
 
-        final_value = value or default
+        final_value = value if value is not None else default
         try:
             # Try calling postprocess with 2 arguments first
             return postprocess(final_value, state)
