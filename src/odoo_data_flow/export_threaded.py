@@ -48,26 +48,102 @@ class RPCThreadExport(RpcThread):
     def __init__(
         self,
         max_connection: int,
+        connection: Any,
         model: Any,
         header: list[str],
+        fields_info: dict[str, dict[str, Any]],
         context: Optional[dict[str, Any]] = None,
         technical_names: bool = False,
+        is_hybrid: bool = False,
     ) -> None:
         """Initializes the export thread handler.
 
         Args:
             max_connection: The maximum number of concurrent connections.
+            connection: The odoolib connection object.
             model: The odoolib model object for making RPC calls.
             header: A list of field names to export.
+            fields_info: A dictionary containing type and relation metadata.
             context: The Odoo context to use for the export.
-            technical_names: If True, uses `model.read()` for technical field
-                names. Otherwise, uses `model.export_data()`.
+            technical_names: If True, uses `model.read()` for raw database
+                values.
+            is_hybrid: If True, enables enrichment of `read` data with XML IDs.
         """
         super().__init__(max_connection)
+        self.connection = connection
         self.model = model
         self.header = header
+        self.fields_info = fields_info
         self.context = context or {}
         self.technical_names = technical_names
+        self.is_hybrid = is_hybrid
+
+    def _enrich_with_xml_ids(
+        self,
+        raw_data: list[dict[str, Any]],
+        enrichment_tasks: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Fetch XML IDs for related fields and return a lookup map."""
+        lookup_maps = {}
+        ir_model_data = self.connection.get_model("ir.model.data")
+        for task in enrichment_tasks:
+            relation_model = task["relation"]
+            source_field = task["source_field"]
+            if not relation_model or not isinstance(source_field, str):
+                continue
+
+            related_ids = list(
+                {
+                    rec[source_field][0]
+                    for rec in raw_data
+                    if isinstance(rec.get(source_field), (list, tuple))
+                    and rec.get(source_field)
+                }
+            )
+            if not related_ids:
+                continue
+
+            xml_id_data = ir_model_data.search_read(
+                [("model", "=", relation_model), ("res_id", "in", related_ids)],
+                ["res_id", "module", "name"],
+            )
+            db_id_to_xml_id = {
+                item["res_id"]: f"{item['module']}.{item['name']}"
+                for item in xml_id_data
+            }
+            lookup_maps[task["target_field"]] = db_id_to_xml_id
+        return lookup_maps
+
+    def _format_batch_results(
+        self, raw_data: list[dict[str, Any]], lookup_maps: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """Format the raw/enriched data to match the requested header."""
+        processed_data = []
+        for record in raw_data:
+            new_record = {}
+            for field in self.header:
+                base_field = field.split("/")[0].replace(".id", "id")
+                value = record.get(base_field)
+
+                if field == ".id":
+                    new_record[field] = record.get("id")
+                elif field.endswith("/.id"):
+                    new_record[field] = (
+                        value[0] if isinstance(value, (list, tuple)) and value else None
+                    )
+                elif field in lookup_maps:
+                    db_id = (
+                        value[0] if isinstance(value, (list, tuple)) and value else None
+                    )
+                    new_record[field] = (
+                        lookup_maps[field].get(db_id) if db_id is not None else None
+                    )
+                elif isinstance(value, (list, tuple)) and value:
+                    new_record[field] = value[1]
+                else:
+                    new_record[field] = value
+            processed_data.append(new_record)
+        return processed_data
 
     def _execute_batch(
         self, ids_to_export: list[int], num: Union[int, str]
@@ -89,73 +165,50 @@ class RPCThreadExport(RpcThread):
         start_time = time()
         log.debug(f"Exporting batch {num} with {len(ids_to_export)} records...")
         try:
-            if self.technical_names:
-                read_header = sorted(
-                    list(
-                        {
-                            f.replace("/.id", "").replace(".id", "id")
-                            for f in self.header
-                        }
-                    )
-                )
-                raw_data = cast(
-                    list[dict[str, Any]],
-                    self.model.read(ids_to_export, read_header),
-                )
-                log.debug(
-                    f"Batch {num} received {len(raw_data)} raw records from Odoo."
-                )
-
-                processed_data = []
-                for record in raw_data:
-                    new_record = {}
-                    for original_field in self.header:
-                        read_field = original_field.replace("/.id", "").replace(
-                            ".id", "id"
-                        )
-                        value = record.get(read_field)
-
-                        if original_field.endswith("/.id"):
-                            new_record[original_field] = (
-                                value[0]
-                                if isinstance(value, (list, tuple)) and value
-                                else None
-                            )
-                        elif isinstance(value, (list, tuple)) and len(value) == 2:
-                            new_record[original_field] = value[1]
-                        else:
-                            new_record[original_field] = value
-                    processed_data.append(new_record)
-                return processed_data
-            else:
+            if not self.technical_names and not self.is_hybrid:
                 exported_data = self.model.export_data(
                     ids_to_export, self.header, context=self.context
                 ).get("datas", [])
-                log.debug(
-                    f"Batch {num} received {len(exported_data)} records from Odoo."
-                )
                 return [dict(zip(self.header, row)) for row in exported_data]
 
+            read_fields, enrichment_tasks = set(), []
+            for field in self.header:
+                base_field = field.split("/")[0].replace(".id", "id")
+                read_fields.add(base_field)
+                if self.is_hybrid and "/" in field and not field.endswith("/.id"):
+                    enrichment_tasks.append(
+                        {
+                            "source_field": base_field,
+                            "target_field": field,
+                            "relation": self.fields_info[field].get("relation"),
+                        }
+                    )
+
+            raw_data = cast(
+                list[dict[str, Any]],
+                self.model.read(ids_to_export, list(read_fields)),
+            )
+            if not raw_data:
+                return []
+
+            lookup_maps = self._enrich_with_xml_ids(raw_data, enrichment_tasks)
+            return self._format_batch_results(raw_data, lookup_maps)
+
         except Exception as e:
-            # Enhanced error logging
             error_data = (
                 e.args[0].get("data", {})
                 if e.args and isinstance(e.args[0], dict)
                 else {}
             )
             is_memory_error = error_data.get("name") == "builtins.MemoryError"
-
             if is_memory_error and len(ids_to_export) > 1:
                 log.warning(
-                    f"Batch {num} ({len(ids_to_export)} records) "
-                    f"failed with MemoryError. "
-                    "Splitting batch and retrying..."
+                    f"Batch {num} ({len(ids_to_export)} records) failed with "
+                    f"MemoryError. Splitting and retrying..."
                 )
                 mid_point = len(ids_to_export) // 2
-                batch_a = ids_to_export[:mid_point]
-                batch_b = ids_to_export[mid_point:]
-                results_a = self._execute_batch(batch_a, f"{num}-a")
-                results_b = self._execute_batch(batch_b, f"{num}-b")
+                results_a = self._execute_batch(ids_to_export[:mid_point], f"{num}-a")
+                results_b = self._execute_batch(ids_to_export[mid_point:], f"{num}-b")
                 return results_a + results_b
             else:
                 log.error(
@@ -199,8 +252,8 @@ def _clean_batch(
 
 def _initialize_export(
     config_file: str, model_name: str, header: list[str], technical_names: bool
-) -> tuple[Optional[Any], Optional[dict[str, str]]]:
-    """Connects to Odoo and fetches field metadata."""
+) -> tuple[Optional[Any], Optional[Any], Optional[dict[str, dict[str, Any]]]]:
+    """Connects to Odoo and fetches field metadata, including relations."""
     log.debug("Starting metadata initialization.")
     try:
         connection = conf_lib.get_connection_from_config(config_file)
@@ -213,36 +266,25 @@ def _initialize_export(
         )
         field_metadata = model_obj.fields_get(fields_for_metadata)
 
-        field_types = {}
+        fields_info = {}
         for original_field in header:
-            if original_field == ".id":
-                field_types[original_field] = "integer"
-                continue
-            if original_field.endswith("/.id"):
-                field_types[original_field] = "integer"
-                continue
-            if original_field == "id":
-                if technical_names:
-                    field_types[original_field] = "integer"
-                else:
-                    field_types[original_field] = "char"
-                continue
-
             base_field = original_field.split("/")[0]
-            if base_field in field_metadata:
-                field_types[original_field] = field_metadata[base_field]["type"]
-            else:
-                log.warning(
-                    f"Could not find metadata for field '{original_field}'. "
-                    f"Defaulting to String."
-                )
-                field_types[original_field] = "char"
-
-        log.debug(f"Successfully initialized metadata. Field types: {field_types}")
-        return model_obj, field_types
+            meta = field_metadata.get(base_field)
+            field_type = "char"
+            if meta:
+                field_type = meta["type"]
+            if original_field == ".id" or original_field.endswith("/.id"):
+                field_type = "integer"
+            elif original_field == "id":
+                field_type = "integer" if technical_names else "char"
+            fields_info[original_field] = {"type": field_type}
+            if meta and meta.get("relation"):
+                fields_info[original_field]["relation"] = meta["relation"]
+        log.debug(f"Successfully initialized metadata. Fields info: {fields_info}")
+        return connection, model_obj, fields_info
     except Exception as e:
         log.error(f"Failed during metadata initialization. Error: {e}", exc_info=True)
-        return None, None
+        return None, None, None
 
 
 def _process_export_batches(  # noqa C901
@@ -250,7 +292,7 @@ def _process_export_batches(  # noqa C901
     total_ids: int,
     model_name: str,
     output: Optional[str],
-    field_types: dict[str, str],
+    fields_info: dict[str, dict[str, Any]],  # FIX: Take fields_info
     separator: str,
     streaming: bool,
 ) -> Optional[pl.DataFrame]:
@@ -259,7 +301,7 @@ def _process_export_batches(  # noqa C901
     Uses streaming for large files if requested,
     otherwise concatenates in memory for best performance.
     """
-    # 1. Establish the ground-truth schema with INSTANCES. This is critical.
+    field_types = {k: v.get("type", "char") for k, v in fields_info.items()}
     polars_schema: dict[str, pl.DataType] = {
         field: ODOO_TO_POLARS_MAP.get(odoo_type, pl.String)()
         for field, odoo_type in field_types.items()
@@ -269,7 +311,6 @@ def _process_export_batches(  # noqa C901
             k: v() if isinstance(v, type) and issubclass(v, pl.DataType) else v
             for k, v in polars_schema.items()
         }
-
     all_cleaned_dfs: list[pl.DataFrame] = []
     header_written = False
     progress = Progress(
@@ -292,10 +333,6 @@ def _process_export_batches(  # noqa C901
                 cleaned_df = _clean_batch(batch_result, field_types)
                 if cleaned_df.is_empty():
                     continue
-
-                # --- FIX: Re-introduce robust boolean conversion before casting ---
-                # This handles cases where some batches infer a boolean column as
-                # Boolean and others infer it as String (e.g., from "False").
                 bool_cols_to_convert = [
                     k
                     for k, v in polars_schema.items()
@@ -318,15 +355,11 @@ def _process_export_batches(  # noqa C901
                     ]
                     cleaned_df = cleaned_df.with_columns(conversion_exprs)
 
-                # --- End of Fix ---
-
                 for col_name in polars_schema:
                     if col_name not in cleaned_df.columns:
                         cleaned_df = cleaned_df.with_columns(
                             pl.lit(None, dtype=polars_schema[col_name]).alias(col_name)
                         )
-
-                # This cast will now succeed on all batches
                 casted_df = cleaned_df.cast(polars_schema, strict=False)  # type: ignore[arg-type]
                 final_batch_df = casted_df.select(list(polars_schema.keys()))
 
@@ -342,19 +375,15 @@ def _process_export_batches(  # noqa C901
                                 f, separator=separator, include_header=False
                             )
                 else:
-                    # IN-MEMORY MODE: Append the perfectly-formed batch.
                     all_cleaned_dfs.append(final_batch_df)
                 progress.update(task, advance=len(batch_result))
             except Exception as e:
                 log.error(f"A task in a worker thread failed: {e}", exc_info=True)
-
     rpc_thread.executor.shutdown(wait=True)
 
     if output and streaming:
         log.info(f"Streaming export complete. Data written to {output}")
-        # Return None in streaming mode to pass the unit tests.
         return None
-
     if not all_cleaned_dfs:
         log.warning("No data was returned from the export.")
         empty_df = pl.DataFrame(schema=polars_schema)
@@ -369,7 +398,6 @@ def _process_export_batches(  # noqa C901
         log.info("Export complete.")
     else:
         log.info("In-memory export complete.")
-
     return final_df
 
 
@@ -388,33 +416,30 @@ def export_data(
     streaming: bool = False,
 ) -> Optional[pl.DataFrame]:
     """Exports data from an Odoo model."""
-    force_read_method = technical_names or any(
-        f.endswith("/.id") or f == ".id" for f in header
-    )
+    has_read_specifiers = any(f.endswith("/.id") or f == ".id" for f in header)
+    has_export_specifiers = any("/" in f and not f.endswith("/.id") for f in header)
 
-    if force_read_method:
+    is_hybrid = has_read_specifiers and has_export_specifiers
+    force_read_method = technical_names or has_read_specifiers or is_hybrid
+    if is_hybrid:
+        log.info("Hybrid export mode activated. Using 'read' with XML ID enrichment.")
+    elif force_read_method:
         log.info("Exporting using 'read' method for raw database values.")
     else:
         log.info("Exporting using 'export_data' method for human-readable values.")
-
-    if force_read_method:
+    if force_read_method and not is_hybrid:
         invalid_fields = [f for f in header if "/" in f and not f.endswith("/.id")]
         if invalid_fields:
             log.error(
-                "Mixing incompatible field types is not supported. "
-                "You are using raw ID specifiers ('.id' or '/.id'), "
-                f"which enables 'read' mode, "
-                f"but also using export-style specifiers: {invalid_fields}. "
-                "Please use one style or the other."
+                f"Mixing export-style specifiers {invalid_fields} is not "
+                f"supported in pure 'read' mode."
             )
             return None
-
-    model_obj, field_types = _initialize_export(
+    connection, model_obj, fields_info = _initialize_export(
         config_file, model, header, force_read_method
     )
-    if not model_obj or field_types is None:
+    if not model_obj or fields_info is None:
         return None
-
     if streaming and not output:
         log.error("Streaming mode requires an output file path. Aborting.")
         return None
@@ -426,18 +451,22 @@ def export_data(
         if output:
             pl.DataFrame(schema=header).write_csv(output, separator=separator)
         return pl.DataFrame(schema=header)
-
     log.info(
         f"Found {len(ids)} records to export. Splitting into batches of {batch_size}."
     )
     id_batches = list(batch(ids, batch_size))
-
     rpc_thread = RPCThreadExport(
-        max_connection, model_obj, header, context, force_read_method
+        max_connection=max_connection,
+        connection=connection,
+        model=model_obj,
+        header=header,
+        fields_info=fields_info,
+        context=context,
+        technical_names=force_read_method,
+        is_hybrid=is_hybrid,
     )
     for i, id_batch in enumerate(id_batches):
         rpc_thread.launch_batch(list(id_batch), i)
-
     return _process_export_batches(
-        rpc_thread, len(ids), model, output, field_types, separator, streaming
+        rpc_thread, len(ids), model, output, fields_info, separator, streaming
     )

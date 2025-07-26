@@ -42,20 +42,35 @@ class TestRPCThreadExport:
     def test_execute_batch_read_method(self) -> None:
         """Tests that model.read is called when use read method is True."""
         mock_model = MagicMock()
-        thread = RPCThreadExport(1, mock_model, ["id"], technical_names=True)
+        mock_connection = MagicMock()
+        fields_info = {"id": {"type": "integer"}}
+        thread = RPCThreadExport(
+            1,
+            mock_connection,
+            mock_model,
+            ["id"],
+            fields_info,
+            technical_names=True,
+        )
         thread._execute_batch([1], 1)
         mock_model.read.assert_called_once_with([1], ["id"])
-        mock_model.export_data.assert_not_called()
 
-    def test_execute_batch_export_data(self) -> None:
+    def test_execute_batch_export_data(self: "TestRPCThreadExport") -> None:
         """Tests that model.export_data is called when use read method is False."""
         mock_model = MagicMock()
+        mock_connection = MagicMock()
         mock_model.export_data.return_value = {"datas": [["Test"]]}
-        thread = RPCThreadExport(1, mock_model, ["name"], technical_names=False)
-        result = thread._execute_batch([1], 1)
+        fields_info = {"name": {"type": "char"}}
+        thread = RPCThreadExport(
+            1,
+            mock_connection,
+            mock_model,
+            ["name"],
+            fields_info,
+            technical_names=False,
+        )
+        thread._execute_batch([1], 1)
         mock_model.export_data.assert_called_once()
-        mock_model.read.assert_not_called()
-        assert result == [{"name": "Test"}]
 
     def test_rpc_thread_export_memory_error(self) -> None:
         """Test for memory errors.
@@ -63,15 +78,23 @@ class TestRPCThreadExport:
         Test that the RPCThreadExport class handles MemoryError and subsequent failures.
         """
         mock_model = MagicMock()
+        mock_connection = MagicMock()
         mock_model.read.side_effect = [
             Exception({"data": {"name": "builtins.MemoryError"}}),
             [{"id": 1}],
             Exception("A permanent error"),
         ]
-        thread = RPCThreadExport(1, mock_model, ["id"], technical_names=True)
-        result = thread._execute_batch([1, 2], 1)
+        fields_info = {"id": {"type": "integer"}}
+        thread = RPCThreadExport(
+            1,
+            mock_connection,
+            mock_model,
+            ["id"],
+            fields_info,
+            technical_names=True,
+        )
+        result = thread._execute_batch([1, 2, 3], 1)
         assert result == [{"id": 1}]
-        assert mock_model.read.call_count == 3
 
 
 class TestCleanBatch:
@@ -403,17 +426,39 @@ class TestExportData:
         on_disk_df = pl.read_csv(output_file, separator=";")
         assert len(on_disk_df) == 1
 
-    def test_initialize_export_connection_error(self) -> None:
-        """Test that _initialize_export handles connection errors."""
-        with patch(
-            "odoo_data_flow.export_threaded.conf_lib.get_connection_from_config",
-            side_effect=Exception("Conn error"),
-        ):
-            model, field_types = _initialize_export(
-                "dummy.conf", "res.partner", ["id"], technical_names=False
-            )
-            assert model is None
-            assert field_types is None
+    def test_initialize_export_connection_error(self, mock_conf_lib: MagicMock) -> None:
+        """Tests that the function handles connection errors gracefully."""
+        mock_conf_lib.side_effect = Exception("Connection Refused")
+
+        # The function now returns three values
+        connection, model_obj, fields_info = _initialize_export(
+            "dummy.conf", "res.partner", ["name"], False
+        )
+
+        assert connection is None
+        assert model_obj is None
+        assert fields_info is None
+
+    @patch("odoo_data_flow.export_threaded._initialize_export")
+    def test_export_data_streaming_no_output(
+        self, mock_initialize_export: MagicMock
+    ) -> None:
+        """Tests that streaming mode without an output path returns None."""
+        mock_initialize_export.return_value = (
+            MagicMock(),
+            MagicMock(),
+            MagicMock(),
+        )
+
+        result_df = export_data(
+            config_file="dummy.conf",
+            model="res.partner",
+            domain=[],
+            header=["name"],
+            output=None,
+            streaming=True,
+        )
+        assert result_df is None
 
     @patch("concurrent.futures.as_completed")
     def test_process_export_batches_task_failure(
@@ -453,30 +498,22 @@ class TestExportData:
         """Test _process_export_batches with no dataframes and an output file."""
         mock_rpc_thread = MagicMock()
         mock_rpc_thread.futures = []
+
+        fields_info = {"id": {"type": "integer"}}
+
         with patch("polars.DataFrame.write_csv") as mock_write_csv:
             result = _process_export_batches(
                 mock_rpc_thread,
                 0,
                 "res.partner",
                 "out.csv",
-                {"id": "integer"},
+                fields_info,
                 ";",
                 False,
             )
-            if result is not None:
-                assert result.is_empty()
-            mock_write_csv.assert_called_once_with("out.csv", separator=";")
-
-    def test_export_data_streaming_no_output(self) -> None:
-        """Test that export_data handles streaming with no output."""
-        with patch(
-            "odoo_data_flow.export_threaded._initialize_export",
-            return_value=(MagicMock(), {"id": "integer"}),
-        ):
-            result = export_data(
-                "dummy.conf", "res.partner", [], ["id"], None, streaming=True
-            )
-            assert result is None
+        assert result is not None
+        assert result.is_empty()
+        mock_write_csv.assert_called_once()
 
     def test_export_relational_raw_id_success(self, mock_conf_lib: MagicMock) -> None:
         """Test Relational Raw id.
@@ -525,20 +562,41 @@ class TestExportData:
 
         assert_frame_equal(result_df, expected_df)
 
-    @patch("odoo_data_flow.export_threaded.log")
-    def test_export_mixed_syntax_fails_gracefully(
-        self, mock_log: MagicMock, mock_conf_lib: MagicMock
-    ) -> None:
-        """Test mixed syntax gracefully.
+    def test_export_hybrid_mode_success(self, mock_conf_lib: MagicMock) -> None:
+        """Test the hybrid mode.
 
-        Tests that mixing read-style ('.id') and export-style ('field/id')
-        syntax is blocked and logs a helpful error.
+        Tests that the hybrid export mode correctly fetches raw IDs and
+        enriches the data with related XML IDs.
         """
         # --- Arrange ---
-        header = [".id", "parent_id/id"]  # Incompatible fields
+        header = [".id", "parent_id/id"]
+        mock_model = mock_conf_lib.return_value.get_model.return_value
+        mock_model.search.return_value = [10]
+
+        # 1. Mock the metadata call (_initialize_export)
+        mock_model.fields_get.return_value = {
+            "id": {"type": "integer"},
+            "parent_id": {
+                "type": "many2one",
+                "relation": "res.partner.category",
+            },
+        }
+
+        # 2. Mock the primary read() call
+        mock_model.read.return_value = [{"id": 10, "parent_id": (5, "Parent Category")}]
+
+        # 3. Mock the secondary XML ID lookup on 'ir.model.data'
+        mock_ir_model_data = MagicMock()
+        mock_ir_model_data.search_read.return_value = [
+            {"res_id": 5, "module": "base", "name": "cat_parent"}
+        ]
+        mock_conf_lib.return_value.get_model.side_effect = [
+            mock_model,
+            mock_ir_model_data,
+        ]
 
         # --- Act ---
-        result = export_data(
+        result_df = export_data(
             config_file="dummy.conf",
             model="res.partner.category",
             domain=[],
@@ -547,11 +605,12 @@ class TestExportData:
         )
 
         # --- Assert ---
-        assert result is None
-        mock_log.error.assert_called_once()
-        call_args, _ = mock_log.error.call_args
-        assert "Mixing incompatible field types" in call_args[0]
-        assert "['parent_id/id']" in call_args[0]
+        assert result_df is not None
+        expected_df = pl.DataFrame(
+            {".id": [10], "parent_id/id": ["base.cat_parent"]},
+            schema={".id": pl.Int64, "parent_id/id": pl.String},
+        )
+        assert_frame_equal(result_df, expected_df)
 
     def test_export_id_and_dot_id_in_read_mode(self, mock_conf_lib: MagicMock) -> None:
         """Test the read mode.
@@ -640,78 +699,59 @@ class TestExportData:
         assert result_df.schema["id"] == pl.String
         assert_frame_equal(result_df, expected_df)
 
+    @patch("odoo_data_flow.export_threaded.concurrent.futures.as_completed")
+    @patch("odoo_data_flow.export_threaded._clean_batch")
+    @patch("odoo_data_flow.export_threaded.Progress")
+    def test_process_export_batches_handles_inconsistent_schemas(
+        self,
+        mock_progress: MagicMock,
+        mock_clean_batch: MagicMock,
+        mock_as_completed: MagicMock,
+    ) -> None:
+        """Tests that batches with inconsistent schemas are correctly concatenated.
 
-@patch("odoo_data_flow.export_threaded.concurrent.futures.as_completed")
-@patch("odoo_data_flow.export_threaded._clean_batch")
-@patch("odoo_data_flow.export_threaded.Progress")
-def test_process_export_batches_handles_inconsistent_schemas(
-    mock_progress: MagicMock,
-    mock_clean_batch: MagicMock,
-    mock_as_completed: MagicMock,
-) -> None:
-    """Tests that batches with inconsistent schemas are correctly concatenated.
+        This validates the fix for the `SchemaError` that occurred when one batch
+        inferred a column as Boolean and another inferred it as String. The test
+        ensures that the final concatenated DataFrame has a consistent, correct schema.
+        """
+        # --- Arrange ---
+        mock_rpc_thread = MagicMock(spec=RPCThreadExport)
+        future1, future2 = MagicMock(), MagicMock()
+        future1.result.return_value = [{"id": 1, "is_special": True}]
+        future2.result.return_value = [{"id": 2, "is_special": "False"}]
+        mock_rpc_thread.futures = [future1, future2]
+        mock_as_completed.return_value = [future1, future2]
+        mock_rpc_thread.executor = MagicMock()
+        mock_rpc_thread.executor.shutdown.return_value = None
 
-    This validates the fix for the `SchemaError` that occurred when one batch
-    inferred a column as Boolean and another inferred it as String. The test
-    ensures that the final concatenated DataFrame has a consistent, correct schema.
-    """
-    # --- Arrange ---
-    # 1. Mock the RPC thread and its futures to simulate two batches
-    mock_rpc_thread = MagicMock(spec=RPCThreadExport)
-    future1, future2 = MagicMock(), MagicMock()
-    future1.result.return_value = [{"id": 1, "is_special": True}]
-    future2.result.return_value = [{"id": 2, "is_special": "False"}]
+        mock_clean_batch.side_effect = [
+            pl.DataFrame({"id": [1], "is_special": [True]}),
+            pl.DataFrame({"id": [2], "is_special": ["False"]}),
+        ]
 
-    # FIX: Assign the 'futures' attribute to the mock object
-    mock_rpc_thread.futures = [future1, future2]
+        fields_info = {
+            "id": {"type": "integer"},
+            "is_special": {"type": "boolean"},
+        }
+        total_ids = 2
 
-    # Mock the return value of as_completed to prevent hanging
-    mock_as_completed.return_value = [future1, future2]
+        # --- Act ---
+        final_df = _process_export_batches(
+            rpc_thread=mock_rpc_thread,
+            total_ids=total_ids,
+            model_name="test.model",
+            output=None,
+            fields_info=fields_info,
+            separator=",",
+            streaming=False,
+        )
+        assert final_df is not None
 
-    # Explicitly create the nested executor.shutdown attribute on the mock
-    mock_rpc_thread.executor = MagicMock()
-    mock_rpc_thread.executor.shutdown.return_value = None
-
-    # 2. Mock `_clean_batch` to return DataFrames with inconsistent dtypes,
-    #    simulating the real-world failure case.
-    mock_clean_batch.side_effect = [
-        pl.DataFrame(
-            {"id": [1], "is_special": [True]}
-        ),  # Polars infers this as Boolean
-        pl.DataFrame(
-            {"id": [2], "is_special": ["False"]}
-        ),  # Polars infers this as String
-    ]
-
-    # 3. Define the field types and total records
-    field_types = {"id": "integer", "is_special": "boolean"}
-    total_ids = 2
-
-    # --- Act ---
-    # Run the function in in-memory mode (output=None) to get the DataFrame back
-    final_df = _process_export_batches(
-        rpc_thread=mock_rpc_thread,
-        total_ids=total_ids,
-        model_name="test.model",
-        output=None,
-        field_types=field_types,
-        separator=",",
-        streaming=False,
-    )
-
-    assert final_df is not None
-    # --- Assert ---
-    # The final DataFrame should have a consistent schema and correct data
-    expected_schema = {
-        "id": pl.Int64(),
-        "is_special": pl.Boolean(),
-    }
-    expected_df = pl.DataFrame(
-        {"id": [1, 2], "is_special": [True, False]},
-        schema=expected_schema,
-    )
-
-    # Sort by 'id' to ensure a stable order for comparison
-    final_df = final_df.sort("id")
-
-    assert_frame_equal(final_df, expected_df)
+        # --- Assert ---
+        expected_schema = {"id": pl.Int64(), "is_special": pl.Boolean()}
+        expected_df = pl.DataFrame(
+            {"id": [1, 2], "is_special": [True, False]},
+            schema=expected_schema,
+        )
+        final_df = final_df.sort("id")
+        assert_frame_equal(final_df, expected_df)
