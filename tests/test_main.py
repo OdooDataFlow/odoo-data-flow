@@ -68,6 +68,116 @@ def test_import_command_calls_runner(
     assert call_kwargs["model"] == "res.partner"
 
 
+@patch("odoo_data_flow.__main__.run_import")
+def test_import_command_preflight_skipped_in_fail_mode(
+    mock_run_import: MagicMock, runner: CliRunner
+) -> None:
+    """Test to not use preflight in fail mode.
+
+    Tests that --no-preflight-checks is automatically set when --fail is used,
+    even if not explicitly provided.
+    """
+    result = runner.invoke(
+        __main__.cli,
+        [
+            "import",
+            "--config",
+            "my.conf",
+            "--file",
+            "my_fail.csv",
+            "--model",
+            "res.partner",
+            "--fail",  # Crucial: enable fail mode
+        ],
+    )
+
+    assert result.exit_code == 0
+    mock_run_import.assert_called_once()
+    call_kwargs = mock_run_import.call_args.kwargs
+
+    # Assert that 'no_preflight_checks' is True because '--fail' was present
+    assert call_kwargs.get("no_preflight_checks") is True
+    assert call_kwargs["config"] == "my.conf"
+    assert call_kwargs["filename"] == "my_fail.csv"
+    assert call_kwargs["model"] == "res.partner"
+    assert call_kwargs["fail"] is True  # Ensure --fail flag is still passed as True
+
+
+@patch("odoo_data_flow.__main__.run_import")
+def test_import_command_preflight_not_skipped_without_fail_mode(
+    mock_run_import: MagicMock, runner: CliRunner
+) -> None:
+    """Test preflight not skipped without fail mode.
+
+    Tests that --no-preflight-checks remains False if --fail is not used,
+    and --no-preflight-checks is not explicitly provided.
+    """
+    result = runner.invoke(
+        __main__.cli,
+        [
+            "import",
+            "--config",
+            "my.conf",
+            "--file",
+            "my.csv",
+            "--model",
+            "res.partner",
+            # No --fail and no --no-preflight-checks
+        ],
+    )
+
+    assert result.exit_code == 0
+    mock_run_import.assert_called_once()
+    call_kwargs = mock_run_import.call_args.kwargs
+
+    # Assert that 'no_preflight_checks' is False by default
+    assert call_kwargs.get("no_preflight_checks") is False
+    assert call_kwargs["config"] == "my.conf"
+    assert call_kwargs["filename"] == "my.csv"
+    assert call_kwargs["model"] == "res.partner"
+    assert call_kwargs["fail"] is False  # Ensure --fail flag is False by default
+
+
+@patch("odoo_data_flow.__main__.run_import")
+def test_import_command_explicit_no_preflight_overrides_fail_mode(
+    mock_run_import: MagicMock, runner: CliRunner
+) -> None:
+    """Test explicit no preflight.
+
+    Tests that explicitly setting --no-preflight-checks=False
+    (if that were an option, which it's not for is_flag=True)
+    or rather, that the logic doesn't interfere if it's explicitly set to True
+    (which is the only way it can be explicitly set).
+    This test ensures the automatic setting doesn't conflict with explicit user
+    intent.
+    """
+    result = runner.invoke(
+        __main__.cli,
+        [
+            "import",
+            "--config",
+            "my.conf",
+            "--file",
+            "my_fail.csv",
+            "--model",
+            "res.partner",
+            "--fail",
+            "--no-preflight-checks",  # Explicitly request no preflight checks
+        ],
+    )
+
+    assert result.exit_code == 0
+    mock_run_import.assert_called_once()
+    call_kwargs = mock_run_import.call_args.kwargs
+
+    # Assert that 'no_preflight_checks' is True (whether by --fail or explicit flag)
+    assert call_kwargs.get("no_preflight_checks") is True
+    assert call_kwargs["config"] == "my.conf"
+    assert call_kwargs["filename"] == "my_fail.csv"
+    assert call_kwargs["model"] == "res.partner"
+    assert call_kwargs["fail"] is True
+
+
 @patch("odoo_data_flow.__main__.run_export")
 def test_export_command_calls_runner(
     mock_run_export: MagicMock, runner: CliRunner

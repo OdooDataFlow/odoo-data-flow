@@ -258,6 +258,9 @@ def invoice_v9_cmd(**kwargs: Any) -> None:
 @click.option("--encoding", default="utf-8", help="Encoding of the data file.")
 def import_cmd(**kwargs: Any) -> None:
     """Runs the data import process."""
+    # Ensure preflight checks are skipped in fail mode
+    if kwargs.get("fail"):
+        kwargs["no_preflight_checks"] = True
     run_import(**kwargs)
 
 
