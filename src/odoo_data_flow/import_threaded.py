@@ -260,58 +260,218 @@ def _read_data_file(
         return [], []
 
 
-def _create_batches(
-    data: list[list[Any]],
-    split_by_col: Optional[str],
+def _recursive_create_batches(
+    current_data: list[list[Any]],
+    group_cols: list[str],
     header: list[str],
     batch_size: int,
     o2m: bool,
+    batch_prefix: str = "",
+    level: int = 0,  # Current recursion level for internal tracking
 ) -> Generator[tuple[Any, list[list[Any]]], None, None]:
-    """A generator that yields batches of data.
+    """Recursively creates batches of data, optionally grouping by columns.
 
-    If split_by_col is provided, it
-    groups records with the same value in that column into the same batch.
+    This generator function processes data in batches. If `group_cols` are provided,
+    it recursively groups records based on the values in these columns, ensuring
+    that records belonging to the same group (and its subgroups) stay together
+    within a batch. It also handles one-to-many (o2m) relationships, keeping
+    child records with their parent records.
+
+    Args:
+        current_data (list[list[Any]]): The list of data rows to process. Each row
+            is expected to be a list of values.
+        group_cols (list[str]): A list of column names by which to group the data.
+            The function processes these columns in order, from left to right.
+        header (list[str]): The header row of the data, containing column names.
+            This is used to find the index of `group_cols` and the 'id' column.
+        batch_size (int): The maximum number of records allowed in a single batch
+            before a new batch is started.
+        o2m (bool): If True, enables one-to-many relationship handling. This means
+            that records with an empty 'id' field (assuming the first column is 'id')
+            will be kept with the preceding parent record in the same batch.
+        batch_prefix (str, optional): A prefix string used to construct unique
+            batch identifiers. This is primarily for internal tracking during recursion.
+            Defaults to "".
+        level (int, optional): The current recursion depth. Used internally for
+            constructing unique batch identifiers. Defaults to 0.
+
+    Yields:
+        tuple[Any, list[list[Any]]]: A tuple where the first element is a unique
+            identifier for the batch (string combining prefixes, levels, group
+            counters, and group values) and the second element is the list of
+            data rows constituting that batch.
+
+    Raises:
+        ValueError: If a column specified in `group_cols` is not found in the `header`.
+            (This error is logged and the function returns in the current
+            implementation, but a `ValueError` could conceptually be raised if
+            not handled this way).
     """
-    if not split_by_col:
-        # Simple batching without grouping
-        for i, data_batch in enumerate(batch(data, batch_size)):
-            yield i, list(data_batch)
+    if not group_cols:
+        # Base case: No more grouping columns, just yield regular batches
+        for i, data_batch in enumerate(batch(current_data, batch_size)):
+            yield (
+                f"{batch_prefix}-{i}" if batch_prefix else str(i),
+                list(data_batch),
+            )
         return
+
+    current_group_col = group_cols[0]
+    remaining_group_cols = group_cols[1:]
 
     try:
-        split_index = header.index(split_by_col)
-        id_index = header.index("id")
-    except ValueError as e:
-        log.error(f"Grouping column '{e}' not found in header. Cannot use --groupby.")
+        split_index = header.index(current_group_col)
+        id_index = header.index("id")  # Needed for o2m logic
+    except ValueError:
+        # This error should ideally be caught earlier, as header is fixed
+        log.error(
+            f"Grouping column '{current_group_col}' not found in header. "
+            "Cannot use --groupby."
+        )
         return
 
-    data.sort(key=lambda row: row[split_index])
+    # Sort data based on the current grouping column
+    # Empty strings/None/False values for the split column should come first
+    # This also helps with consistent grouping
+    # New (correct)
+    current_data.sort(
+        key=lambda row: (
+            row[split_index] is None or row[split_index] == "",
+            row[split_index],
+        )
+    )
 
     current_batch: list[list[Any]] = []
     current_split_value: Optional[str] = None
-    batch_num = 0
+    group_counter = 0
 
-    for row in data:
-        is_o2m_line = o2m and not row[id_index]
+    for row in current_data:
         row_split_value = row[split_index]
+        # is_empty_value = row_split_value is None or row_split_value == ""
+        is_o2m_line = (
+            o2m and not row[id_index]
+        )  # O2M lines should stay with their parent
 
-        if (
-            current_batch
-            and not is_o2m_line
-            and (
-                row_split_value != current_split_value
-                or len(current_batch) >= batch_size
-            )
+        if not current_batch:
+            # First row in a new segment, initialize current_split_value
+            current_split_value = row_split_value
+        elif not is_o2m_line and (
+            row_split_value != current_split_value or len(current_batch) >= batch_size
         ):
-            yield f"{batch_num}-{current_split_value}", current_batch
+            # If we've hit a new group value or max batch size,
+            # process the current batch recursively
+            yield from _recursive_create_batches(
+                current_batch,
+                remaining_group_cols,
+                header,
+                batch_size,
+                o2m,
+                f"{batch_prefix}{level}-{group_counter}-"
+                f"{current_split_value or 'empty'}",
+            )
             current_batch = []
-            batch_num += 1
+            group_counter += 1
+            current_split_value = row_split_value  # Start new group value
 
         current_batch.append(row)
-        current_split_value = row_split_value
 
     if current_batch:
-        yield f"{batch_num}-{current_split_value}", current_batch
+        # Yield any remaining batch after the loop
+        yield from _recursive_create_batches(
+            current_batch,
+            remaining_group_cols,
+            header,
+            batch_size,
+            o2m,
+            f"{batch_prefix}{level}-{group_counter}-{current_split_value or 'empty'}",
+        )
+
+
+def _create_batches(  # noqa C901
+    data: list[list[Any]],
+    split_by_cols: Optional[list[str]],
+    header: list[str],
+    batch_size: int,
+    o2m: bool,
+) -> Generator[tuple[int, list[list[Any]]], None, None]:
+    """A generator that yields batches of data.
+
+    If split_by_cols is provided, it
+    groups records with the same value in that column into the same batch.
+    """
+    if not data:
+        return
+
+    batch: list[list[Any]] = []
+    # Determine the grouping column. If multiple, we'll just use the first for now.
+    # This might need refinement based on desired multi-column grouping behavior.
+    split_column_name: Optional[str] = None
+    if split_by_cols and len(split_by_cols) > 0:
+        split_column_name = split_by_cols[0]
+
+    split_index = -1
+    if split_column_name:
+        try:
+            split_index = header.index(split_column_name)
+        except ValueError:
+            log.error(
+                f"Grouping column '{split_column_name}' not found in header. "
+                f"Cannot use --groupby."
+            )
+            return
+
+    batch_counter = 0
+
+    # If splitting is enabled and a valid column is found
+    if split_index != -1 and split_column_name:
+        current_data = sorted(
+            data,
+            key=lambda row: (
+                row[split_index] is None or row[split_index] == "",
+                row[split_index],
+            ),
+        )
+
+        current_group_value = object()  # Sentinel for initial comparison
+
+        for row in current_data:
+            row_group_value = row[split_index]
+            is_o2m_line = o2m and (
+                row[0] is None or row[0] == ""
+            )  # Assuming ID is first column
+
+            if o2m and is_o2m_line and batch:
+                # If it's an O2M line and a batch already exists,
+                # append to the current batch
+                batch.append(row)
+            elif row_group_value != current_group_value:
+                # New group or first record, yield current batch if not empty
+                if batch:
+                    batch_counter += 1
+                    yield batch_counter, batch
+                batch = [row]  # Start new batch with current row
+                current_group_value = row_group_value
+            elif len(batch) >= batch_size:
+                # Same group, but batch is full, yield and start new batch
+                batch_counter += 1
+                yield batch_counter, batch
+                batch = [row]
+            else:
+                # Same group, batch not full, append
+                batch.append(row)
+
+        if batch:  # Yield any remaining batch
+            batch_counter += 1
+            yield batch_counter, batch
+    else:  # No splitting, just batch by size
+        for row in data:
+            batch.append(row)
+            if len(batch) >= batch_size:
+                yield batch_counter, batch
+                batch = []
+        if batch:
+            batch_counter += 1
+            yield batch_counter, batch
 
 
 def _setup_fail_file(
@@ -345,7 +505,7 @@ def _execute_import_in_threads(
     fail_file_writer: Optional[Any],
     context: dict[str, Any],
     is_fail_run: bool,
-    split: Optional[str],
+    split_by_cols: Optional[list[str]],
     batch_size: int,
     o2m: bool,
     check: bool,
@@ -382,7 +542,7 @@ def _execute_import_in_threads(
             )
 
             for batch_number, lines_batch in _create_batches(
-                final_data, split, final_header, batch_size, o2m
+                final_data, split_by_cols, final_header, batch_size, o2m
             ):
                 if rpc_thread.abort_flag:
                     log.error(
@@ -415,7 +575,7 @@ def import_data(
     encoding: str = "utf-8",
     separator: str = ";",
     ignore: Optional[list[str]] = None,
-    split: Optional[str] = None,
+    split_by_cols: Optional[list[str]] = None,
     check: bool = True,
     max_connection: int = 1,
     batch_size: int = 10,
@@ -438,7 +598,7 @@ def import_data(
         encoding: The file encoding of the source file.
         separator: The delimiter used in the CSV file.
         ignore: A list of column names to ignore during import.
-        split: The column name to group records by to avoid concurrent updates.
+        split_by_cols: The column names to group records by to avoid concurrent updates.
         check: If True, checks if records were successfully imported.
         max_connection: The number of simultaneous connections to use.
         batch_size: The number of records to process in each batch.
@@ -489,7 +649,7 @@ def import_data(
         fail_file_writer,
         _context,
         is_fail_run,
-        split,
+        split_by_cols,
         batch_size,
         o2m,
         check,

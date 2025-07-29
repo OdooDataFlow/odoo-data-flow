@@ -55,7 +55,7 @@ def test_run_import_infers_model_from_filename(
     mock_run_checks.assert_called_once()
     mock_import_data.assert_called_once()
     # The second positional argument passed to import_data should be the model name.
-    called_model = mock_import_data.call_args.args[1]
+    called_model = mock_import_data.call_args.kwargs["model"]
     assert called_model == "res.partner"
 
 

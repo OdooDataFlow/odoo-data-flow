@@ -134,16 +134,18 @@ def run_import(
     log.info(f"Workers: {max_connection_run}, Batch Size: {batch_size_run}")
     log.info(f"Failed records will be saved to: {fail_output_file}")
 
+    split_by_cols_for_import = [split] if split else None
+
     success = import_threaded.import_data(
-        config,
-        final_model,
+        config_file=config,
+        model=final_model,
         file_csv=file_to_process,
         context=parsed_context,
         fail_file=fail_output_file,
         encoding=encoding,
         separator=separator,
         ignore=ignore_list,
-        split=split,
+        split_by_cols=split_by_cols_for_import,
         check=check,
         max_connection=max_connection_run,
         batch_size=batch_size_run,

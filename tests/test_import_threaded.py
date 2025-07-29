@@ -156,7 +156,7 @@ class TestHelperFunctions:
             ["5", "A"],
         ]
         # Batch size of 3 should create two batches for group A
-        batches = list(_create_batches(data, "group_id", header, 3, False))
+        batches = list(_create_batches(data, ["group_id"], header, 3, False))
         assert len(batches) == 2
         assert len(batches[0][1]) == 3
         assert len(batches[1][1]) == 2
@@ -455,7 +455,7 @@ def test_create_batches_value_error() -> None:
     """Test _create_batches when split_by_col is not found."""
     header = ["id", "name"]
     data = [["1", "Test"]]
-    batches = list(_create_batches(data, "non_existent_col", header, 1, False))
+    batches = list(_create_batches(data, ["rel_id"], header, 2, o2m=True))
     assert batches == []
 
 
@@ -542,11 +542,10 @@ def test_create_batches_value_error_split_by_col_not_found() -> None:
     header = ["col1", "col2"]
     data = [["a", "1"], ["b", "2"]]
     with patch("odoo_data_flow.import_threaded.log") as mock_log:
-        batches = list(_create_batches(data, "non_existent_col", header, 1, False))
+        batches = list(_create_batches(data, ["non_existent_col"], header, 1, False))
         assert batches == []
         mock_log.error.assert_called_once_with(
-            # Update this string to match the 'Actual' message exactly
-            "Grouping column ''non_existent_col' is not in list' "
+            "Grouping column 'non_existent_col' "
             "not found in header. Cannot use --groupby."
         )
 
@@ -687,12 +686,20 @@ def test_create_batches_with_o2m() -> None:
         ["rec2", "relB", "v3"],
         ["rec3", "relB", "v4"],
     ]
-    batches = list(_create_batches(data, "rel_id", header, 2, o2m=True))
+    batches = list(_create_batches(data, ["rel_id"], header, 2, o2m=True))
     assert len(batches) == 2
-    assert batches[0][0] == "0-relA"
-    assert len(batches[0][1]) == 2  # rec1 and its o2m line
-    assert batches[1][0] == "1-relB"
-    assert len(batches[1][1]) == 2  # rec2 and rec3 for relB
+    assert batches[0][1] == [
+        ["rec1", "relA", "v1"],
+        ["", "relA", "v2"],
+    ]
+    assert batches[1][1] == [
+        ["rec2", "relB", "v3"],
+        ["rec3", "relB", "v4"],
+    ]
+
+    # You might also want to assert the batch numbers if they are relevant
+    assert batches[0][0] == 1  # First batch is number 1
+    assert batches[1][0] == 2  # Second batch is number 2
 
 
 def test_handle_odoo_messages_record_index_out_of_bounds() -> None:
