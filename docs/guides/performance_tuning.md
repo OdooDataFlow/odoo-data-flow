@@ -48,7 +48,7 @@ This will add the `--worker=4` flag to the command in your generated `load.sh` s
 The `--groupby` option is a powerful feature designed to solve the "race condition" problem that occurs during high-performance, multi-worker imports.
 
 - **CLI Option**: `--groupby`
-- **`params` Key**: `'split'` (Note: the internal key is `split`)
+- **`params` Key**: `'groupby'` (Note: use `groupby`, not `split`)
 - **Default**: `None`
 
 ### The Problem: A Race Condition
@@ -116,7 +116,7 @@ import_params = {
     'model': 'res.partner',
     'worker': 4,
     # This is the crucial part
-    'split': 'parent_id/id', # The internal key is 'split'
+    'groupby': 'parent_id/id', # The internal key is 'groupby'
 }
 ```
 
@@ -127,6 +127,10 @@ This will add `--groupby=parent_id/id` to your generated `load.sh` script.
 The `--size` option is one of the most critical parameters for controlling the performance and reliability of your imports. In simple terms, it controls **how many records are processed in a single database transaction**.
 
 To understand why this is so important, think of it like going through a checkout at a grocery store.
+
+- **CLI Option**: `--size`
+- **`params` Key**: `'size'`
+- **Default**: `1000` (or the default set in the application's configuration)
 
 ### The Default Odoo Behavior: One Big Basket
 
@@ -215,7 +219,7 @@ The choice of mappers can impact performance.
 
 - **Slow Mappers**: The `mapper.relation` function should be used with caution. For **every single row**, it performs a live search request to the Odoo database, which can be very slow for large datasets.
 
-**Recommendation**: If you need to map values based on data in Odoo, it is much more performant to first export the mapping from Odoo into a Python dictionary and then use the much faster `mapper.map_val` to do the translation in memory.
+**Recommendation**: If you need to map values based on data in Odoo, it is much more performant to first export the necessary mapping data from Odoo (e.g., using `odoo-data-flow export`) into a Python dictionary or a separate CSV file, and then use the much faster `mapper.map_val` or other in-memory lookups to do the translation.
 
 ---
 
@@ -225,14 +229,14 @@ A common but very slow practice is to import values into related or computed fie
 
 ### The Problem: Cascading Updates
 
-Consider an example where you are importing a list of contacts and setting their `parent_id` (parent company).
+Consider an example where you are importing a list of contacts and setting their `parent_id` (parent company). If Odoo needs to update the `child_ids` field on the parent for every child, this becomes inefficient.
 
 ```python
 # SLOW - DO NOT DO THIS
 my_mapping = {
     'id': mapper.m2o_map('child_', 'Ref'),
     'name': mapper.val('Name'),
-    # This next line causes the performance issue
+    # This next line, if imported directly, causes the performance issue
     'parent_id/id': mapper.m2o_map('parent_', 'ParentRef'),
 }
 ```
@@ -253,13 +257,13 @@ The correct way to handle this is to prevent the import client from writing to t
 my_mapping = {
     'id': mapper.m2o_map('child_', 'Ref'),
     'name': mapper.val('Name'),
-    'parent_id/id': mapper.m2o_map('parent_', 'ParentRef'),
+    'parent_id/id': mapper.m2o_map('parent_', 'ParentRef'), # Define the mapping
 }
 
-# The params tell the client to IGNORE the parent_id/id field
+# The params tell the client to IGNORE the parent_id/id field during import
 import_params = {
     'model': 'res.partner',
-    'ignore': 'parent_id/id', # The field to ignore
+    'ignore': 'parent_id/id', # The field to ignore for direct import
 }
 
 processor.process(
@@ -271,4 +275,4 @@ processor.process(
 
 This will generate a `load.sh` script with the `--ignore=parent_id/id` flag. The import client will then skip this column, avoiding the cascading updates entirely. Odoo's internal logic will still correctly establish the relationship based on the other direction of the field, but far more efficiently.
 
-**Recommendation**: For performance, **always** use `--ignore` for related fields that have an inverse relation (like `parent_id` and `child_ids`). Only import the "forward" direction of the relationship.
+**Recommendation**: For performance, **always** consider using `--ignore` for related fields that have an inverse relation (like `parent_id` and `child_ids`). Only import the "forward" direction of the relationship where necessary, letting Odoo manage the inverse.
