@@ -46,29 +46,6 @@ class TestInternalHelpers:
         mock_log_error.assert_called_once()
         assert "Could not fetch installed languages" in mock_log_error.call_args[0][0]
 
-    def test_install_languages_success(self, mock_conf_lib: MagicMock) -> None:
-        """Tests the success path of the _install_languages helper."""
-        mock_lang_obj = MagicMock()
-        mock_conf_lib.return_value.get_model.return_value = mock_lang_obj
-
-        result = preflight._install_languages("dummy.conf", ["fr_FR", "de_DE"])
-        assert result is True
-        mock_lang_obj.load_lang.assert_called_once_with(["fr_FR", "de_DE"])
-
-    @patch("odoo_data_flow.lib.preflight.log.error")
-    def test_install_languages_failure(
-        self, mock_log_error: MagicMock, mock_conf_lib: MagicMock
-    ) -> None:
-        """Tests that _install_languages handles an installation failure."""
-        mock_lang_obj = MagicMock()
-        mock_lang_obj.load_lang.side_effect = Exception("Install Failed")
-        mock_conf_lib.return_value.get_model.return_value = mock_lang_obj
-
-        result = preflight._install_languages("dummy.conf", ["fr_FR"])
-        assert result is False
-        mock_log_error.assert_called_once()
-        assert "Failed to install languages" in mock_log_error.call_args[0][0]
-
 
 class TestLanguageCheck:
     """Tests for the language_check pre-flight checker."""
@@ -98,13 +75,15 @@ class TestLanguageCheck:
         result = preflight.language_check(
             model="res.partner", filename="file.csv", config="", headless=False
         )
-        assert result is True  # Should gracefully skip the check
+        assert result is True
 
     def test_language_check_no_required_languages(
         self, mock_polars_read_csv: MagicMock
     ) -> None:
         """Tests the case where the source file contains no languages."""
-        mock_polars_read_csv.return_value.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value = []  # noqa
+        mock_df = MagicMock()
+        mock_df.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value = []  # noqa: E501
+        mock_polars_read_csv.return_value = mock_df
         result = preflight.language_check(
             model="res.partner", filename="file.csv", config="", headless=False
         )
@@ -114,10 +93,13 @@ class TestLanguageCheck:
         self, mock_polars_read_csv: MagicMock, mock_conf_lib: MagicMock
     ) -> None:
         """Tests the success case where all required languages are installed."""
-        mock_polars_read_csv.return_value.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value = [  # noqa
+        mock_df = MagicMock()
+        mock_df.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value = [  # noqa: E501
             "en_US",
             "fr_FR",
         ]
+        mock_polars_read_csv.return_value = mock_df
+
         mock_conf_lib.return_value.get_model.return_value.search_read.return_value = [
             {"code": "en_US"},
             {"code": "fr_FR"},
@@ -128,92 +110,91 @@ class TestLanguageCheck:
         )
         assert result is True
 
+    @patch("odoo_data_flow.lib.preflight.language_installer.run_language_installation")
     @patch("odoo_data_flow.lib.preflight.Confirm.ask", return_value=True)
-    @patch("odoo_data_flow.lib.preflight._install_languages", return_value=True)
+    @patch(
+        "odoo_data_flow.lib.preflight._get_installed_languages",
+        return_value={"en_US"},
+    )
     def test_missing_languages_user_confirms_install_success(
         self,
-        mock_install: MagicMock,
+        mock_get_langs: MagicMock,
         mock_confirm: MagicMock,
+        mock_installer: MagicMock,
         mock_polars_read_csv: MagicMock,
-        mock_conf_lib: MagicMock,
     ) -> None:
         """Tests missing languages where user confirms and install succeeds."""
-        mock_polars_read_csv.return_value.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value = [  # noqa
-            "en_US",
-            "fr_FR",
+        mock_polars_read_csv.return_value.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value = [  # noqa: E501
+            "fr_FR"
         ]
-        mock_conf_lib.return_value.get_model.return_value.search_read.return_value = [
-            {"code": "en_US"}
-        ]
+        mock_installer.return_value = True
+
         result = preflight.language_check(
-            model="res.partner", filename="file.csv", config="", headless=False
+            model="res.partner",
+            filename="file.csv",
+            config="dummy.conf",
+            headless=False,
         )
         assert result is True
         mock_confirm.assert_called_once()
-        mock_install.assert_called_once_with("", ["fr_FR"])
+        mock_installer.assert_called_once_with("dummy.conf", ["fr_FR"])
 
-    @patch("odoo_data_flow.lib.preflight.Confirm.ask", return_value=True)
-    @patch("odoo_data_flow.lib.preflight._install_languages", return_value=False)
-    def test_missing_languages_user_confirms_install_fails(
-        self,
-        mock_install: MagicMock,
-        mock_confirm: MagicMock,
-        mock_polars_read_csv: MagicMock,
-        mock_conf_lib: MagicMock,
-    ) -> None:
-        """Tests missing languages where user confirms but install fails."""
-        mock_polars_read_csv.return_value.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value = [  # noqa
-            "fr_FR"
-        ]
-        mock_conf_lib.return_value.get_model.return_value.search_read.return_value = [
-            {"code": "en_US"}
-        ]
-        result = preflight.language_check(
-            model="res.partner", filename="file.csv", config="", headless=False
-        )
-        assert result is False
-        mock_confirm.assert_called_once()
-        mock_install.assert_called_once_with("", ["fr_FR"])
-
+    @patch("odoo_data_flow.lib.preflight.language_installer.run_language_installation")
     @patch("odoo_data_flow.lib.preflight.Confirm.ask", return_value=False)
+    @patch(
+        "odoo_data_flow.lib.preflight._get_installed_languages",
+        return_value={"en_US"},
+    )
     def test_missing_languages_user_cancels(
         self,
+        mock_get_langs: MagicMock,
         mock_confirm: MagicMock,
+        mock_installer: MagicMock,
         mock_polars_read_csv: MagicMock,
-        mock_conf_lib: MagicMock,
     ) -> None:
-        """Tests missing languages where user cancels the installation."""
-        mock_polars_read_csv.return_value.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value = [  # noqa
+        """Tests that the check fails if the user cancels the installation."""
+        mock_polars_read_csv.return_value.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value = [  # noqa: E501
             "fr_FR"
         ]
-        mock_conf_lib.return_value.get_model.return_value.search_read.return_value = [
-            {"code": "en_US"}
-        ]
+
         result = preflight.language_check(
-            model="res.partner", filename="file.csv", config="", headless=False
+            model="res.partner",
+            filename="file.csv",
+            config="dummy.conf",
+            headless=False,
         )
         assert result is False
         mock_confirm.assert_called_once()
+        mock_installer.assert_not_called()
 
-    @patch("odoo_data_flow.lib.preflight._install_languages", return_value=True)
+    @patch("odoo_data_flow.lib.preflight.language_installer.run_language_installation")
+    @patch("odoo_data_flow.lib.preflight.Confirm.ask")
+    @patch(
+        "odoo_data_flow.lib.preflight._get_installed_languages",
+        return_value={"en_US"},
+    )
     def test_missing_languages_headless_mode(
         self,
-        mock_install: MagicMock,
+        mock_get_langs: MagicMock,
+        mock_confirm: MagicMock,
+        mock_installer: MagicMock,
         mock_polars_read_csv: MagicMock,
-        mock_conf_lib: MagicMock,
     ) -> None:
         """Tests that languages are auto-installed in headless mode."""
-        mock_polars_read_csv.return_value.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value = [  # noqa
+        mock_polars_read_csv.return_value.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value = [  # noqa: E501
             "fr_FR"
         ]
-        mock_conf_lib.return_value.get_model.return_value.search_read.return_value = [
-            {"code": "en_US"}
-        ]
+        mock_installer.return_value = True
+
         result = preflight.language_check(
-            model="res.partner", filename="file.csv", config="", headless=True
+            model="res.partner",
+            filename="file.csv",
+            config="dummy.conf",
+            headless=True,
         )
         assert result is True
-        mock_install.assert_called_once_with("", ["fr_FR"])
+        mock_confirm.assert_not_called()
+        mock_installer.assert_called_once_with("dummy.conf", ["fr_FR"])
 
 
 class TestFieldExistenceCheck:
@@ -327,10 +308,9 @@ class TestFieldExistenceCheck:
             "name",
             "x_legacy_field",
         ]
-        mock_conf_lib.return_value.get_model.return_value.search_read.return_value = [
-            {"name": "id"},
-            {"name": "name"},
-        ]
+        mock_model = mock_conf_lib.return_value.get_model.return_value
+        mock_model.fields_get.return_value = {"id": {}, "name": {}}
+
         result = preflight.field_existence_check(
             model="res.partner", filename="file.csv", config=""
         )

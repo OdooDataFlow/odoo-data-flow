@@ -11,10 +11,10 @@ from polars.exceptions import ColumnNotFoundError
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm
-from rich.status import Status
 
 from ..logging_config import log
 from . import conf_lib
+from .actions import language_installer
 from .internal.ui import _show_error_panel
 
 # A registry to hold all pre-flight check functions
@@ -37,20 +37,6 @@ def _get_installed_languages(config_file: str) -> set[str]:
     except Exception as e:
         log.error(f"Could not fetch installed languages from Odoo. Error: {e}")
         return set()
-
-
-def _install_languages(config_file: str, languages_to_install: list[str]) -> bool:
-    """Installs a list of languages in the target Odoo database."""
-    try:
-        connection = conf_lib.get_connection_from_config(config_file)
-        lang_obj = connection.get_model("res.lang")
-        with Status(f"Installing languages: {', '.join(languages_to_install)}..."):
-            lang_obj.load_lang(languages_to_install)
-        log.info("Successfully installed missing languages.")
-        return True
-    except Exception as e:
-        log.error(f"Failed to install languages. Error: {e}")
-        return False
 
 
 @register_check
@@ -105,11 +91,15 @@ def language_check(
 
     if headless:
         log.info("--headless mode detected. Auto-confirming language installation.")
-        return _install_languages(config, list(missing_languages))
+        return language_installer.run_language_installation(
+            config, list(missing_languages)
+        )
 
     proceed = Confirm.ask("Do you want to install them now?", default=True)
     if proceed:
-        return _install_languages(config, list(missing_languages))
+        return language_installer.run_language_installation(
+            config, list(missing_languages)
+        )
     else:
         log.warning("Language installation cancelled by user. Aborting import.")
         return False
