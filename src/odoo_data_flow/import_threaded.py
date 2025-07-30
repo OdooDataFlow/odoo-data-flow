@@ -74,7 +74,7 @@ class RPCThreadImport(RpcThread):
 
     def _handle_odoo_messages(
         self, messages: list[dict[str, Any]], original_lines: list[list[Any]]
-    ) -> list[list[Any]]:
+    ) -> tuple[list[list[Any]], str]:
         """Processes error messages from an Odoo load response.
 
         If a batch fails, ALL records from that batch are returned with an
@@ -82,6 +82,11 @@ class RPCThreadImport(RpcThread):
         """
         failed_lines_with_specific_errors = []
         failed_indices = set()
+        first_error = (
+            messages[0].get("message", "Unknown Odoo error")
+            if messages
+            else "Unknown Odoo error"
+        )
         full_error_message = ""
 
         # First, collect all records that Odoo reported with a specific error.
@@ -110,14 +115,13 @@ class RPCThreadImport(RpcThread):
                     if self.add_error_reason:
                         failed_line.append(collateral_error_msg)
                     failed_lines_with_specific_errors.append(failed_line)
-            return failed_lines_with_specific_errors
+            return failed_lines_with_specific_errors, first_error
 
-        # Fallback for generic batch errors without specific record details
-        return self._handle_rpc_error(Exception(full_error_message), original_lines)
+        return self._handle_rpc_error(Exception(first_error), original_lines)
 
     def _handle_rpc_error(
         self, error: Exception, lines: list[list[Any]]
-    ) -> list[list[Any]]:
+    ) -> tuple[list[list[Any]], str]:
         """Handles a general RPC exception, marking all lines as failed."""
         error_message = str(error).replace("\n", " | ")
         if self.add_error_reason:
@@ -125,12 +129,12 @@ class RPCThreadImport(RpcThread):
             failed_lines = [list(line) for line in lines]
             for line in failed_lines:
                 line.append(error_message)
-            return failed_lines
-        return lines
+            return failed_lines, error_message
+        return lines, error_message
 
     def _handle_record_mismatch(
         self, response: dict[str, Any], lines: list[list[Any]]
-    ) -> list[list[Any]]:
+    ) -> tuple[list[list[Any]], str]:
         """Handles the case where imported records don't match sent lines."""
         error_message = (
             f"Record count mismatch. Expected {len(lines)}, "
@@ -140,20 +144,27 @@ class RPCThreadImport(RpcThread):
         log.error(error_message)
         return self._handle_rpc_error(Exception(error_message), lines)
 
-    def _execute_batch(self, lines: list[list[Any]], num: Any, do_check: bool) -> int:
+    def _execute_batch(
+        self, lines: list[list[Any]], num: Any, do_check: bool
+    ) -> dict[str, Any]:
         """The actual function executed by the worker thread."""
         if self.abort_flag:
-            return 0
+            return {"processed": 0, "error_summary": "Aborted"}
+
         start_time = time()
-        failed_lines = []
+        failed_lines: list[list[Any]] = []
+        error_summary = None
+
         try:
             log.debug(f"Importing batch {num} with {len(lines)} records...")
             res = self.model.load(self.header, lines, context=self.context)
 
             if res.get("messages"):
-                failed_lines = self._handle_odoo_messages(res["messages"], lines)
+                failed_lines, error_summary = self._handle_odoo_messages(
+                    res["messages"], lines
+                )
             elif do_check and len(res.get("ids", [])) != len(lines):
-                failed_lines = self._handle_record_mismatch(res, lines)
+                failed_lines, error_summary = self._handle_record_mismatch(res, lines)
 
         except requests.exceptions.JSONDecodeError:
             error_msg = (
@@ -163,14 +174,16 @@ class RPCThreadImport(RpcThread):
                 "like a '504 Gateway Timeout' and consider reducing the batch size."
             )
             log.error(f"Failed to process batch {num}. {error_msg}")
-            failed_lines = self._handle_rpc_error(Exception(error_msg), lines)
+            failed_lines, error_summary = self._handle_rpc_error(
+                Exception(error_msg), lines
+            )
         except requests.exceptions.ConnectionError as e:
             log.error(f"Connection to Odoo failed: {e}. Aborting import.")
-            failed_lines = self._handle_rpc_error(e, lines)
+            failed_lines, error_summary = self._handle_rpc_error(e, lines)
             self.abort_flag = True
         except Exception as e:
             log.error(f"RPC call for batch {num} failed: {e}", exc_info=True)
-            failed_lines = self._handle_rpc_error(e, lines)
+            failed_lines, error_summary = self._handle_rpc_error(e, lines)
 
         if failed_lines and self.writer:
             self.writer.writerows(failed_lines)
@@ -179,7 +192,7 @@ class RPCThreadImport(RpcThread):
         log.info(
             f"Time for batch {num}: {time() - start_time:.2f}s. Success: {success}"
         )
-        return len(lines)
+        return {"processed": len(lines), "error_summary": error_summary}
 
     def launch_batch(
         self,
@@ -359,6 +372,7 @@ def _execute_import_in_threads(
     model: str,
 ) -> bool:
     """Sets up and runs the rich progress bar and threaded import."""
+    # --- UX FIX 1: Add a new column to the progress bar for error messages ---
     progress = Progress(
         SpinnerColumn(),
         TextColumn("[bold blue]{task.description}", justify="right"),
@@ -368,13 +382,20 @@ def _execute_import_in_threads(
         TextColumn("[green]{task.completed} of {task.total} records"),
         TextColumn("•"),
         TimeRemainingColumn(),
+        TextColumn("[bold red]{task.fields[last_error]}", justify="left"),
     )
 
     rpc_thread = None
     try:
         with progress:
+            # --- UX FIX 2: Change the progress bar title for fail mode ---
+            task_description = (
+                f"Retrying Failed Records for [bold]{model}[/bold]"
+                if is_fail_run
+                else f"Importing to [bold]{model}[/bold]"
+            )
             task_id = progress.add_task(
-                f"Importing to [bold]{model}[/bold]", total=len(final_data)
+                task_description, total=len(final_data), last_error=""
             )
 
             rpc_thread = RPCThreadImport(
@@ -398,7 +419,30 @@ def _execute_import_in_threads(
                     break
                 rpc_thread.launch_batch(lines_batch, batch_number, check)
 
-            rpc_thread.wait()
+            # wait function can be deleted?
+            # --- UX FIX 1 (cont.): Update progress bar with error details ---
+            for future in concurrent.futures.as_completed(rpc_thread.futures):
+                if rpc_thread.abort_flag:
+                    break
+                try:
+                    result = future.result()
+                    error_summary = result.get("error_summary")
+                    # Truncate long error messages for display
+                    if error_summary and len(error_summary) > 70:
+                        error_summary = error_summary[:67] + "..."
+
+                    progress.update(
+                        task_id,
+                        advance=result.get("processed", 0),
+                        last_error=f"Last Error: {error_summary}"
+                        if error_summary
+                        else "",
+                    )
+                except Exception as e:
+                    log.error(
+                        f"A task in a worker thread failed unexpectedly: {e}",
+                        exc_info=True,
+                    )
 
     except KeyboardInterrupt:
         log.warning("\nImport process interrupted by user. Shutting down workers...")
@@ -408,7 +452,10 @@ def _execute_import_in_threads(
         log.error("Import aborted.")
         return False
 
-    return not rpc_thread.abort_flag if rpc_thread else False
+    if rpc_thread:
+        rpc_thread.executor.shutdown(wait=True)
+        return not rpc_thread.abort_flag
+    return False
 
 
 def import_data(

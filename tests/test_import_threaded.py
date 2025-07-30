@@ -31,8 +31,8 @@ class TestRPCThreadImport:
             1, None, header, mock_writer, add_error_reason=True
         )
         messages = [{"message": "Generic Error"}]
-        failed_lines = rpc_thread._handle_odoo_messages(messages, lines)
-        assert failed_lines[0][-1] == "Generic Error\n".replace("\n", " | ")
+        failed_lines, _ = rpc_thread._handle_odoo_messages(messages, lines)
+        assert failed_lines[0][-1] == "Generic Error"
 
     def test_handle_odoo_messages_no_error_reason(self) -> None:
         """Tests that when add_error_reason is False, the reason is not appended."""
@@ -43,7 +43,7 @@ class TestRPCThreadImport:
             1, None, header, mock_writer, add_error_reason=False
         )
         messages = [{"message": "Generic Error", "record": 0}]
-        failed_lines = rpc_thread._handle_odoo_messages(messages, lines)
+        failed_lines, _ = rpc_thread._handle_odoo_messages(messages, lines)
         assert len(failed_lines[0]) == 2
 
     def test_handle_record_mismatch(self) -> None:
@@ -55,7 +55,7 @@ class TestRPCThreadImport:
             1, None, header, mock_writer, add_error_reason=True
         )
         response = {"ids": [123]}
-        failed_lines = rpc_thread._handle_record_mismatch(response, lines)
+        failed_lines, _ = rpc_thread._handle_record_mismatch(response, lines)
         assert len(failed_lines) == 2
         assert "Record count mismatch" in failed_lines[0][2]
 
@@ -68,7 +68,7 @@ class TestRPCThreadImport:
             1, None, header, mock_writer, add_error_reason=True
         )
         error = Exception("Connection Timed Out")
-        failed_lines = rpc_thread._handle_rpc_error(error, lines)
+        failed_lines, _ = rpc_thread._handle_rpc_error(error, lines)
         assert len(failed_lines) == 2
         assert failed_lines[0][2] == "Connection Timed Out"
 
@@ -130,15 +130,12 @@ class TestRPCThreadImport:
         rpc_thread = RPCThreadImport(
             1, MagicMock(), header, mock_writer, add_error_reason=True
         )
-
         messages = [{"message": "Name is required", "record": 1}]
 
-        # --- Act ---
-        failed_lines = rpc_thread._handle_odoo_messages(messages, lines)
+        failed_lines, first_error = rpc_thread._handle_odoo_messages(messages, lines)
 
-        # --- Assert ---
         assert len(failed_lines) == 3
-
+        assert first_error == "Name is required"
         record_with_specific_error = next(
             (line for line in failed_lines if line[0] == "xml_id_2"), None
         )
@@ -245,7 +242,7 @@ class TestHelperFunctions:
     def test_handle_odoo_messages_saves_all_records_from_failed_batch(
         self,
     ) -> None:
-        """Test if all failed records ar in failed file.
+        """Test that all failed records from a batch are saved.
 
         Tests that when Odoo reports specific record errors, all other records
         in that same batch are also saved to the fail file with a generic message.
@@ -253,7 +250,6 @@ class TestHelperFunctions:
         """
         # --- Arrange ---
         header = ["id", "name"]
-        # Simulate a batch of 3 records
         lines = [
             ["xml_id_1", "Alice"],
             ["xml_id_2", ""],
@@ -269,20 +265,18 @@ class TestHelperFunctions:
         messages = [{"message": "Name is required", "record": 1}]
 
         # --- Act ---
-        failed_lines = rpc_thread._handle_odoo_messages(messages, lines)
+        failed_lines, first_error = rpc_thread._handle_odoo_messages(messages, lines)
 
         # --- Assert ---
-        # 1. All three original lines should be present in the result.
         assert len(failed_lines) == 3
+        assert first_error == "Name is required"
 
-        # 2. Find the specifically failed record and check its error message.
         record_with_specific_error = next(
             (line for line in failed_lines if line[0] == "xml_id_2"), None
         )
         assert record_with_specific_error is not None
         assert record_with_specific_error[-1] == "Name is required"
 
-        # 3. Find a "collateral damage" record and check its generic error message.
         record_with_generic_error = next(
             (line for line in failed_lines if line[0] == "xml_id_1"), None
         )
@@ -444,10 +438,11 @@ def test_handle_odoo_messages_no_record_details() -> None:
     rpc_thread = RPCThreadImport(1, MagicMock(), [], add_error_reason=True)
     messages = [{"message": "Generic Error"}]
     original_lines = [["1", "Test"], ["2", "Test2"]]
-    failed_lines = rpc_thread._handle_odoo_messages(messages, original_lines)
+    failed_lines, _ = rpc_thread._handle_odoo_messages(messages, original_lines)
+    # FIX: Removed the trailing " | " from the expected error message.
     assert failed_lines == [
-        ["1", "Test", "Generic Error | "],
-        ["2", "Test2", "Generic Error | "],
+        ["1", "Test", "Generic Error"],
+        ["2", "Test2", "Generic Error"],
     ]
 
 
@@ -456,8 +451,9 @@ def test_handle_rpc_error_with_error_reason() -> None:
     rpc_thread = RPCThreadImport(1, MagicMock(), [], add_error_reason=True)
     error = Exception("RPC Failed")
     lines = [["1", "Test"]]
-    failed_lines = rpc_thread._handle_rpc_error(error, lines)
+    failed_lines, error_summary = rpc_thread._handle_rpc_error(error, lines)
     assert failed_lines == [["1", "Test", "RPC Failed"]]
+    assert error_summary == "RPC Failed"
 
 
 def test_handle_record_mismatch_with_error_reason() -> None:
@@ -465,7 +461,7 @@ def test_handle_record_mismatch_with_error_reason() -> None:
     rpc_thread = RPCThreadImport(1, MagicMock(), [], add_error_reason=True)
     response = {"ids": [1]}
     lines = [["1", "Test"], ["2", "Test2"]]
-    failed_lines = rpc_thread._handle_record_mismatch(response, lines)
+    failed_lines, _ = rpc_thread._handle_record_mismatch(response, lines)
     assert failed_lines[0][2].startswith("Record count mismatch")
 
 
@@ -564,10 +560,11 @@ def test_handle_odoo_messages_with_error_reason_generic() -> None:
     rpc_thread = RPCThreadImport(1, MagicMock(), [], add_error_reason=True)
     messages = [{"message": "Generic Error"}]
     original_lines = [["1", "Test"], ["2", "Test2"]]
-    failed_lines = rpc_thread._handle_odoo_messages(messages, original_lines)
+    failed_lines, _ = rpc_thread._handle_odoo_messages(messages, original_lines)
+    # FIX: Removed the trailing " | " from the expected error message.
     assert failed_lines == [
-        ["1", "Test", "Generic Error | "],
-        ["2", "Test2", "Generic Error | "],
+        ["1", "Test", "Generic Error"],
+        ["2", "Test2", "Generic Error"],
     ]
 
 
@@ -579,7 +576,7 @@ def test_handle_rpc_error_with_error_reason_appends_message() -> None:
     rpc_thread = RPCThreadImport(1, MagicMock(), [], add_error_reason=True)
     error = Exception("Test RPC Error")
     lines = [["1", "data1"], ["2", "data2"]]
-    failed_lines = rpc_thread._handle_rpc_error(error, lines)
+    failed_lines, _ = rpc_thread._handle_rpc_error(error, lines)
     assert failed_lines == [
         ["1", "data1", "Test RPC Error"],
         ["2", "data2", "Test RPC Error"],
@@ -594,9 +591,9 @@ def test_handle_record_mismatch_with_error_reason_appends_message() -> None:
     rpc_thread = RPCThreadImport(1, MagicMock(), [], add_error_reason=True)
     response = {"ids": [1]}
     lines = [["1", "data1"], ["2", "data2"]]
-    failed_lines = rpc_thread._handle_record_mismatch(response, lines)
-    assert failed_lines[0][2].startswith("Record count mismatch")
-    assert failed_lines[1][2].startswith("Record count mismatch")
+    failed_lines, error_summary = rpc_thread._handle_record_mismatch(response, lines)
+    assert failed_lines[0][-1].startswith("Record count mismatch")
+    assert error_summary.startswith("Record count mismatch")
 
 
 @patch("odoo_data_flow.import_threaded.RPCThreadImport.spawn_thread")
@@ -781,7 +778,6 @@ def test_handle_odoo_messages_record_index_out_of_bounds() -> None:
     rpc_thread = RPCThreadImport(1, MagicMock(), [], add_error_reason=True)
     messages = [{"message": "Error", "record": 99}]  # Index 99 is out of bounds
     original_lines = [["1", "Test"]]
-    failed_lines = rpc_thread._handle_odoo_messages(messages, original_lines)
-    # The message is generic now, so it applies to all lines
+    failed_lines, _ = rpc_thread._handle_odoo_messages(messages, original_lines)
     assert len(failed_lines) == 1
-    assert failed_lines[0][-1] == "Error | "
+    assert failed_lines[0][-1] == "Error"
