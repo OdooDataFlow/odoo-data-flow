@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import polars as pl
 import pytest
 
+from odoo_data_flow.enums import PreflightMode
 from odoo_data_flow.importer import (
     _run_preflight_checks,
     run_import,
@@ -325,6 +326,7 @@ def mock_preflight_check_pass(**kwargs: Any) -> bool:
 def test_run_preflight_checks_fail() -> None:
     """Test that _run_preflight_checks returns False if a check fails."""
     assert not _run_preflight_checks(
+        PreflightMode.NORMAL,
         model="test",
         filename="test.csv",
         config="test.conf",
@@ -340,6 +342,7 @@ def test_run_preflight_checks_fail() -> None:
 def test_run_preflight_checks_pass() -> None:
     """Test that _run_preflight_checks returns True if all checks pass."""
     assert _run_preflight_checks(
+        PreflightMode.NORMAL,
         model="test",
         filename="test.csv",
         config="test.conf",

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from polars.exceptions import ColumnNotFoundError
 
+from odoo_data_flow.enums import PreflightMode
 from odoo_data_flow.lib import preflight
 
 
@@ -53,7 +54,11 @@ class TestLanguageCheck:
     def test_language_check_skips_for_other_models(self) -> None:
         """Tests that the check is skipped for models other than partner/users."""
         result = preflight.language_check(
-            model="product.product", filename="", config="", headless=False
+            preflight_mode=PreflightMode.NORMAL,
+            model="product.product",
+            filename="",
+            config="",
+            headless=False,
         )
         assert result is True
 
@@ -63,7 +68,11 @@ class TestLanguageCheck:
         """Tests that the check is skipped if the 'lang' column is not present."""
         mock_polars_read_csv.return_value.get_column.side_effect = ColumnNotFoundError
         result = preflight.language_check(
-            model="res.partner", filename="file.csv", config="", headless=False
+            preflight_mode=PreflightMode.NORMAL,
+            model="res.partner",
+            filename="file.csv",
+            config="",
+            headless=False,
         )
         assert result is True
 
@@ -73,7 +82,11 @@ class TestLanguageCheck:
         """Tests that the check handles an error when reading the CSV."""
         mock_polars_read_csv.side_effect = Exception("Read Error")
         result = preflight.language_check(
-            model="res.partner", filename="file.csv", config="", headless=False
+            preflight_mode=PreflightMode.NORMAL,
+            model="res.partner",
+            filename="file.csv",
+            config="",
+            headless=False,
         )
         assert result is True
 
@@ -85,7 +98,11 @@ class TestLanguageCheck:
         mock_df.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value = []  # noqa: E501
         mock_polars_read_csv.return_value = mock_df
         result = preflight.language_check(
-            model="res.partner", filename="file.csv", config="", headless=False
+            preflight_mode=PreflightMode.NORMAL,
+            model="res.partner",
+            filename="file.csv",
+            config="",
+            headless=False,
         )
         assert result is True
 
@@ -106,7 +123,11 @@ class TestLanguageCheck:
             {"code": "de_DE"},
         ]
         result = preflight.language_check(
-            model="res.partner", filename="file.csv", config="", headless=False
+            preflight_mode=PreflightMode.NORMAL,
+            model="res.partner",
+            filename="file.csv",
+            config="",
+            headless=False,
         )
         assert result is True
 
@@ -130,14 +151,45 @@ class TestLanguageCheck:
         mock_installer.return_value = True
 
         result = preflight.language_check(
+            preflight_mode=PreflightMode.NORMAL,
             model="res.partner",
             filename="file.csv",
-            config="dummy.conf",
+            config="",
             headless=False,
         )
         assert result is True
         mock_confirm.assert_called_once()
-        mock_installer.assert_called_once_with("dummy.conf", ["fr_FR"])
+        mock_installer.assert_called_once_with("", ["fr_FR"])
+
+    @patch("odoo_data_flow.lib.preflight.Confirm.ask", return_value=True)
+    @patch(
+        "odoo_data_flow.lib.actions.language_installer.run_language_installation",
+        return_value=False,
+    )
+    def test_missing_languages_user_confirms_install_fails(
+        self,
+        mock_install: MagicMock,
+        mock_confirm: MagicMock,
+        mock_polars_read_csv: MagicMock,
+        mock_conf_lib: MagicMock,
+    ) -> None:
+        """Tests missing languages where user confirms but install fails."""
+        mock_polars_read_csv.return_value.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value = [  # noqa
+            "fr_FR"
+        ]
+        mock_conf_lib.return_value.get_model.return_value.search_read.return_value = [
+            {"code": "en_US"}
+        ]
+        result = preflight.language_check(
+            preflight_mode=PreflightMode.NORMAL,
+            model="res.partner",
+            filename="file.csv",
+            config="",
+            headless=False,
+        )
+        assert result is False
+        mock_confirm.assert_called_once()
+        mock_install.assert_called_once_with("", ["fr_FR"])
 
     @patch("odoo_data_flow.lib.preflight.language_installer.run_language_installation")
     @patch("odoo_data_flow.lib.preflight.Confirm.ask", return_value=False)
@@ -158,9 +210,10 @@ class TestLanguageCheck:
         ]
 
         result = preflight.language_check(
+            preflight_mode=PreflightMode.NORMAL,
             model="res.partner",
             filename="file.csv",
-            config="dummy.conf",
+            config="",
             headless=False,
         )
         assert result is False
@@ -187,6 +240,7 @@ class TestLanguageCheck:
         mock_installer.return_value = True
 
         result = preflight.language_check(
+            preflight_mode=PreflightMode.NORMAL,
             model="res.partner",
             filename="file.csv",
             config="dummy.conf",
@@ -195,6 +249,47 @@ class TestLanguageCheck:
         assert result is True
         mock_confirm.assert_not_called()
         mock_installer.assert_called_once_with("dummy.conf", ["fr_FR"])
+
+    @patch("odoo_data_flow.lib.preflight.log.warning")
+    @patch("odoo_data_flow.lib.preflight.Confirm.ask")  # Ensure this is not called
+    @patch(
+        "odoo_data_flow.lib.actions.language_installer.run_language_installation"
+    )  # Ensure this is not called
+    def test_language_check_fail_mode_skips_install(
+        self,
+        mock_install: MagicMock,
+        mock_confirm: MagicMock,
+        mock_log_warning: MagicMock,
+        mock_polars_read_csv: MagicMock,
+        mock_conf_lib: MagicMock,
+    ) -> None:
+        """Test no language check in fail mode.
+
+        Tests that in FAIL_MODE, language installation is skipped
+        and the import is allowed to continue.
+        """
+        mock_polars_read_csv.return_value.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value = [  # noqa E501
+            "fr_FR"
+        ]
+        mock_conf_lib.return_value.get_model.return_value.search_read.return_value = [
+            {"code": "en_US"}
+        ]
+
+        result = preflight.language_check(
+            preflight_mode=PreflightMode.FAIL_MODE,
+            model="res.partner",
+            filename="file.csv",
+            config="",
+            headless=False,
+        )
+
+        assert result is True  # Should allow import to continue
+        mock_log_warning.assert_called_once()
+        assert (
+            "Fail mode: Missing languages detected" in mock_log_warning.call_args[0][0]
+        )
+        mock_confirm.assert_not_called()
+        mock_install.assert_not_called()
 
 
 class TestFieldExistenceCheck:
@@ -217,7 +312,10 @@ class TestFieldExistenceCheck:
         }
 
         result = preflight.field_existence_check(
-            model="res.partner", filename="file.csv", config=""
+            preflight_mode=PreflightMode.NORMAL,
+            model="res.partner",
+            filename="file.csv",
+            config="",
         )
         assert result is True
 
@@ -239,7 +337,10 @@ class TestFieldExistenceCheck:
 
         # Act
         result = preflight.field_existence_check(
-            model="res.partner.category", filename="file.csv", config=""
+            preflight_mode=PreflightMode.NORMAL,
+            model="res.partner.category",
+            filename="file.csv",
+            config="",
         )
 
         # Assert
@@ -266,7 +367,10 @@ class TestFieldExistenceCheck:
 
         # Act
         result = preflight.field_existence_check(
-            model="res.partner.category", filename="file.csv", config=""
+            preflight_mode=PreflightMode.NORMAL,
+            model="res.partner.category",
+            filename="file.csv",
+            config="",
         )
 
         # Assert
@@ -290,7 +394,10 @@ class TestFieldExistenceCheck:
 
         # Act
         result = preflight.field_existence_check(
-            model="res.partner.category", filename="file.csv", config=""
+            preflight_mode=PreflightMode.NORMAL,
+            model="res.partner.category",
+            filename="file.csv",
+            config="",
         )
 
         # Assert
@@ -312,7 +419,10 @@ class TestFieldExistenceCheck:
         mock_model.fields_get.return_value = {"id": {}, "name": {}}
 
         result = preflight.field_existence_check(
-            model="res.partner", filename="file.csv", config=""
+            preflight_mode=PreflightMode.NORMAL,
+            model="res.partner",
+            filename="file.csv",
+            config="",
         )
         assert result is False
         mock_show_error_panel.assert_called_once()
@@ -325,7 +435,10 @@ class TestFieldExistenceCheck:
         """Tests that the check handles an error when reading the CSV header."""
         mock_polars_read_csv.side_effect = Exception("Cannot read file")
         result = preflight.field_existence_check(
-            model="res.partner", filename="file.csv", config=""
+            preflight_mode=PreflightMode.NORMAL,
+            model="res.partner",
+            filename="file.csv",
+            config="",
         )
         assert result is False
         mock_show_error_panel.assert_called_once()
@@ -341,7 +454,10 @@ class TestFieldExistenceCheck:
         mock_polars_read_csv.return_value.columns = ["id", "name"]
         mock_conf_lib.side_effect = Exception("Connection Refused")
         result = preflight.field_existence_check(
-            model="res.partner", filename="file.csv", config=""
+            preflight_mode=PreflightMode.NORMAL,
+            model="res.partner",
+            filename="file.csv",
+            config="",
         )
         assert result is False
         mock_show_error_panel.assert_called_once()
@@ -372,7 +488,10 @@ class TestFieldExistenceCheck:
 
         # --- Act ---
         result = preflight.field_existence_check(
-            model="res.partner.category", filename="file.csv", config=""
+            preflight_mode=PreflightMode.NORMAL,
+            model="res.partner.category",
+            filename="file.csv",
+            config="",
         )
 
         # --- Assert ---

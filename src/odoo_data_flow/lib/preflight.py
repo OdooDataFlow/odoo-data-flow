@@ -12,6 +12,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm
 
+from odoo_data_flow.enums import PreflightMode
+
 from ..logging_config import log
 from . import conf_lib
 from .actions import language_installer
@@ -25,6 +27,26 @@ def register_check(func: Callable[..., bool]) -> Callable[..., bool]:
     """A decorator to register a new pre-flight check function."""
     PREFLIGHT_CHECKS.append(func)
     return func
+
+
+@register_check
+def connection_check(
+    preflight_mode: "PreflightMode", config: str, **kwargs: Any
+) -> bool:
+    """Pre-flight check to verify connection to Odoo."""
+    log.info("Running pre-flight check: Verifying Odoo connection...")
+    try:
+        # This line implicitly checks the connection
+        conf_lib.get_connection_from_config(config_file=config)
+        log.info("Connection to Odoo successful.")
+        return True
+    except Exception as e:
+        _show_error_panel(
+            "Odoo Connection Error",
+            f"Could not establish connection to Odoo. "
+            f"Please check your configuration.\nError: {e}",
+        )
+        return False
 
 
 def _get_installed_languages(config_file: str) -> set[str]:
@@ -41,7 +63,12 @@ def _get_installed_languages(config_file: str) -> set[str]:
 
 @register_check
 def language_check(
-    model: str, filename: str, config: str, headless: bool, **kwargs: Any
+    preflight_mode: PreflightMode,
+    model: str,
+    filename: str,
+    config: str,
+    headless: bool,
+    **kwargs: Any,
 ) -> bool:
     """Pre-flight check to verify that all required languages are installed.
 
@@ -78,16 +105,29 @@ def language_check(
     if not missing_languages:
         log.info("All required languages are installed.")
         return True
-
-    console = Console(stderr=True, style="bold yellow")
-    message = (
-        "The following required languages are not installed in the target database:\n\n"
-        f"[bold red]{', '.join(sorted(list(missing_languages)))}[/bold red]\n\n"
-        "This is likely to cause the import to fail."
-    )
-    console.print(
-        Panel(message, title="Missing Languages Detected", border_style="yellow")
-    )
+    if preflight_mode == PreflightMode.FAIL_MODE:
+        log.warning(
+            f"Fail mode: Missing languages detected "
+            f"({', '.join(sorted(list(missing_languages)))}). "
+            f"Language installation will be skipped. Proceeding with import, "
+            f"but errors may occur."
+        )
+        return True  # Allow import to continue in fail mode
+    else:  # NORMAL Mode
+        console = Console(stderr=True, style="bold yellow")
+        message = (
+            "The following required languages are not installed in the target "
+            f"database:\n\n"
+            f"[bold red]{', '.join(sorted(list(missing_languages)))}[/bold red]"
+            f"\n\nThis is likely to cause the import to fail."
+        )
+        console.print(
+            Panel(
+                message,
+                title="Missing Languages Detected",
+                border_style="yellow",
+            )
+        )
 
     if headless:
         log.info("--headless mode detected. Auto-confirming language installation.")
@@ -107,7 +147,11 @@ def language_check(
 
 @register_check
 def field_existence_check(
-    model: str, filename: str, config: str, **kwargs: Any
+    preflight_mode: "PreflightMode",
+    model: str,
+    filename: str,
+    config: str,
+    **kwargs: Any,
 ) -> bool:
     """Preflight check.
 

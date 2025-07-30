@@ -9,20 +9,21 @@ from rich.console import Console
 from rich.panel import Panel
 
 from . import import_threaded
+from .enums import PreflightMode
 from .lib import preflight
 from .lib.internal.ui import _show_error_panel
 from .logging_config import log
 
 
-def _run_preflight_checks(**kwargs: Any) -> bool:
+def _run_preflight_checks(preflight_mode: PreflightMode, **kwargs: Any) -> bool:
     """Iterates through and runs all registered pre-flight checks."""
     for check_func in preflight.PREFLIGHT_CHECKS:
-        if not check_func(**kwargs):
+        if not check_func(preflight_mode=preflight_mode, **kwargs):
             return False
     return True
 
 
-def run_import(
+def run_import(  # noqa: C901
     config: str,
     filename: str,
     model: Optional[str] = None,
@@ -78,9 +79,14 @@ def run_import(
         final_model = inferred_model
         log.info(f"No model provided. Inferred model '{final_model}' from filename.")
 
+    current_preflight_mode = PreflightMode.NORMAL
+    if fail:
+        current_preflight_mode = PreflightMode.FAIL_MODE
+
     # --- Pre-flight Checks ---
     if not no_preflight_checks:
         if not _run_preflight_checks(
+            preflight_mode=current_preflight_mode,
             model=final_model,
             filename=filename,
             config=config,
@@ -88,7 +94,12 @@ def run_import(
             separator=separator,
         ):
             return
-
+        # elif fail and no_preflight_checks:
+    if fail and no_preflight_checks:
+        log.warning(
+            "Both --fail and --no-preflight-checks were specified. "
+            "Skipping all checks as per explicit request."
+        )
     try:
         parsed_context = ast.literal_eval(context)
         if not isinstance(parsed_context, dict):
