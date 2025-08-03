@@ -197,3 +197,7 @@ exclude = '\.git|\.nox|noxfile.py'
 arg-type-hints-in-docstring = false
 baseline = 'pydoclint-baseline.txt'
 auto-generate-baseline = 'True'
+
+[tool.pytest.ini_options]
+addopts = "--doctest-modules src"
+doctest_optionflags = "NORMALIZE_WHITESPACE"

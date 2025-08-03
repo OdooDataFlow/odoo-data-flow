@@ -111,6 +111,7 @@ def _list_to_mappers(args: tuple[Any, ...]) -> list[MapperFunc]:
     Example:
         >>> mappers = _list_to_mappers(('name', 'age'))
         >>> [m({'name': 'Alice', 'age': 30}, {}) for m in mappers]
+        ['Alice', 30]
 
     """
     return [_str_to_mapper(f) for f in args]
@@ -290,13 +291,13 @@ def bool_val(
 
     Example:
          >>> bool_val('is_verified', ['yes', 'true'], ['no', 'false'])({'is_verified': 'yes'}, {})
-         1
+         '1'
          >>> bool_val('is_verified', ['yes', 'true'], ['no', 'false'])({'is_verified': 'no'}, {})
-         0
+         '0'
          >>> bool_val('is_verified', ['yes', 'true'], ['no', 'false'])({'is_verified': 'TRUE'}, {}) # case-insensitive
-         0
+         '0'
          >>> bool_val('is_verified', ['yes', 'true'], ['no', 'false'])({'is_verified': 'maybe'}, {}) # no match
-         0
+         '0'
     """
     true_vals = true_values or []
     false_vals = false_values or []
@@ -755,7 +756,8 @@ def binary(field: str, path_prefix: str = "", skip: bool = False) -> MapperFunc:
         >>> # Create a dummy file for testing
         >>> with open('test_file.txt', 'w') as f:
         ...     f.write('Hello, world!')
-        >>> binary('file_path')({'file_path': 'test_file.txt'}, {})[:20]
+        13
+        >>> binary('file_path')({'file_path': 'test_file.txt'}, {})
         'SGVsbG8sIHdvcmxkIQ=='
         >>> # Clean up the dummy file
         >>> os.remove('test_file.txt')

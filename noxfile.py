@@ -195,7 +195,7 @@ def coverage(session: nox.Session) -> None:
     session.install("pytest", "coverage[toml]", "pytest-cov", "pytest-mock")
     session.install("-e", ".")
     session.log("Running pytest with coverage...")
-    session.run("pytest", "--cov=src", "--cov-report=xml")
+    session.run("pytest", "--cov=src", "--cov-report=xml", "tests/")
 
     if not session.posargs and any(Path().glob(".coverage.*")):
         session.run("coverage", "combine")
