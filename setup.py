@@ -16,6 +16,7 @@ def get_ext_modules():
                 "src/odoo_data_flow/import_threaded.py",
                 "src/odoo_data_flow/importer.py",
                 "src/odoo_data_flow/lib/mapper.py",
+                "src/odoo_data_flow/export_threaded.py",
             ]
         )
 
