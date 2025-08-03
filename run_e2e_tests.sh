@@ -14,8 +14,6 @@ echo "--- Starting e2e tests for Odoo version $ODOO_VERSION ---"
 
 # Cleanup any previous runs
 podman compose down -v || true
-podman rm -f odoo-db odoo-app || true
-podman network rm odoo-data-flow_default || true
 
 # Use the Odoo version to create a dynamic docker-compose.yml
 cat << EOF > docker-compose.yml
@@ -49,6 +47,7 @@ EOF
 
 cat docker-compose.yml
 
+echo "--- Starting containers... ---"
 podman compose up -d
 
 # 2. Wait for Odoo to be ready
@@ -75,7 +74,7 @@ curl -v http://localhost:8069/web/login
 
 # 3. Create the source and target databases
 # Use odoo to create the databases. You'll need to run this within the odoo container.
-docker-compose exec -T odoo odoo -d odoo_data_flow_source_db -i base --stop-after-init
+docker-compose exec -T odoo odoo -d odoo_data_flow_source_db -i base  --without-demo=True --stop-after-init
 
 # Wait for source database to be ready
 echo "Waiting for source database to be ready..."
@@ -93,7 +92,7 @@ until docker-compose exec -T odoo psql -h db -U odoo -d odoo_data_flow_source_db
 done
 echo "Source database is ready!"
 
-docker-compose exec -T odoo odoo -d odoo_data_flow_target_db -i base --stop-after-init
+docker-compose exec -T odoo odoo -d odoo_data_flow_target_db --without-demo=True -i base --stop-after-init
 
 # Wait for target database to be ready
 echo "Waiting for target database to be ready..."
@@ -112,8 +111,8 @@ done
 echo "Target database is ready!"
 
 # 4. Seed the source database
-# (This is where you would call your Python test script to populate the database)
-python tests/e2e/seed_database.py --db odoo_data_flow_source_db
+echo "--- Seeding the source database... ---"
+docker-compose exec -T odoo python3 /odoo-data-flow/tests/e2e/seed_database.py odoo_data_flow_source_db
 
 # Create connection.conf
 mkdir -p conf
@@ -151,8 +150,8 @@ EOF
 python3 -m odoo_data_flow import --config conf/connection.conf --file testdata/res_partner.csv
 
 # 7. Verify the data
-# (Connect to the target database and run your verification logic)
-python tests/e2e/verify_data.py --db odoo_data_flow_target_db
+echo "--- Verifying the data... ---"
+docker-compose exec -T odoo python3 /odoo-data-flow/tests/e2e/verify_data.py odoo_data_flow_target_db
 
 # Cleanup containers
 podman compose down -v

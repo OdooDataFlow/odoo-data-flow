@@ -130,6 +130,18 @@ show_column_numbers = true
 show_error_context = true
 # Add this to ignore missing stubs for third-party libraries
 ignore_missing_imports = true
+check_untyped_defs = true
+
+
+[[tool.mypy.overrides]]
+module = "odoo"
+ignore_missing_imports = true
+
+
+[[tool.mypy.overrides]]
+module = "tests.e2e.*"
+ignore_errors = true
+
 
 [tool.ruff]
 src = ["src", "tests"]
