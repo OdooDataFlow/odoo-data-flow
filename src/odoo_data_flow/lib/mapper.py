@@ -56,7 +56,22 @@ ListMapperFunc = Callable[[LineDict, StateDict], list[str]]
 
 
 def _get_field_value(line: LineDict, field: str, default: Any = None) -> Any:
-    """Safely retrieves a value from the current data row."""
+    """Safely retrieves a value from the current data row.
+
+    Args:
+        line (LineDict): The current data row.
+        field (str): The field name to retrieve.
+        default (Any): The default value to return if the field is not found.
+
+    Returns:
+        Any: The value from the field or the default value.
+
+    Example:
+        >>> _get_field_value({'name': 'Alice', 'age': 30}, 'name')
+        'Alice'
+        >>> _get_field_value({'name': 'Alice', 'age': 30}, 'gender', 'unknown')
+        'unknown'
+    """
     value = line.get(field, default)
     log.debug(
         f"Getting field '{field}': value='{value}' from line keys: {list(line.keys())}"
@@ -68,6 +83,16 @@ def _str_to_mapper(field: Any) -> MapperFunc:
     """Converts a string field name into a basic val mapper.
 
     If the input is not a string, it is assumed to be a valid mapper function.
+
+    Args:
+        field (Any): The field name or existing mapper.
+
+    Returns:
+        MapperFunc: A mapper function.
+
+    Example:
+        >>> _str_to_mapper('age')({'age': 25}, {})
+        25
     """
     if isinstance(field, str):
         return val(field)
@@ -75,12 +100,35 @@ def _str_to_mapper(field: Any) -> MapperFunc:
 
 
 def _list_to_mappers(args: tuple[Any, ...]) -> list[MapperFunc]:
-    """Converts a list of strings or mappers into a list of mappers."""
+    """Converts a list of strings or mappers into a list of mappers.
+
+    Args:
+        args (tuple): A variable number of field names or mappers.
+
+    Returns:
+        list[MapperFunc]: A list of mapper functions.
+
+    Example:
+        >>> mappers = _list_to_mappers(('name', 'age'))
+        >>> [m({'name': 'Alice', 'age': 30}, {}) for m in mappers]
+
+    """
     return [_str_to_mapper(f) for f in args]
 
 
 def const(value: Any) -> MapperFunc:
-    """Returns a mapper that always provides a constant value."""
+    """Returns a mapper that always provides a constant value.
+
+    Args:
+        value (Any): The constant value to return.
+
+    Returns:
+        MapperFunc: A mapper function that always returns the constant value.
+
+    Example:
+        >>> const(42)({}, {})
+        42
+    """
 
     def const_fun(line: LineDict, state: StateDict) -> Any:
         return value
@@ -94,7 +142,23 @@ def val(
     postprocess: Callable[..., Any] = lambda x, s: x,
     skip: bool = False,
 ) -> MapperFunc:
-    """Returns a mapper that gets a value from a specific field in the row."""
+    """Returns a mapper that gets a value from a specific field in the row.
+
+    Args:
+        field (str): The field name to retrieve the value from.
+        default (Any): The default value if the field is not found.
+        postprocess (Callable): A function to apply to the value.
+        skip (bool): If True, raises SkippingError if the field value is None.
+
+    Returns:
+        MapperFunc: A mapper function that retrieves and processes the field value.
+
+    Example:
+        >>> val('age')({'age': 25}, {})
+        25
+        >>> val('age', default=0)({}, {})
+        0
+    """
 
     def val_fun(line: LineDict, state: StateDict) -> Any:
         value = _get_field_value(line, field)
@@ -120,12 +184,16 @@ def concat(separator: str, *fields: Any, skip: bool = False) -> MapperFunc:
     """Returns a mapper that joins values from multiple fields or static strings.
 
     Args:
-        separator: The string to place between each value.
-        *fields: A variable number of source column names or static strings.
-        skip: If True, raises SkippingError if the final result is empty.
+        separator (str): The string to place between each value.
+        *fields (Any): A variable number of source column names or static strings.
+        skip (bool): If True, raises SkippingError if the final result is empty.
 
     Returns:
         MapperFunc: A mapper function that returns the concatenated string.
+
+    Example:
+        >>> concat(', ', 'first_name', 'last_name')({'first_name': 'John', 'last_name': 'Doe'}, {})
+        'John, Doe'
     """
     mappers = _list_to_mappers(fields)
 
@@ -140,18 +208,23 @@ def concat(separator: str, *fields: Any, skip: bool = False) -> MapperFunc:
 
 
 def concat_mapper_all(separator: str, *fields: Any) -> MapperFunc:
-    """Returns a mapper that joins values, but only if all values exist.
+    """Returns a mapper that joins values but only if all values exist.
 
     If any of the values from the specified fields is empty, this mapper
     returns an empty string.
 
     Args:
-        separator: The string to place between each value.
-        *fields: A variable number of source column names or static strings.
+        separator (str): The string to place between each value.
+        *fields (Any): A variable number of source column names or static strings.
 
     Returns:
-        Returns:
-        A mapper function that returns the concatenated string or an empty string.
+        MapperFunc: A mapper function that returns the concatenated string or an empty string.
+
+    Example:
+        >>> concat_mapper_all(', ', 'first_name', 'last_name')({'first_name': 'Alice', 'last_name': ''}, {})
+        ''
+        >>> concat_mapper_all(', ', 'first_name', 'last_name')({'first_name': 'Alice', 'last_name': 'Smith'}, {})
+        'Alice, Smith'
     """
     mappers = _list_to_mappers(fields)
 
@@ -168,12 +241,18 @@ def cond(field: str, true_mapper: Any, false_mapper: Any) -> MapperFunc:
     """Returns a mapper that applies one of two mappers based on a condition.
 
     Args:
-        field: The source column to check for a truthy value.
-        true_mapper: The mapper to apply if the value in `field` is truthy.
-        false_mapper: The mapper to apply if the value in `field` is falsy.
+        field (str): The source column to check for a truthy value.
+        true_mapper (Any): The mapper to apply if the value in `field` is truthy.
+        false_mapper (Any): The mapper to apply if the value in `field` is falsy.
 
     Returns:
         MapperFunc: A mapper function that returns the result of the chosen mapper.
+
+    Example:
+        >>> cond('is_active', const('Active'), const('Inactive'))({'is_active': True}, {})
+        'Active'
+        >>> cond('is_active', const('Active'), const('Inactive'))({'is_active': False}, {})
+        'Inactive'
     """
     true_m = _str_to_mapper(true_mapper)
     false_m = _str_to_mapper(false_mapper)
@@ -198,19 +277,26 @@ def bool_val(
     The logic is as follows:
     1. If `true_values` is provided, any value in that list is considered True.
     2. If `false_values` is provided, any value in that list is considered False.
-    3. If the value is not in either list, the truthiness of the value itself
-       is used, unless `default` is set.
-    4. If no lists are provided, the truthiness of the value is used.
+    3. If the value is not found in either list, the default value is returned.
 
     Args:
-        field: The source column to check.
-        true_values: A list of strings that should be considered `True`.
-        false_values: A list of strings that should be considered `False`.
-        default: The default boolean value to return if no other condition is met.
+        field (str): The field name to evaluate.
+        true_values (Optional[list[str]]): Values that are considered True.
+        false_values (Optional[list[str]]): Values that are considered False.
+        default (bool): The default boolean value to return.
 
     Returns:
-        MapperFunc: A mapper function that returns "1" or "0".
+        MapperFunc: A mapper function that returns a boolean value.
 
+    Example:
+         >>> bool_val('is_verified', ['yes', 'true'], ['no', 'false'])({'is_verified': 'yes'}, {})
+         1
+         >>> bool_val('is_verified', ['yes', 'true'], ['no', 'false'])({'is_verified': 'no'}, {})
+         0
+         >>> bool_val('is_verified', ['yes', 'true'], ['no', 'false'])({'is_verified': 'TRUE'}, {}) # case-insensitive
+         0
+         >>> bool_val('is_verified', ['yes', 'true'], ['no', 'false'])({'is_verified': 'maybe'}, {}) # no match
+         0
     """
     true_vals = true_values or []
     false_vals = false_values or []
@@ -248,6 +334,14 @@ def num(
         Callable[..., Optional[Union[int, float]]]: A mapper function that takes a
             dictionary-like row and returns the converted numeric value (`int`
             or `float`) or the default.
+
+    Example:
+        >>> num('price')({'price': '1234.56'}, {})
+        1234.56
+        >>> num('quantity', default=0)({'quantity': ''}, {})
+        0
+        >>> num('age')({'age': '30'}, {})
+        30
     """
 
     def num_fun(
@@ -278,10 +372,16 @@ def field(col: str) -> MapperFunc:
     This is useful for some dynamic product attribute mappings.
 
     Args:
-        col: The name of the column to check.
+        col (str): The name of the column to check.
 
     Returns:
         MapperFunc: A mapper function that returns the column name or an empty string.
+
+    Example:
+        >>> field('product_name')({'product_name': 'Widget'}, {})
+        'product_name'
+        >>> field('product_name')({}, {})
+        ''
     """
 
     def field_fun(line: LineDict, state: StateDict) -> str:
@@ -294,33 +394,24 @@ def m2o(prefix: str, field: str, default: str = "", skip: bool = False) -> Mappe
     """Returns a mapper that creates a Many2one external ID from a field's value.
 
     Args:
-        prefix: The XML ID prefix (e.g., 'my_module').
-        field: The source column containing the value for the ID.
-        default: The value to return if the source value is empty.
-        skip: If True, raises SkippingError if the source value is empty.
+        prefix (str): The XML ID prefix (e.g., 'my_module').
+        field (str): The source column containing the value for the ID.
+        default (str): The value to return if the source value is empty.
+        skip (bool): If True, raises SkippingError if the source value is empty.
 
     Returns:
-        A mapper function that returns the formatted external ID.
+        MapperFunc: A mapper function that returns the formatted external ID.
+
+    Example:
+        >>> m2o('product', 'product_id')({'product_id': '123'}, {})
+        'product.123'
+
+        >>> m2o('product', 'product_id', 'empty')({}, {})
+        'empty'
+
     """
 
     def m2o_fun(line: LineDict, state: StateDict) -> str:
-        """Inner function implementing the Many2one ID mapping.
-
-        Args:
-            line: A dictionary representing the current line of data.
-            state: A dictionary holding state information for the transformation
-                   process.
-                   This argument is part of the standard mapper function signature
-                   but is not directly used by this specific mapper.
-
-        Returns:
-            The formatted external ID for the Many2one field.
-
-        Raises:
-            SkippingError: If `skip` is True and the field's value is empty.
-        """
-        # 'state' is included in the signature to conform to the general mapper contract
-        # but is not directly used in this function's logic.
         value = _get_field_value(line, field)
         if skip and not value:
             raise SkippingError(f"Missing Value for {field}")
@@ -338,32 +429,22 @@ def m2o_map(
     multiple columns.
 
     Args:
-        prefix: The XML ID prefix (e.g., 'my_module').
-        *fields: A variable number of source column names or static strings to join.
-        default: The value to return if the final concatenated value is empty.
-        skip: If True, raises SkippingError if the final result is empty.
+        prefix (str): The XML ID prefix (e.g., 'my_module').
+        *fields (Any): A variable number of source column names or static strings to join.
+        default (str): The value to return if the final concatenated value is empty.
+        skip (bool): If True, raises SkippingError if the final result is empty.
 
     Returns:
-        A mapper function that returns the formatted external ID.
+        MapperFunc: A mapper function that returns the formatted external ID.
+
+    Example:
+        >>> m2o_map('product', 'category', 'product_code')({'category': 'A', 'product_code': '123'}, {})
+        'product.A_123'
     """
     # Assuming concat returns a callable that accepts (line: LineDict, state: StateDict)
     concat_mapper = concat("_", *fields)
 
     def m2o_fun(line: LineDict, state: StateDict) -> str:
-        """Inner function implementing the Many2one ID mapping from concatenated fields.
-
-        Args:
-            line: A dictionary representing the current line of data.
-            state: A dictionary holding state information for the transformation
-                   process.
-                   This argument is passed to the underlying concatenation mapper.
-
-        Returns:
-            The formatted external ID for the Many2one field.
-
-        Raises:
-            SkippingError: If `skip` is True and the final concatenated value is empty.
-        """
         value = concat_mapper(line, state)
         if not value and skip:
             raise SkippingError(f"Missing value for m2o_map with prefix '{prefix}'")
@@ -379,13 +460,21 @@ def m2m(prefix: str, *fields: Any, sep: str = ",", default: str = "") -> MapperF
     if they contain the separator, and applies the prefix to each resulting ID.
 
     Args:
-        prefix: The XML ID prefix to apply to each value.
-        *fields: One or more source column names from which to get values.
-        sep: The separator to use when splitting values within a single field.
-        default: The value to return if no IDs are generated.
+        prefix (str): The XML ID prefix to apply to each value.
+        *fields (Any): One or more source column names from which to get values.
+        sep (str): The separator to use when splitting values within a single field.
+        default (str): The value to return if no IDs are generated.
 
     Returns:
-        A mapper function that returns a comma-separated string of external IDs.
+        MapperFunc: A mapper function that returns a comma-separated string of external IDs.
+
+    Example:
+        >>> m2m('tag', 'tags')({'tags': 'red, blue, green'}, {})
+        'tag.red,tag.blue,tag.green'
+        >>> m2m('tag', 'tags', default='tag.default')({}, {})
+        'tag.default'
+        >>> m2m('tag', 'tags')({'tags': ''}, {})
+        ''
     """
 
     def m2m_fun(line: LineDict, state: StateDict) -> str:
@@ -416,11 +505,16 @@ def m2m_map(prefix: str, mapper_func: MapperFunc) -> MapperFunc:
     the `to_m2m` formatting to it.
 
     Args:
-        prefix: The XML ID prefix to apply.
-        mapper_func: The inner mapper function to execute first.
+        prefix (str): The XML ID prefix to apply.
+        mapper_func (MapperFunc): The inner mapper function to execute first.
 
     Returns:
         MapperFunc: A mapper function that returns a formatted m2m external ID list.
+
+    Example:
+        >>> def get_colors(line, state): return 'red,green,blue'
+        >>> m2m_map('color', get_colors)({}, {})
+        'color.red,color.green,color.blue'
     """
 
     def m2m_map_fun(line: LineDict, state: StateDict) -> str:
@@ -436,11 +530,17 @@ def m2o_att_name(prefix: str, att_list: list[str]) -> MapperFunc:
     This is used in legacy product import workflows.
 
     Args:
-        prefix: The XML ID prefix to use for the attribute IDs.
-        att_list: A list of attribute column names to check for.
+        prefix (str): The XML ID prefix to use for the attribute IDs.
+        att_list (list[str]): A list of attribute column names to check for.
 
     Returns:
-        A mapper function that returns a dictionary.
+        MapperFunc: A mapper function that returns a dictionary.
+
+    Example:
+        >>> m2o_att_name('attr', ['color', 'size'])({'color': 'red', 'size': 'M'}, {})
+        {'color': 'attr.color', 'size': 'attr.size'}
+        >>> m2o_att_name('attr', ['color', 'size'])({}, {})
+        {}
     """
 
     def m2o_att_fun(line: LineDict, state: StateDict) -> dict[str, str]:
@@ -462,6 +562,24 @@ def m2m_id_list(
     This function can take either raw field names (str) or other mapper functions
     as its arguments. It processes each argument to produce an individual ID.
     If a field's value contains the separator, it will be split.
+
+    Args:
+        prefix (str): The XML ID prefix to apply to each value.
+        *args (Any): Field names (str) or other mapper functions.
+        sep (str): The separator to use when splitting values within a single field.
+        const_values (Optional[list[str]]): Optional list of constant values to include.
+
+    Returns:
+        ListMapperFunc: A mapper function that returns a list of external IDs.
+
+    Example:
+        >>> m2m_id_list('category', 'categories', const_values=['default'])({'categories': 'A,B'}, {})
+        ['category.A', 'category.B', 'category.default']
+        >>> m2m_id_list('color', 'colors', sep=';')({'colors': 'red;green'}, {})
+        ['color.red', 'color.green']
+        >>> def get_sizes(line, state): return 'S,M,L'
+        >>> m2m_id_list('size', get_sizes)({}, {})
+        ['size.S', 'size.M', 'size.L']
     """
     if const_values is None:
         const_values = []
@@ -507,6 +625,23 @@ def m2m_value_list(
 
     It processes each argument to produce an individual raw value.
     If a field's value contains the separator, it will be split.
+
+    Args:
+        *args (Any): Field names (str) or other mapper functions.
+        sep (str): The separator to use when splitting values within a single field.
+        const_values (Optional[list[str]]): Optional list of constant values to include.
+
+    Returns:
+        ListMapperFunc: A mapper function that returns a list of unique values.
+
+    Example:
+        >>> m2m_value_list('colors', const_values=['red', 'blue'])({'colors': 'green,green'}, {})
+        ['green', 'red', 'blue']
+        >>> m2m_value_list('sizes', sep=';')({'sizes': 'S;M;L'}, {})
+        ['S', 'M', 'L']
+        >>> def get_categories(line, state): return 'A,B,C'
+        >>> m2m_value_list(get_categories)({}, {})
+        ['A', 'B', 'C']
     """
     if const_values is None:
         const_values = []
@@ -548,13 +683,23 @@ def map_val(
     """Returns a mapper that translates a value using a provided dictionary.
 
     Args:
-        mapping_dict: The dictionary to use as a translation table.
-        key_mapper: A mapper that provides the key to look up.
-        default: A default value to return if the key is not found.
-        m2m: If True, splits the key by commas and translates each part.
+        mapping_dict (dict[Any, Any]): The dictionary to use as a translation table.
+        key_mapper (Any): A mapper that provides the key to look up.
+        default (Any): A default value to return if the key is not found.
+        m2m (bool): If True, splits the key by commas and translates each part.
 
     Returns:
         MapperFunc: A mapper function that returns the translated value.
+
+    Example:
+        >>> mapping = {'A': 'X', 'B': 'Y', 'C': 'Z'}
+        >>> map_val(mapping, 'code')({'code': 'B'}, {})
+        'Y'
+        >>> map_val(mapping, 'code', default='Unknown')({'code': 'D'}, {})
+        'Unknown'
+        >>> mapping = {'red': 'Rouge', 'green': 'Vert', 'blue': 'Bleu'}
+        >>> map_val(mapping, 'colors', m2m=True)({'colors': 'red,green'}, {})
+        'Rouge,Vert'
     """
     key_m = _str_to_mapper(key_mapper)
 
@@ -574,11 +719,18 @@ def record(mapping: dict[str, MapperFunc]) -> MapperFunc:
     Used for creating one-to-many records (e.g., sales order lines).
 
     Args:
-        mapping: A mapping dictionary for the related record.
+        mapping (dict[str, MapperFunc]): A mapping dictionary for the related record.
 
     Returns:
         MapperFunc: A mapper function that returns a dictionary of the
         processed sub-record.
+
+    Example:
+        >>> def get_name(line, state): return 'Alice'
+        >>> def get_age(line, state): return 30
+        >>> record_mapping = {'name': get_name, 'age': get_age}
+        >>> record(record_mapping)({}, {})
+        {'name': 'Alice', 'age': 30}
     """
 
     def record_fun(line: LineDict, state: StateDict) -> dict[str, Any]:
@@ -591,12 +743,22 @@ def binary(field: str, path_prefix: str = "", skip: bool = False) -> MapperFunc:
     """Returns a mapper that converts a local file to a base64 string.
 
     Args:
-        field: The source column containing the path to the file.
-        path_prefix: An optional prefix to prepend to the file path.
-        skip: If True, raises SkippingError if the file is not found.
+        field (str): The source column containing the path to the file.
+        path_prefix (str): An optional prefix to prepend to the file path.
+        skip (bool): If True, raises SkippingError if the file is not found.
 
     Returns:
-        A mapper function that returns the base64 encoded string.
+        MapperFunc: A mapper function that returns the base64 encoded string.
+
+    Example:
+        >>> import os
+        >>> # Create a dummy file for testing
+        >>> with open('test_file.txt', 'w') as f:
+        ...     f.write('Hello, world!')
+        >>> binary('file_path')({'file_path': 'test_file.txt'}, {})[:20]
+        'SGVsbG8sIHdvcmxkIQ=='
+        >>> # Clean up the dummy file
+        >>> os.remove('test_file.txt')
     """
 
     def binary_fun(line: LineDict, state: StateDict) -> str:
@@ -621,11 +783,11 @@ def binary_url_map(field: str, skip: bool = False) -> MapperFunc:
     """Returns a mapper that downloads a file from a URL and converts to base64.
 
     Args:
-        field: The source column containing the URL.
-        skip: If True, raises SkippingError if the URL cannot be fetched.
+        field (str): The source column containing the URL.
+        skip (bool): If True, raises SkippingError if the URL cannot be fetched.
 
     Returns:
-        A mapper function that returns the base64 encoded string.
+        MapperFunc: A mapper function that returns the base64 encoded string.
     """
 
     def binary_url_fun(line: LineDict, state: StateDict) -> str:
@@ -652,10 +814,16 @@ def val_att(att_list: list[str]) -> MapperFunc:
     This is a helper for legacy product attribute workflows.
 
     Args:
-        att_list: A list of attribute column names to check.
+        att_list (list[str]): A list of attribute column names to check.
 
     Returns:
-        A mapper function that returns a dictionary.
+        MapperFunc: A mapper function that returns a dictionary.
+
+    Example:
+        >>> val_att(['color', 'size'])({'color': 'red', 'size': 'M', 'other': ''}, {})
+        {'color': 'red', 'size': 'M'}
+        >>> val_att(['color', 'size'])({}, {})
+        {}
     """
 
     def val_att_fun(line: LineDict, state: StateDict) -> dict[str, Any]:
@@ -675,11 +843,17 @@ def m2o_att(prefix: str, att_list: list[str]) -> MapperFunc:
     attribute values were manually constructed.
 
     Args:
-        prefix: The XML ID prefix to use for the attribute value IDs.
-        att_list: A list of attribute column names to process.
+        prefix (str): The XML ID prefix to use for the attribute value IDs.
+        att_list (list[str]): A list of attribute column names to process.
 
     Returns:
-        A mapper function that returns a dictionary.
+        MapperFunc: A mapper function that returns a dictionary.
+
+    Example:
+        >>> m2o_att('attr', ['color', 'size'])({'color': 'red', 'size': 'M'}, {})
+        {'color': 'attr.color_red', 'size': 'attr.size_M'}
+        >>> m2o_att('attr', ['color', 'size'])({}, {})
+        {}
     """
 
     def m2o_att_fun(line: LineDict, state: StateDict) -> dict[str, str]:
@@ -702,11 +876,17 @@ def concat_field_value_m2m(separator: str, *fields: str) -> MapperFunc:
     unique external IDs for `product.attribute.value` records.
 
     Args:
-        separator: The character to join the field name and value with.
-        *fields: The attribute columns to process.
+        separator (str): The character to join the field name and value with.
+        *fields (str): The attribute columns to process.
 
     Returns:
         MapperFunc: A mapper function that returns the concatenated string.
+
+    Example:
+        >>> concat_field_value_m2m('_', 'Color', 'Size')({'Color': 'Blue', 'Size': 'M'}, {})
+        'Color_Blue,Size_M'
+        >>> concat_field_value_m2m('_', 'Color', 'Size')({}, {})
+        ''
     """
 
     def concat_fun(line: LineDict, state: StateDict) -> str:
@@ -726,11 +906,15 @@ def m2m_attribute_value(prefix: str, *fields: str) -> MapperFunc:
     This is a composite mapper for the legacy product attribute workflow.
 
     Args:
-        prefix: The XML ID prefix.
-        *fields: The attribute columns to process.
+        prefix (str): The XML ID prefix.
+        *fields (str): The attribute columns to process.
 
     Returns:
         MapperFunc: A mapper that returns a comma-separated string of external IDs.
+
+    Example:
+        >>> m2m_attribute_value('attr', 'Color', 'Size')({'Color': 'Blue', 'Size': 'M'}, {})
+        'attr.Color_Blue,attr.Size_M'
     """
     return m2m_map(prefix, concat_field_value_m2m("_", *fields))
 
@@ -746,11 +930,17 @@ def m2m_template_attribute_value(prefix: str, *fields: Any) -> MapperFunc:
     source line, preventing the creation of orphaned attribute lines.
 
     Args:
-        prefix: (Unused) Kept for backward compatibility.
-        *fields: The attribute columns (e.g. 'Color', 'Size') to get values from.
+        prefix (str): (Unused) Kept for backward compatibility.
+        *fields (Any): The attribute columns (e.g. 'Color', 'Size') to get values from.
 
     Returns:
         MapperFunc: A mapper that returns a comma-separated string of attribute values.
+
+    Example:
+        >>> m2m_template_attribute_value('attr', 'Color', 'Size')({'Color': 'Blue', 'Size': 'M', 'template_id': 123}, {})
+        'Blue,M'
+        >>> m2m_template_attribute_value('attr', 'Color', 'Size')({}, {})
+        ''
     """
     concat_m = concat(",", *fields)
 
@@ -767,10 +957,17 @@ def split_line_number(line_nb: int) -> Callable[[LineDict, int], int]:
     """Returns a function to split data into chunks of a specific line count.
 
     Args:
-        line_nb: The number of lines per chunk.
+        line_nb (int): The number of lines per chunk.
 
     Returns:
-        A function compatible with the `Processor.split` method.
+        Callable[[LineDict, int], int]: A function compatible with the `Processor.split` method.
+
+    Example:
+        >>> splitter = split_line_number(10)
+        >>> splitter({}, 5)
+        0
+        >>> splitter({}, 15)
+        1
     """
 
     def split(line: LineDict, i: int) -> int:
@@ -783,10 +980,21 @@ def split_file_number(file_nb: int) -> Callable[[LineDict, int], int]:
     """Returns a function to split data across a fixed number of chunks.
 
     Args:
-        file_nb: The total number of chunks to create.
+        file_nb (int): The total number of chunks to create.
 
     Returns:
-        A function compatible with the `Processor.split` method.
+        Callable[[LineDict, int], int]: A function compatible with the `Processor.split` method.
+
+    Example:
+        >>> splitter = split_file_number(3)
+        >>> splitter({}, 0)
+        0
+        >>> splitter({}, 1)
+        1
+        >>> splitter({}, 2)
+        2
+        >>> splitter({}, 3)
+        0
     """
 
     def split(line: LineDict, i: int) -> int:
@@ -801,8 +1009,11 @@ def path_to_image(
     """Returns a mapper that converts a local file path to a base64 string.
 
     Args:
-        field: The column name containing the relative path to the image.
-        path: The base directory where the image files are located.
+        field (str): The column name containing the relative path to the image.
+        path (str): The base directory where the image files are located.
+
+    Returns:
+        Callable[[dict[str, Any], dict[str, Any]], Optional[str]]: A mapper function that returns the base64 encoded string or None.
     """
 
     def _mapper(row: dict[str, Any], state: dict[str, Any]) -> Optional[str]:
@@ -829,7 +1040,14 @@ def path_to_image(
 def url_to_image(
     field: str,
 ) -> Callable[[dict[str, Any], dict[str, Any]], Optional[str]]:
-    """Returns a mapper that downloads an image from a URL to a base64 string."""
+    """Returns a mapper that downloads an image from a URL to a base64 string.
+
+    Args:
+        field (str): The source column containing the URL.
+
+    Returns:
+        Callable[[dict[str, Any], dict[str, Any]], Optional[str]]: A mapper function that returns the base64 encoded string or None.
+    """
 
     def _mapper(row: dict[str, Any], state: dict[str, Any]) -> Optional[str]:
         url = row.get(field)
