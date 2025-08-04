@@ -193,7 +193,9 @@ def concat(separator: str, *fields: Any, skip: bool = False) -> MapperFunc:
         MapperFunc: A mapper function that returns the concatenated string.
 
     Example:
-        >>> concat(', ', 'first_name', 'last_name')({'first_name': 'John', 'last_name': 'Doe'}, {})
+        >>> concat(', ', 'first_name', 'last_name')({
+        ...     'first_name': 'John', 'last_name': 'Doe'
+        ... }, {})
         'John, Doe'
     """
     mappers = _list_to_mappers(fields)
@@ -219,12 +221,17 @@ def concat_mapper_all(separator: str, *fields: Any) -> MapperFunc:
         *fields (Any): A variable number of source column names or static strings.
 
     Returns:
-        MapperFunc: A mapper function that returns the concatenated string or an empty string.
+        MapperFunc: A mapper function that returns the concatenated string or an empty
+        string.
 
     Example:
-        >>> concat_mapper_all(', ', 'first_name', 'last_name')({'first_name': 'Alice', 'last_name': ''}, {})
+        >>> concat_mapper_all(', ', 'first_name', 'last_name')(
+        ...     {'first_name': 'Alice', 'last_name': ''}, {}
+        ... )
         ''
-        >>> concat_mapper_all(', ', 'first_name', 'last_name')({'first_name': 'Alice', 'last_name': 'Smith'}, {})
+        >>> concat_mapper_all(', ', 'first_name', 'last_name')(
+        ...     {'first_name': 'Alice', 'last_name': 'Smith'}, {}
+        ... )
         'Alice, Smith'
     """
     mappers = _list_to_mappers(fields)
@@ -250,9 +257,13 @@ def cond(field: str, true_mapper: Any, false_mapper: Any) -> MapperFunc:
         MapperFunc: A mapper function that returns the result of the chosen mapper.
 
     Example:
-        >>> cond('is_active', const('Active'), const('Inactive'))({'is_active': True}, {})
+        >>> cond('is_active', const('Active'), const('Inactive'))(
+        ...     {'is_active': True}, {}
+        ... )
         'Active'
-        >>> cond('is_active', const('Active'), const('Inactive'))({'is_active': False}, {})
+        >>> cond('is_active', const('Active'), const('Inactive'))(
+        ...     {'is_active': False}, {}
+        ... )
         'Inactive'
     """
     true_m = _str_to_mapper(true_mapper)
@@ -290,13 +301,21 @@ def bool_val(
         MapperFunc: A mapper function that returns a boolean value.
 
     Example:
-         >>> bool_val('is_verified', ['yes', 'true'], ['no', 'false'])({'is_verified': 'yes'}, {})
+         >>> bool_val('is_verified', ['yes', 'true'], ['no', 'false'])({
+         ...     'is_verified': 'yes'
+         ... }, {})
          '1'
-         >>> bool_val('is_verified', ['yes', 'true'], ['no', 'false'])({'is_verified': 'no'}, {})
+         >>> bool_val('is_verified', ['yes', 'true'], ['no', 'false'])({
+         ...     'is_verified': 'no'
+         ... }, {})
          '0'
-         >>> bool_val('is_verified', ['yes', 'true'], ['no', 'false'])({'is_verified': 'TRUE'}, {}) # case-insensitive
+         >>> bool_val('is_verified', ['yes', 'true'], ['no', 'false'])({
+         ...     'is_verified': 'TRUE'
+         ... }, {}) # case-insensitive
          '0'
-         >>> bool_val('is_verified', ['yes', 'true'], ['no', 'false'])({'is_verified': 'maybe'}, {}) # no match
+         >>> bool_val('is_verified', ['yes', 'true'], ['no', 'false'])({
+         ...     'is_verified': 'maybe'
+         ... }, {}) # no match
          '0'
     """
     true_vals = true_values or []
@@ -431,7 +450,8 @@ def m2o_map(
 
     Args:
         prefix (str): The XML ID prefix (e.g., 'my_module').
-        *fields (Any): A variable number of source column names or static strings to join.
+        *fields (Any): A variable number of source column names or static strings
+        to join.
         default (str): The value to return if the final concatenated value is empty.
         skip (bool): If True, raises SkippingError if the final result is empty.
 
@@ -439,7 +459,9 @@ def m2o_map(
         MapperFunc: A mapper function that returns the formatted external ID.
 
     Example:
-        >>> m2o_map('product', 'category', 'product_code')({'category': 'A', 'product_code': '123'}, {})
+        >>> m2o_map('product', 'category', 'product_code')({
+        ...     'category': 'A', 'product_code': '123'
+        ... }, {})
         'product.A_123'
     """
     # Assuming concat returns a callable that accepts (line: LineDict, state: StateDict)
@@ -467,7 +489,8 @@ def m2m(prefix: str, *fields: Any, sep: str = ",", default: str = "") -> MapperF
         default (str): The value to return if no IDs are generated.
 
     Returns:
-        MapperFunc: A mapper function that returns a comma-separated string of external IDs.
+        MapperFunc: A mapper function that returns a comma-separated string of
+        external IDs.
 
     Example:
         >>> m2m('tag', 'tags')({'tags': 'red, blue, green'}, {})
@@ -574,7 +597,9 @@ def m2m_id_list(
         ListMapperFunc: A mapper function that returns a list of external IDs.
 
     Example:
-        >>> m2m_id_list('category', 'categories', const_values=['default'])({'categories': 'A,B'}, {})
+        >>> m2m_id_list('category', 'categories', const_values=['default'])(
+        ...     {'categories': 'A,B'}, {}
+        ... )
         ['category.A', 'category.B', 'category.default']
         >>> m2m_id_list('color', 'colors', sep=';')({'colors': 'red;green'}, {})
         ['color.red', 'color.green']
@@ -636,7 +661,9 @@ def m2m_value_list(
         ListMapperFunc: A mapper function that returns a list of unique values.
 
     Example:
-        >>> m2m_value_list('colors', const_values=['red', 'blue'])({'colors': 'green,green'}, {})
+        >>> m2m_value_list('colors', const_values=['red', 'blue'])(
+        ...     {'colors': 'green,green'}, {}
+        ... )
         ['green', 'red', 'blue']
         >>> m2m_value_list('sizes', sep=';')({'sizes': 'S;M;L'}, {})
         ['S', 'M', 'L']
@@ -790,6 +817,28 @@ def binary_url_map(field: str, skip: bool = False) -> MapperFunc:
 
     Returns:
         MapperFunc: A mapper function that returns the base64 encoded string.
+
+    Example:
+        >>> binary_url_map('valid_url')({
+        ...     'valid_url': 'https://www.example.com/image.png'
+        ... }, {})
+        ''
+
+        >>> # Test with a local file (assuming icon.png exists)
+        >>> import os
+        >>> current_dir = os.path.dirname(os.path.abspath(__file__))  # Get the
+        >>> # Calculate the relative path to icon.png from the current file
+        >>> icon_path = os.path.abspath(os.path.join(
+        ...     current_dir, '../../../docs/_static/icon.png'
+        ... ))  #noqa: E501
+        >>> # Create a dummy icon.png if it doesn't exist (for testing purposes)
+        >>> if not os.path.exists(icon_path):
+        ...     with open(icon_path, 'w') as f:  # Create an empty file
+        ...         f.write("")
+        >>> binary_url_map('local_icon', skip=False)({
+        ...     'local_icon': f'file://{icon_path}'
+        ... }, {})[:10]  # noqa
+        ''
     """
 
     def binary_url_fun(line: LineDict, state: StateDict) -> str:
@@ -885,7 +934,9 @@ def concat_field_value_m2m(separator: str, *fields: str) -> MapperFunc:
         MapperFunc: A mapper function that returns the concatenated string.
 
     Example:
-        >>> concat_field_value_m2m('_', 'Color', 'Size')({'Color': 'Blue', 'Size': 'M'}, {})
+        >>> concat_field_value_m2m('_', 'Color', 'Size')({
+        ...     'Color': 'Blue', 'Size': 'M'
+        ... }, {})
         'Color_Blue,Size_M'
         >>> concat_field_value_m2m('_', 'Color', 'Size')({}, {})
         ''
@@ -915,7 +966,9 @@ def m2m_attribute_value(prefix: str, *fields: str) -> MapperFunc:
         MapperFunc: A mapper that returns a comma-separated string of external IDs.
 
     Example:
-        >>> m2m_attribute_value('attr', 'Color', 'Size')({'Color': 'Blue', 'Size': 'M'}, {})
+        >>> m2m_attribute_value('attr', 'Color', 'Size')({
+        ...     'Color': 'Blue', 'Size': 'M'
+        ... }, {})
         'attr.Color_Blue,attr.Size_M'
     """
     return m2m_map(prefix, concat_field_value_m2m("_", *fields))
@@ -939,7 +992,9 @@ def m2m_template_attribute_value(prefix: str, *fields: Any) -> MapperFunc:
         MapperFunc: A mapper that returns a comma-separated string of attribute values.
 
     Example:
-        >>> m2m_template_attribute_value('attr', 'Color', 'Size')({'Color': 'Blue', 'Size': 'M', 'template_id': 123}, {})
+        >>> m2m_template_attribute_value('attr', 'Color', 'Size')({
+        ...     'Color': 'Blue', 'Size': 'M', 'template_id': 123
+        ... }, {})
         'Blue,M'
         >>> m2m_template_attribute_value('attr', 'Color', 'Size')({}, {})
         ''
@@ -962,7 +1017,8 @@ def split_line_number(line_nb: int) -> Callable[[LineDict, int], int]:
         line_nb (int): The number of lines per chunk.
 
     Returns:
-        Callable[[LineDict, int], int]: A function compatible with the `Processor.split` method.
+        Callable[[LineDict, int], int]: A function compatible with the
+        `Processor.split` method.
 
     Example:
         >>> splitter = split_line_number(10)
@@ -985,7 +1041,8 @@ def split_file_number(file_nb: int) -> Callable[[LineDict, int], int]:
         file_nb (int): The total number of chunks to create.
 
     Returns:
-        Callable[[LineDict, int], int]: A function compatible with the `Processor.split` method.
+        Callable[[LineDict, int], int]: A function compatible with the
+        `Processor.split` method.
 
     Example:
         >>> splitter = split_file_number(3)
@@ -1015,7 +1072,8 @@ def path_to_image(
         path (str): The base directory where the image files are located.
 
     Returns:
-        Callable[[dict[str, Any], dict[str, Any]], Optional[str]]: A mapper function that returns the base64 encoded string or None.
+        Callable[[dict[str, Any], dict[str, Any]], Optional[str]]: A mapper
+        function that returns the base64 encoded string or None.
     """
 
     def _mapper(row: dict[str, Any], state: dict[str, Any]) -> Optional[str]:
@@ -1048,7 +1106,8 @@ def url_to_image(
         field (str): The source column containing the URL.
 
     Returns:
-        Callable[[dict[str, Any], dict[str, Any]], Optional[str]]: A mapper function that returns the base64 encoded string or None.
+        Callable[[dict[str, Any], dict[str, Any]], Optional[str]]: A mapper
+        function that returns the base64 encoded string or None.
     """
 
     def _mapper(row: dict[str, Any], state: dict[str, Any]) -> Optional[str]:
