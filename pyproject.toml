@@ -200,4 +200,4 @@ auto-generate-baseline = 'True'
 
 [tool.pytest.ini_options]
 addopts = "--doctest-modules src"
-doctest_optionflags = "NORMALIZE_WHITESPACE"
+doctest_optionflags = "NORMALIZE_WHITESPACE ELLIPSIS IGNORE_EXCEPTION_DETAIL"

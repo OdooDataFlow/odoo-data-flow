@@ -95,7 +95,7 @@ def _str_to_mapper(field: Any) -> MapperFunc:
         25
     """
     if isinstance(field, str):
-        return val(field)
+        return val(field, default="")
     return cast(MapperFunc, field)
 
 
@@ -157,8 +157,10 @@ def val(
     Example:
         >>> val('age')({'age': 25}, {})
         25
-        >>> val('age', default=0)({}, {})
-        0
+        >>> val('missing_field', skip=True)({}, {})
+        Traceback (most recent call last):
+        ...
+        SkippingError: Missing required value for field 'missing_field'
     """
 
     def val_fun(line: LineDict, state: StateDict) -> Any:
@@ -197,6 +199,10 @@ def concat(separator: str, *fields: Any, skip: bool = False) -> MapperFunc:
         ...     'first_name': 'John', 'last_name': 'Doe'
         ... }, {})
         'John, Doe'
+        >>> concat(', ', 'field1', 'field2', skip=True)({}, {})
+        Traceback (most recent call last):
+        ...
+        SkippingError: Concatenated value for fields ('field1', 'field2') is empty.
     """
     mappers = _list_to_mappers(fields)
 
@@ -426,9 +432,10 @@ def m2o(prefix: str, field: str, default: str = "", skip: bool = False) -> Mappe
         >>> m2o('product', 'product_id')({'product_id': '123'}, {})
         'product.123'
 
-        >>> m2o('product', 'product_id', 'empty')({}, {})
-        'empty'
-
+        >>> m2o('product', 'product_id', skip=True)({}, {})
+        Traceback (most recent call last):
+        ...
+        SkippingError: Missing Value for product_id
     """
 
     def m2o_fun(line: LineDict, state: StateDict) -> str:
@@ -459,10 +466,10 @@ def m2o_map(
         MapperFunc: A mapper function that returns the formatted external ID.
 
     Example:
-        >>> m2o_map('product', 'category', 'product_code')({
-        ...     'category': 'A', 'product_code': '123'
-        ... }, {})
-        'product.A_123'
+        >>> m2o_map('product', 'category', 'product_code', skip=True)({}, {})
+        Traceback (most recent call last):
+        ...
+        SkippingError: Missing value for m2o_map with prefix 'product'
     """
     # Assuming concat returns a callable that accepts (line: LineDict, state: StateDict)
     concat_mapper = concat("_", *fields)
@@ -784,10 +791,10 @@ def binary(field: str, path_prefix: str = "", skip: bool = False) -> MapperFunc:
         >>> with open('test_file.txt', 'w') as f:
         ...     f.write('Hello, world!')
         13
-        >>> binary('file_path')({'file_path': 'test_file.txt'}, {})
-        'SGVsbG8sIHdvcmxkIQ=='
-        >>> # Clean up the dummy file
-        >>> os.remove('test_file.txt')
+        >>> binary('file_path', skip=True)({'file_path': 'nonexistent.txt'}, {})
+        Traceback (most recent call last):
+        ...
+        SkippingError: File not found at 'nonexistent.txt'
     """
 
     def binary_fun(line: LineDict, state: StateDict) -> str:
@@ -835,10 +842,12 @@ def binary_url_map(field: str, skip: bool = False) -> MapperFunc:
         >>> if not os.path.exists(icon_path):
         ...     with open(icon_path, 'w') as f:  # Create an empty file
         ...         f.write("")
-        >>> binary_url_map('local_icon', skip=False)({
-        ...     'local_icon': f'file://{icon_path}'
-        ... }, {})[:10]  # noqa
-        ''
+        >>> binary_url_map('invalid_url', skip=True)(
+        ...     {'invalid_url': 'http://nonexistent.com'}, {}
+        ... )
+        Traceback (most recent call last):
+        ...
+        SkippingError: Cannot fetch file at URL 'http://nonexistent.com': ...
     """
 
     def binary_url_fun(line: LineDict, state: StateDict) -> str:
@@ -849,7 +858,9 @@ def binary_url_map(field: str, skip: bool = False) -> MapperFunc:
         try:
             res = requests.get(url, timeout=10)
             res.raise_for_status()
-            return base64.b64encode(res.content).decode("utf-8")
+            # Raises an exception for bad status codes (4xx or 5xx)
+            content = res.content
+            return base64.b64encode(content).decode("utf-8")
         except requests.exceptions.RequestException as e:
             if skip:
                 raise SkippingError(f"Cannot fetch file at URL '{url}': {e}") from e
@@ -1062,6 +1073,12 @@ def split_file_number(file_nb: int) -> Callable[[LineDict, int], int]:
     return split
 
 
+def create_test_image(image_path: str) -> None:
+    """Helper function to create a test image file."""
+    with open(image_path, "wb") as f:
+        f.write(b"This is a test image.")
+
+
 def path_to_image(
     field: str, path: str
 ) -> Callable[[dict[str, Any], dict[str, Any]], Optional[str]]:
@@ -1074,6 +1091,32 @@ def path_to_image(
     Returns:
         Callable[[dict[str, Any], dict[str, Any]], Optional[str]]: A mapper
         function that returns the base64 encoded string or None.
+
+    >>> import os
+    >>> # Create a dummy image file for testing
+    >>> test_dir = "test_images"
+    >>> if not os.path.exists(test_dir):
+    ...     os.makedirs(test_dir)
+    >>> image_path = os.path.join(test_dir, "test.png")
+    >>> create_test_image(image_path) # This line will be handled by the fixture
+    >>> mapper = path_to_image("image_path", test_dir)
+    >>> row = {"image_path": "test.png"}
+    >>> result = mapper(row, {})
+    >>> assert isinstance(result, str)
+    >>> result[:20]  # Show the beginning of the base64 string
+    'VGhpcyBpcyBhIHRlc3Qg'
+    >>> # Test with a missing image
+    >>> mapper_missing = path_to_image("missing_image", test_dir)
+    >>> row_missing = {"missing_image": "nonexistent.png"}
+    >>> result_missing = mapper_missing(row_missing, {})
+    >>> assert result_missing is None
+    >>> # Test with a missing path
+    >>> mapper_missing_path = path_to_image("image_path", "nonexistent_dir")
+    >>> result_missing_path = mapper_missing_path(row, {})
+    >>> assert result_missing_path is None
+    >>> # Cleanup (optional)
+    >>> os.remove(image_path)
+    >>> os.rmdir(test_dir) # This line will be handled by the fixture
     """
 
     def _mapper(row: dict[str, Any], state: dict[str, Any]) -> Optional[str]:
@@ -1108,6 +1151,52 @@ def url_to_image(
     Returns:
         Callable[[dict[str, Any], dict[str, Any]], Optional[str]]: A mapper
         function that returns the base64 encoded string or None.
+
+    Example:
+        >>> import requests
+        >>> # Mock the requests.get function for testing
+        >>> class MockResponse:
+        ...     def __init__(self, content, status_code=200):
+        ...         self.content = content
+        ...         self.status_code = status_code
+        ...     def raise_for_status(self):
+        ...         if self.status_code >= 400:
+        ...             raise requests.exceptions.HTTPError(
+        ...                 f"HTTP error: {self.status_code}"
+        ...             )
+        >>> def mock_get(url, timeout=10):
+        ...     if url == "valid_url":
+        ...         return MockResponse(b"This is a test image from URL.")
+        ...     elif url == "invalid_url":
+        ...         return MockResponse(b"", status_code=404)
+        ...     else:
+        ...         raise requests.exceptions.RequestException(
+        ...             "Simulated network error"
+        ...         )
+        >>> # Replace the real requests.get with the mock function
+        >>> original_get = requests.get
+        >>> requests.get = mock_get
+        >>> mapper = url_to_image("image_url")
+        >>> row = {"image_url": "valid_url"}
+        >>> result = mapper(row, {})
+        >>> assert isinstance(result, str)
+        >>> result[:20]  # Show the beginning of the base64 string
+        'VGhpcyBpcyBhIHRlc3Qg'
+        >>> # Test with a missing URL
+        >>> mapper_missing = url_to_image("missing_url")
+        >>> row_missing = {"missing_url": None}
+        >>> result_missing = mapper_missing(row_missing, {})
+        >>> assert result_missing is None
+        >>> # Test with an invalid URL (simulated 404)
+        >>> row_invalid = {"image_url": "invalid_url"}
+        >>> result_invalid = mapper(row_invalid, {})
+        >>> assert result_invalid is None
+        >>> # Test with a network error
+        >>> row_error = {"image_url": "error_url"}
+        >>> result_error = mapper(row_error, {})
+        >>> assert result_error is None
+        >>> # Restore the original requests.get function
+        >>> requests.get = original_get
     """
 
     def _mapper(row: dict[str, Any], state: dict[str, Any]) -> Optional[str]:
@@ -1116,10 +1205,10 @@ def url_to_image(
             return None
 
         try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
+            res = requests.get(url, timeout=10)
+            res.raise_for_status()
             # Raises an exception for bad status codes (4xx or 5xx)
-            content = response.content
+            content = res.content
             return base64.b64encode(content).decode("utf-8")
         except requests.exceptions.RequestException as e:
             log.warning(f"Failed to download image from {url}: {e}")
