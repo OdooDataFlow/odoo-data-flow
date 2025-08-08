@@ -19,6 +19,18 @@ Currently, the following checks are performed by default:
 * **Field Existence Check**: Verifies that every column in your CSV header corresponds to an actual field on the target Odoo model. This immediately catches typos or field name changes between Odoo versions.
 * **Language Check**: For imports into `res.partner` or `res.users`, this check scans the `lang` column in your CSV. It then verifies that all required languages are installed and active on the target Odoo database.
 
+### Advanced Module Dependency Check 🚀
+
+The Field Existence Check can be made more intelligent for migrations. If a field is missing, you can provide a mapping file that links Odoo fields to the modules that define them. The tool will then:
+
+1. **Read the mapping file you provide**
+
+2. If it finds a module associated with the missing field, it will suggest installing it.
+
+3. If you confirm, it will automatically install the module using Odoo's API and then re-run the check to confirm the field now exists.
+
+This turns a hard failure into a proactive, guided fix.
+
 ### Managing Pre-flight Checks
 
 * **Disabling Checks**: If you need to bypass these validations for any reason, you can use the `--no-preflight-checks` flag.
