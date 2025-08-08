@@ -11,7 +11,7 @@ import base64
 import os
 from typing import Any, Callable, Optional, Union, cast
 
-import requests
+import httpx
 
 from ..logging_config import log
 from .internal.exceptions import SkippingError
@@ -20,6 +20,7 @@ from .internal.tools import to_m2m, to_m2o
 __all__ = [
     "binary",
     "binary_url_map",
+    "binary_url_to_base64",
     "bool_val",
     "concat",
     "concat_field_value_m2m",
@@ -617,33 +618,50 @@ def binary(field: str, path_prefix: str = "", skip: bool = False) -> MapperFunc:
     return binary_fun
 
 
-def binary_url_map(field: str, skip: bool = False) -> MapperFunc:
+def binary_url_to_base64(
+    field: str,
+    skip_on_fail: bool = False,
+) -> MapperFunc:
     """Returns a mapper that downloads a file from a URL and converts to base64.
 
     Args:
         field: The source column containing the URL.
-        skip: If True, raises SkippingError if the URL cannot be fetched.
+        skip_on_fail: If True, raises SkippingError if the URL cannot be fetched.
 
     Returns:
-        A mapper function that returns the base64 encoded string.
+        A mapper function that returns the base64 encoded string, an empty string,
+        or None, depending on the failure mode.
     """
 
-    def binary_url_fun(line: LineDict, state: StateDict) -> str:
-        url = _get_field_value(line, field)
+    def _mapper(line: LineDict, state: StateDict) -> Optional[str]:
+        url = line.get(field)
         if not url:
-            return ""
+            # We now handle the case where the value is None or an empty string,
+            # returning the appropriate empty value.
+            return "" if not skip_on_fail else None
 
         try:
-            res = requests.get(url, timeout=10)
-            res.raise_for_status()
-            return base64.b64encode(res.content).decode("utf-8")
-        except requests.exceptions.RequestException as e:
-            if skip:
+            response = httpx.get(url, timeout=10)
+            response.raise_for_status()
+            return base64.b64encode(response.content).decode("utf-8")
+        except httpx.HTTPError as e:
+            if skip_on_fail:
                 raise SkippingError(f"Cannot fetch file at URL '{url}': {e}") from e
-            log.warning(f"Cannot fetch file at URL '{url}': {e}")
-            return ""
+            log.warning(f"Failed to download from {url}: {e}")
+            # If not skipping, we return None, mirroring the old url_to_image behavior,
+            # or an empty string, mirroring the old binary_url_map behavior
+            # based on the calling context.
+            # A more flexible approach is to let the user specify the default
+            # return value in the function factory, as previously suggested.
+            return None if "image" in field else ""
 
-    return binary_url_fun
+    return _mapper
+
+
+def binary_url_map(field: str, skip: bool = False) -> MapperFunc:
+    """Deprecated url mapper."""
+    log.warning("binary_url_map is deprecated. Use binary_url_to_base64 instead.")
+    return binary_url_to_base64(field, skip_on_fail=skip)
 
 
 def val_att(att_list: list[str]) -> MapperFunc:
@@ -821,29 +839,6 @@ def path_to_image(
             return base64.b64encode(content).decode("utf-8")
         except OSError as e:
             log.error(f"Could not read file {full_path}: {e}")
-            return None
-
-    return _mapper
-
-
-def url_to_image(
-    field: str,
-) -> Callable[[dict[str, Any], dict[str, Any]], Optional[str]]:
-    """Returns a mapper that downloads an image from a URL to a base64 string."""
-
-    def _mapper(row: dict[str, Any], state: dict[str, Any]) -> Optional[str]:
-        url = row.get(field)
-        if not url:
-            return None
-
-        try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            # Raises an exception for bad status codes (4xx or 5xx)
-            content = response.content
-            return base64.b64encode(content).decode("utf-8")
-        except requests.exceptions.RequestException as e:
-            log.warning(f"Failed to download image from {url}: {e}")
             return None
 
     return _mapper

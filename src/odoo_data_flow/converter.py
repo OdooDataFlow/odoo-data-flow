@@ -83,7 +83,7 @@ def run_url_to_image(
     ).get_o2o_mapping()
     mapping = {
         **o2o_mapping,
-        **{f: mapper.url_to_image(f) for f in fields.split(",")},
+        **{f: mapper.binary_url_to_base64(f) for f in fields.split(",")},
     }
 
     # FIX: Initialize processor with the correct mapping

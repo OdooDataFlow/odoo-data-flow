@@ -9,8 +9,8 @@ import csv
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import httpx
 import polars as pl
-import requests
 
 from odoo_data_flow.converter import (
     run_path_to_image,
@@ -81,9 +81,8 @@ def test_run_path_to_image(tmp_path: Path) -> None:
     assert result_data[2]["image_path"] == "", "Empty path should result in empty"
 
 
-# Patch the target where it is looked up: in the mapper module
-@patch("odoo_data_flow.lib.mapper.requests.get")
-def test_run_url_to_image(mock_requests_get: MagicMock, tmp_path: Path) -> None:
+@patch("odoo_data_flow.lib.mapper.httpx.get")
+def test_run_url_to_image(mock_httpx_get: MagicMock, tmp_path: Path) -> None:
     """Tests the run_url_to_image function.
 
     This test verifies that:
@@ -91,7 +90,7 @@ def test_run_url_to_image(mock_requests_get: MagicMock, tmp_path: Path) -> None:
     2. It "downloads" content from a URL and converts it to base64.
     3. It handles cases where a URL download fails.
     """
-    # 1. Setup: Mock the requests library and create a source file
+    # 1. Setup: Mock the httpx library and create a source file
     source_csv = tmp_path / "source_urls.csv"
     output_csv = tmp_path / "output_urls.csv"
 
@@ -101,13 +100,16 @@ def test_run_url_to_image(mock_requests_get: MagicMock, tmp_path: Path) -> None:
     mock_response_success.raise_for_status.return_value = None
 
     mock_response_fail = MagicMock()
-    # Raise the correct exception type that the code expects to catch
-    mock_response_fail.raise_for_status.side_effect = (
-        requests.exceptions.RequestException("404 Not Found")
+    # Raise the correct exception type that the code expects
+    # to catch (httpx.HTTPStatusError)
+    mock_response_fail.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "404 Not Found",
+        request=httpx.Request("GET", "http://example.com"),
+        response=httpx.Response(404),
     )
 
     # The side_effect will return these values in order for each call to get()
-    mock_requests_get.side_effect = [
+    mock_httpx_get.side_effect = [
         mock_response_success,
         mock_response_fail,
     ]
@@ -126,6 +128,7 @@ def test_run_url_to_image(mock_requests_get: MagicMock, tmp_path: Path) -> None:
         writer.writerows(source_data)
 
     # 2. Action: Run the converter function
+    # NOTE: Assuming run_url_to_image now calls the new refactored mapper function
     run_url_to_image(
         file=str(source_csv),
         fields="image_url",

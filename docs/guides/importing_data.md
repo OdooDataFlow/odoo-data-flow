@@ -128,7 +128,7 @@ To handle relational data and updates by database ID, the tool uses special colu
 Odoo's `load` method expects data for certain field types to be in a specific format.
 
 * **Boolean**: Must be `1` for True and `0` for False. The `mapper.bool_val` can help with this.
-* **Binary**: Must be a base64 encoded string. The `mapper.binary` and `mapper.binary_url_map` functions handle this automatically.
+* **Binary**: Must be a base64 encoded string. The `mapper.binary` and `mapper.binary_url_to_base64` functions handle this automatically.
 * **Date & Datetime**: The format depends on the user's language settings in Odoo, but the standard, safe formats are `YYYY-MM-DD` for dates and `YYYY-MM-DD HH:MM:SS` for datetimes.
 * **Float**: The decimal separator must be a dot (`.`). The `mapper.num` function handles converting comma separators automatically.
 * **Selection**: Must contain the internal value for the selection, not the human-readable label (e.g., `'draft'` instead of `'Draft'`).
