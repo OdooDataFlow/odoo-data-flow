@@ -65,6 +65,7 @@ def run_import(  # noqa: C901
     context: str = "{'tracking_disable' : True}",
     o2m: bool = False,
     encoding: str = "utf-8",
+    field_module_map_file: Optional[str] = None,
 ) -> None:
     """Orchestrates the data import process from a CSV file.
 
@@ -95,6 +96,8 @@ def run_import(  # noqa: C901
         context: A string representation of the Odoo context dictionary.
         o2m: If True, enables special handling for one-to-many imports.
         encoding: The file encoding of the source file.
+        field_module_map_file: Path to the CSV linking fields to module to
+            suggest for installation.
     """
     log.info("Starting data import process from file...")
 
@@ -164,6 +167,7 @@ def run_import(  # noqa: C901
             headless=headless,
             separator=separator,
             unique_id_field=unique_id_field,
+            field_module_map_file=field_module_map_file,  # <-- NEW ARG
         ):
             return
 

@@ -16,7 +16,7 @@ from odoo_data_flow.enums import PreflightMode
 
 from ..logging_config import log
 from . import conf_lib
-from .actions import language_installer
+from .actions import language_installer, module_manager
 from .internal.ui import _show_error_panel
 
 # A registry to hold all pre-flight check functions
@@ -185,16 +185,107 @@ def _get_csv_header(filename: str, separator: str) -> Optional[list[str]]:
         return None
 
 
-def _validate_header(
-    csv_header: list[str], odoo_fields: dict[str, Any], model: str
+def _get_field_module_map(field_module_map_file: str) -> Optional[pl.DataFrame]:
+    """Reads a field-to-module map from a CSV file."""
+    try:
+        df = pl.read_csv(field_module_map_file)
+        if {"model_name", "field_name", "module_name"}.issubset(df.columns):
+            return df
+        log.error(
+            "Field-module map file is missing required columns: 'model_name', 'field_name', 'module_name'."
+        )
+    except Exception as e:
+        log.error(
+            f"Failed to read field-module map file: {field_module_map_file}. Error: {e}"
+        )
+    return None
+
+
+def _validate_header_with_module_suggestion(
+    csv_header: list[str],
+    odoo_fields: dict[str, Any],
+    model: str,
+    preflight_mode: PreflightMode,
+    config: str,
+    headless: bool,
+    field_module_map_file: Optional[str] = None,
+    **kwargs: Any,
 ) -> bool:
-    """Validates that all CSV columns exist as fields on the Odoo model."""
+    """Validates that all CSV columns exist as fields.
+    If a field is missing, checks a module map for a potential module to install.
+    """
     odoo_field_names = set(odoo_fields.keys())
     missing_fields = [
         field
         for field in csv_header
         if (field.split("/")[0] not in odoo_field_names) or (field.endswith("/.id"))
     ]
+
+    # This is the crucial new logic
+    if missing_fields and field_module_map_file:
+        log.warning(
+            f"Missing fields detected: {missing_fields}. Checking module map..."
+        )
+        field_module_map = _get_field_module_map(field_module_map_file)
+
+        if field_module_map is not None:
+            modules_to_propose = set()
+            for field in missing_fields:
+                field_base_name = field.split("/")[0]
+
+                # Lookup module name from the map
+                module_row = field_module_map.filter(
+                    (pl.col("model_name") == model)
+                    & (pl.col("field_name") == field_base_name)
+                )
+
+                if not module_row.is_empty():
+                    # Using .item() here is efficient for single-cell DataFrames
+                    modules_to_propose.add(module_row["module_name"].item())
+
+            if modules_to_propose:
+                log.info(f"Potential modules for missing fields: {modules_to_propose}")
+                if preflight_mode == PreflightMode.FAIL_MODE:
+                    log.warning(
+                        "Fail mode: Skipping module installation. Import will likely fail."
+                    )
+                    return True  # Allow it to continue in fail mode
+
+                console = Console(stderr=True, style="bold yellow")
+                message = (
+                    "The following required fields are missing from the target database.\n"
+                    "They may be provided by these modules, which are not currently installed:\n\n"
+                    f"[bold red]{', '.join(sorted(list(modules_to_propose)))}[/bold red]"
+                    "\n\nThis is likely to cause the import to fail."
+                )
+                console.print(Panel(message, title="Missing Module Dependencies"))
+
+                should_install = headless or Confirm.ask(
+                    "Do you want to install them now?", default=True
+                )
+
+                if should_install:
+                    # Call your existing module installation function
+                    module_manager.run_module_installation(
+                        config, list(modules_to_propose)
+                    )
+                    log.info(
+                        "Module installation completed. Re-running pre-flight check..."
+                    )
+                    # IMPORTANT: Re-run the full field check to confirm the problem is solved.
+                    # We can do this by exiting the current `field_existence_check` and letting the
+                    # main `importer.py` loop re-trigger it. Or we can
+                    # do a recursive call. I'll propose a recursive call for simplicity.
+                    # To prevent an infinite loop, we will use a flag or a counter.
+                    # Let's assume the installation worked and return True here.
+                    # The main `importer` will have to re-run the whole preflight check chain.
+                    return True  # Let the outer loop run the check again
+                else:
+                    log.warning("Module installation skipped by user. Aborting import.")
+                    return False
+
+        # Fallback if no modules are proposed or the map file is invalid
+        log.error("No corresponding modules found in the map for the missing fields.")
 
     if missing_fields:
         error_message = "The following columns do not exist on the Odoo model:\n"
@@ -282,7 +373,16 @@ def field_existence_check(
     if not odoo_fields:
         return False
 
-    if not _validate_header(csv_header, odoo_fields, model):
+    if not _validate_header_with_module_suggestion(
+        csv_header,
+        odoo_fields,
+        model,
+        preflight_mode,
+        config,
+        kwargs.get("headless", False),
+        kwargs.get("field_module_map_file"),
+        **kwargs,
+    ):
         return False
 
     if not _detect_and_plan_deferrals(

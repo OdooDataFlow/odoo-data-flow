@@ -283,6 +283,12 @@ def split_by_comma(
     default=False,
     help="Special handling for one-to-many imports.",
 )
+@click.option(
+    "--field-module-map-file",
+    type=str,
+    help="Path to a CSV file mapping fields to odoo modules."
+    "Used by the preflight check to suggest and install missing modules",
+)
 @click.option("--encoding", default="utf-8", help="Encoding of the data file.")
 def import_cmd(**kwargs: Any) -> None:
     """Runs the data import process."""
