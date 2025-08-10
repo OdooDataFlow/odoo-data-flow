@@ -2,13 +2,11 @@
 
 import json
 import tempfile
-from pathlib import Path
 from typing import Any, Optional
 
 import polars as pl
 from rich.progress import Progress, TaskID
 
-from .. import import_threaded
 from ..logging_config import log
 from . import cache, conf_lib, writer
 
@@ -97,7 +95,7 @@ def run_direct_relational_import(
     progress: Progress,
     task_id: TaskID,
     original_filename: str,
-) -> bool:
+) -> Optional[dict[str, Any]]:
     """Orchestrates the high-speed direct relational import."""
     progress.update(
         task_id,
@@ -118,7 +116,7 @@ def run_direct_relational_import(
     )
     if related_model_df is None:
         log.error(f"Could not resolve IDs for related model '{related_model_fk}'.")
-        return False
+        return None
 
     # 3. Create the link table DataFrame
     link_df = source_df.select(["id", field]).rename({"id": "external_id"})
@@ -134,24 +132,18 @@ def run_direct_relational_import(
         related_model_df.rename({"external_id": field}), on=field, how="inner"
     ).rename({"db_id": f"{related_model_fk}/id"})
 
-    # 4. Write to a temporary file and import
+    # 4. Write to a temporary file and return import details
     with tempfile.NamedTemporaryFile(
         mode="w+", delete=False, suffix=".csv", newline=""
     ) as tmp:
         link_df.select([owning_model_fk, f"{related_model_fk}/id"]).write_csv(tmp.name)
         tmp_path = tmp.name
 
-    success, _ = import_threaded.import_data(
-        config_file=config,
-        model=relational_table,
-        unique_id_field=owning_model_fk,
-        file_csv=tmp_path,
-        max_connection=worker,
-        batch_size=batch_size,
-    )
-
-    Path(tmp_path).unlink()
-    return success
+    return {
+        "file_csv": tmp_path,
+        "model": relational_table,
+        "unique_id_field": owning_model_fk,
+    }
 
 
 def run_write_tuple_import(

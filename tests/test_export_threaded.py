@@ -167,10 +167,8 @@ class TestRPCThreadExport:
             # 3. Assert
             assert result == []  # Should return an empty list on failure
             mock_log_error.assert_called_once()
-            assert (
-                "failed permanently after a network error"
-                in mock_log_error.call_args[0][0]
-            )
+            assert "failed permanently" in mock_log_error.call_args[0][0]
+            assert "network error" not in mock_log_error.call_args[0][0]
 
     def test_rpc_thread_export_memory_error(self) -> None:
         """Test for memory errors.

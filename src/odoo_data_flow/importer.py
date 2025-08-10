@@ -255,7 +255,7 @@ def run_import(  # noqa: C901
                 )
                 for field, strategy_info in import_plan["strategies"].items():
                     if strategy_info["strategy"] == "direct_relational_import":
-                        relational_import.run_direct_relational_import(
+                        import_details = relational_import.run_direct_relational_import(
                             config,
                             model,
                             field,
@@ -268,6 +268,16 @@ def run_import(  # noqa: C901
                             task_id,
                             filename,
                         )
+                        if import_details:
+                            import_threaded.import_data(
+                                config_file=config,
+                                model=import_details["model"],
+                                unique_id_field=import_details["unique_id_field"],
+                                file_csv=import_details["file_csv"],
+                                max_connection=max_conn,
+                                batch_size=batch_size_run,
+                            )
+                            Path(import_details["file_csv"]).unlink()
                     elif strategy_info["strategy"] == "write_tuple":
                         relational_import.run_write_tuple_import(
                             config,

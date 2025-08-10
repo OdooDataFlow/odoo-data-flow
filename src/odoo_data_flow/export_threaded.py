@@ -150,6 +150,28 @@ class RPCThreadExport(RpcThread):
             processed_data.append(new_record)
         return processed_data
 
+    def _execute_batch_with_retry(
+        self, ids_to_export: list[int], num: Union[int, str], e: Exception
+    ) -> list[dict[str, Any]]:
+        """Splits the batch and recursively retries on network errors."""
+        if len(ids_to_export) > 1:
+            log.warning(
+                f"Batch {num} failed with a network error ({e}). This is "
+                "often a server timeout on large batches. Automatically "
+                "splitting the batch and retrying."
+            )
+            mid_point = len(ids_to_export) // 2
+            results_a = self._execute_batch(ids_to_export[:mid_point], f"{num}-a")
+            results_b = self._execute_batch(ids_to_export[mid_point:], f"{num}-b")
+            return results_a + results_b
+        else:
+            log.error(
+                f"Export for record ID {ids_to_export[0]} in batch {num} "
+                f"failed permanently after a network error: {e}"
+            )
+            self.has_failures = True
+            return []
+
     def _execute_batch(
         self, ids_to_export: list[int], num: Union[int, str]
     ) -> list[dict[str, Any]]:
@@ -205,25 +227,12 @@ class RPCThreadExport(RpcThread):
 
             return self._format_batch_results(raw_data)
 
-        except requests.exceptions.RequestException as e:
+        except (
+            requests.exceptions.ChunkedEncodingError,
+            requests.exceptions.ReadTimeout,
+        ) as e:
             # --- Resilient network error handling ---
-            if len(ids_to_export) > 1:
-                log.warning(
-                    f"Batch {num} failed with a network error ({e}). This is "
-                    "often a server timeout on large batches. Automatically "
-                    "splitting the batch and retrying."
-                )
-                mid_point = len(ids_to_export) // 2
-                results_a = self._execute_batch(ids_to_export[:mid_point], f"{num}-a")
-                results_b = self._execute_batch(ids_to_export[mid_point:], f"{num}-b")
-                return results_a + results_b
-            else:
-                log.error(
-                    f"Export for record ID {ids_to_export[0]} in batch {num} "
-                    f"failed permanently after a network error: {e}"
-                )
-                self.has_failures = True
-                return []
+            return self._execute_batch_with_retry(ids_to_export, num, e)
 
         except Exception as e:
             # --- MemoryError handling ---

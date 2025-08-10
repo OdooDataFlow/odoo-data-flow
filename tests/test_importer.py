@@ -392,6 +392,10 @@ def test_run_import_orchestrates_direct_relational_strategy(
     source_file = tmp_path / "source.csv"
     source_file.write_text("id,name,category_id\n1,test,cat1")
 
+    # Create a dummy temp file for the relational import to return
+    relational_temp_file = tmp_path / "relational_temp.csv"
+    relational_temp_file.touch()
+
     def preflight_side_effect(*args: Any, **kwargs: Any) -> bool:
         kwargs["import_plan"]["strategies"] = {
             "category_id": {
@@ -406,13 +410,19 @@ def test_run_import_orchestrates_direct_relational_strategy(
 
     mock_preflight.side_effect = preflight_side_effect
     mock_import_data.return_value = (True, {"id_map": {"p1": 1}})
+    mock_relational_import.return_value = {
+        "file_csv": str(relational_temp_file),
+        "model": "res.partner.category.rel",
+        "unique_id_field": "partner_id",
+    }
 
     test_args = TestRunImport.DEFAULT_ARGS.copy()
     test_args["filename"] = str(source_file)
     test_args["no_preflight_checks"] = False
 
     run_import(**test_args)
-    mock_import_data.assert_called_once()
+    # The main import_data is called for the main file and for the relational file.
+    assert mock_import_data.call_count == 2
     mock_relational_import.assert_called_once()
     call_args = mock_relational_import.call_args[0]
     assert call_args[1] == "res.partner"
