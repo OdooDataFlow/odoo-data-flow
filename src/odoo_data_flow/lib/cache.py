@@ -133,3 +133,55 @@ def load_fields_get_cache(config_file: str, model: str) -> Optional[dict[str, An
     except Exception as e:
         log.error(f"Failed to load fields_get cache for model '{model}': {e}")
         return None
+
+
+from typing import List
+
+
+def generate_session_id(model: str, domain: List[Any], fields: List[Any]) -> str:
+    """Generates a unique session ID for an export job.
+
+    Args:
+        model: The Odoo model name.
+        domain: The domain filter for the export.
+        fields: The list of fields to export.
+
+    Returns:
+        A unique hexadecimal session ID string.
+    """
+    # The domain can contain tuples or lists, so we convert lists to tuples
+    # to make them hashable and ensure consistent sorting.
+    try:
+        stable_domain = sorted(
+            tuple(item) if isinstance(item, list) else item for item in domain
+        )
+    except TypeError:
+        # Fallback for un-sortable domains
+        stable_domain = [
+            tuple(item) if isinstance(item, list) else item for item in domain
+        ]
+
+    domain_str = str(stable_domain)
+    fields_str = str(sorted(fields))
+    session_str = f"{model}{domain_str}{fields_str}"
+    return hashlib.sha256(session_str.encode()).hexdigest()[:16]
+
+
+def get_session_dir(session_id: str) -> Optional[Path]:
+    """Creates and returns the path to a specific session directory.
+
+    Args:
+        session_id: The unique ID of the session.
+
+    Returns:
+        A Path object to the session directory, or None on failure.
+    """
+    try:
+        # Session directories are stored in a common 'sessions' subdir to
+        # distinguish them from other connection-specific caches.
+        session_dir = Path(".odf_cache") / "sessions" / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        return session_dir
+    except Exception as e:
+        log.error(f"Could not create or access session directory '{session_id}': {e}")
+        return None

@@ -163,7 +163,7 @@ class TestRPCThreadExport:
             result = thread._execute_batch([1], 1)
 
             # 3. Assert
-            assert result == []  # Should return an empty list on failure
+            assert result == ([], [])  # Should return an empty list on failure
             mock_log_error.assert_called_once()
             assert "failed permanently" in mock_log_error.call_args[0][0]
             assert "network error" not in mock_log_error.call_args[0][0]
@@ -190,7 +190,7 @@ class TestRPCThreadExport:
             technical_names=True,
         )
         result = thread._execute_batch([1, 2, 3], 1)
-        assert result == [{"id": 1}]
+        assert result == ([{"id": 1}], [1])
 
 
 class TestCleanBatch:
@@ -253,7 +253,7 @@ class TestExportData:
         }
 
         # --- Act ---
-        result_df = export_data(
+        _, _, _, result_df = export_data(
             config_file="dummy.conf",
             model="res.partner",
             domain=[],
@@ -292,7 +292,7 @@ class TestExportData:
         }
 
         # --- Act ---
-        result_df = export_data(
+        _, _, _, result_df = export_data(
             config_file="dummy.conf",
             model="res.partner",
             domain=[],
@@ -337,7 +337,7 @@ class TestExportData:
         }
 
         # --- Act ---
-        result_df = export_data(
+        success, _, _, result_df = export_data(
             config_file="dummy.conf",
             model="res.partner",
             domain=[],
@@ -349,6 +349,7 @@ class TestExportData:
         )
 
         # --- Assert ---
+        assert success is True
         assert result_df is None
         assert output_file.exists()
 
@@ -363,13 +364,14 @@ class TestExportData:
             "odoo_data_flow.export_threaded.conf_lib.get_connection_from_config",
             side_effect=Exception("Connection Error"),
         ):
-            result = export_data(
+            success, _, _, result = export_data(
                 config_file="bad.conf",
                 model="res.partner",
                 domain=[],
                 header=["id"],
                 output="fail.csv",
             )
+        assert success is False
         assert result is None
 
     def test_export_handles_no_records_found(
@@ -384,7 +386,7 @@ class TestExportData:
             "name": {"type": "char"},
         }
 
-        result_df = export_data(
+        success, _, _, result_df = export_data(
             config_file="dummy.conf",
             model="res.partner",
             domain=[],
@@ -393,12 +395,14 @@ class TestExportData:
             separator=",",
         )
 
+        assert success is True
         assert output_file.exists()
 
         with open(output_file) as f:
             assert f.read().strip() == "id,name"
         assert output_file.exists()
-        assert result_df is None
+        assert result_df is not None
+        assert result_df.is_empty()
 
     def test_export_handles_memory_error_fallback(
         self, mock_conf_lib: MagicMock, tmp_path: Path
@@ -429,7 +433,7 @@ class TestExportData:
         }
 
         # --- Act ---
-        result_df = export_data(
+        success, _, _, result_df = export_data(
             config_file="dummy.conf",
             model="res.partner",
             domain=[],
@@ -441,6 +445,7 @@ class TestExportData:
         )
 
         # --- Assert ---
+        assert success is True
         assert result_df is None
         assert output_file.exists()
         assert mock_model.read.call_count == 3  # 1 failure + 2 retries
@@ -530,18 +535,20 @@ class TestExportData:
         assert model_obj is None
         assert fields_info is None
 
-    @patch("odoo_data_flow.export_threaded._initialize_export")
+    @patch("odoo_data_flow.export_threaded._determine_export_strategy")
     def test_export_data_streaming_no_output(
-        self, mock_initialize_export: MagicMock
+        self, mock_determine_export_strategy: MagicMock
     ) -> None:
         """Tests that streaming mode without an output path returns None."""
-        mock_initialize_export.return_value = (
+        mock_determine_export_strategy.return_value = (
             MagicMock(),
             MagicMock(),
-            MagicMock(),
+            {"name": {"type": "char"}},
+            False,
+            False,
         )
 
-        result_df = export_data(
+        success, _, _, result_df = export_data(
             config_file="dummy.conf",
             model="res.partner",
             domain=[],
@@ -549,6 +556,7 @@ class TestExportData:
             output=None,
             streaming=True,
         )
+        assert success is False
         assert result_df is None
 
     @patch("concurrent.futures.as_completed")
@@ -563,7 +571,7 @@ class TestExportData:
         mock_rpc_thread.futures = [mock_future]
 
         result = _process_export_batches(
-            mock_rpc_thread, 1, "res.partner", None, {}, ";", False
+            mock_rpc_thread, 1, "res.partner", None, {}, ";", False, None, False, "utf-8"
         )
         if result is not None:
             assert result.is_empty()
@@ -574,21 +582,23 @@ class TestExportData:
     ) -> None:
         """Test that _process_export_batches handles an empty result from a future."""
         mock_future = MagicMock()
-        mock_future.result.return_value = []
+        mock_future.result.return_value = ([], [])
         mock_as_completed.return_value = [mock_future]
         mock_rpc_thread = MagicMock()
         mock_rpc_thread.futures = [mock_future]
 
         result = _process_export_batches(
-            mock_rpc_thread, 1, "res.partner", None, {}, ";", False
+            mock_rpc_thread, 1, "res.partner", None, {}, ";", False, None, False, "utf-8"
         )
         if result is not None:
             assert result.is_empty()
 
-    def test_process_export_batches_no_dfs_with_output(self) -> None:
+    def test_process_export_batches_no_dfs_with_output(self, tmp_path: Path) -> None:
         """Test _process_export_batches with no dataframes and an output file."""
         mock_rpc_thread = MagicMock()
         mock_rpc_thread.futures = []
+        mock_rpc_thread.has_failures = False
+        output_file = tmp_path / "output.csv"
 
         fields_info = {"id": {"type": "integer"}}
 
@@ -597,10 +607,13 @@ class TestExportData:
                 mock_rpc_thread,
                 0,
                 "res.partner",
-                "out.csv",
+                str(output_file),
                 fields_info,
                 ";",
                 False,
+                None,
+                False,
+                "utf-8",
             )
         assert result is not None
         assert result.is_empty()
@@ -634,7 +647,7 @@ class TestExportData:
         }
 
         # --- Act ---
-        result_df = export_data(
+        _, _, _, result_df = export_data(
             config_file="dummy.conf",
             model="res.partner.category",
             domain=[],
@@ -687,7 +700,7 @@ class TestExportData:
         ]
 
         # --- Act ---
-        result_df = export_data(
+        _, _, _, result_df = export_data(
             config_file="dummy.conf",
             model="res.partner.category",
             domain=[],
@@ -723,7 +736,7 @@ class TestExportData:
         }
 
         # --- Act ---
-        result_df = export_data(
+        _, _, _, result_df = export_data(
             config_file="dummy.conf",
             model="res.partner",
             domain=[],
@@ -769,7 +782,7 @@ class TestExportData:
         }
 
         # --- Act ---
-        result_df = export_data(
+        _, _, _, result_df = export_data(
             config_file="dummy.conf",
             model="res.partner",
             domain=[],
@@ -817,11 +830,11 @@ class TestExportData:
 
         # FIX: Mock the result that the processing loop will receive
         mock_future = MagicMock()
-        mock_future.result.return_value = [{"name": "Test Record", "state": "done"}]
+        mock_future.result.return_value = ([{"name": "Test Record", "state": "done", "id": 1}], [1])
         mock_as_completed.return_value = [mock_future]
 
         # --- Act ---
-        result_df = export_data(
+        _, _, _, result_df = export_data(
             config_file="dummy.conf",
             model="sale.order",
             domain=[],
@@ -864,13 +877,14 @@ class TestExportData:
 
         # FIX: Mock the result that the processing loop will receive
         mock_future = MagicMock()
-        mock_future.result.return_value = [
-            {"name": "test.zip", "datas": "UEsDBAoAAAAA..."}
-        ]
+        mock_future.result.return_value = (
+            [{"name": "test.zip", "datas": "UEsDBAoAAAAA...", "id": 1}],
+            [1],
+        )
         mock_as_completed.return_value = [mock_future]
 
         # --- Act ---
-        result_df = export_data(
+        _, _, _, result_df = export_data(
             config_file="dummy.conf",
             model="ir.attachment",
             domain=[],
@@ -905,8 +919,8 @@ class TestExportData:
         mock_rpc_thread = MagicMock(spec=RPCThreadExport)
         mock_rpc_thread.has_failures = False
         future1, future2 = MagicMock(), MagicMock()
-        future1.result.return_value = [{"id": 1, "is_special": True}]
-        future2.result.return_value = [{"id": 2, "is_special": "False"}]
+        future1.result.return_value = ([{"id": 1, "is_special": True}], [1])
+        future2.result.return_value = ([{"id": 2, "is_special": "False"}], [2])
         mock_rpc_thread.futures = [future1, future2]
         mock_as_completed.return_value = [future1, future2]
         mock_rpc_thread.executor = MagicMock()
@@ -932,6 +946,9 @@ class TestExportData:
             fields_info=fields_info,
             separator=",",
             streaming=False,
+            session_dir=None,
+            is_resuming=False,
+            encoding="utf-8",
         )
         assert final_df is not None
 

@@ -358,6 +358,11 @@ def write_cmd(**kwargs: Any) -> None:
     help="""Enable streaming to write data batch-by-batch.
     Use for very large datasets.""",
 )
+@click.option(
+    "--resume-session",
+    default=None,
+    help="Resume a previously failed export session using its ID.",
+)
 @click.option("-s", "--sep", "separator", default=";", help="CSV separator character.")
 @click.option(
     "--context",
