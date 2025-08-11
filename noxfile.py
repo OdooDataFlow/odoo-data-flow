@@ -150,7 +150,7 @@ def mypy(session: nox.Session) -> None:
 
     session.install("mypy")
     session.install("pytest")
-    session.install("requests", "types-requests")
+    session.install("httpx")
     session.install("-e", ".")
     session.run("mypy", *args)
     if not session.posargs:
@@ -197,7 +197,7 @@ def coverage(session: nox.Session) -> None:
         "coverage[toml]",
         "pytest-cov",
         "pytest-mock",
-        "requests",
+        "httpx",
         "rich",
         "polars",
         "click",

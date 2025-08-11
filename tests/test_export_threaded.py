@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
-import requests
+import httpx
 from polars.testing import assert_frame_equal
 
 from odoo_data_flow.export_threaded import (
@@ -147,9 +147,7 @@ class TestRPCThreadExport:
         # 1. Setup
         mock_model = MagicMock()
         mock_connection = MagicMock()
-        mock_model.read.side_effect = requests.exceptions.JSONDecodeError(
-            "Expecting value", "", 0
-        )
+        mock_model.read.side_effect = httpx.DecodingError("Expecting value", request=None)
         fields_info = {"id": {"type": "integer"}}
         thread = RPCThreadExport(
             1,

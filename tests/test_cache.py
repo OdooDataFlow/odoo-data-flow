@@ -9,15 +9,14 @@ from polars.testing import assert_frame_equal
 from odoo_data_flow.lib import cache
 
 
-@patch("odoo_data_flow.lib.cache.conf_lib.get_connection_from_config")
+@patch("configparser.ConfigParser")
 def test_get_cache_dir_creates_unique_directory(
-    mock_get_config: "MagicMock", tmp_path: Path
+    mock_config_parser: MagicMock, tmp_path: Path
 ) -> None:
     """Verify that a unique, hashed directory is created."""
     # Arrange
-    mock_get_config.return_value.hostname = "localhost"
-    mock_get_config.return_value.port = 8069
-    mock_get_config.return_value.database = "test_db"
+    mock_instance = mock_config_parser.return_value
+    mock_instance.get.side_effect = ["localhost", 8069, "test_db"]
     expected_hash = "a1b2c3d4e5f6..."  # A known hash for the test data
     with patch("hashlib.sha256") as mock_sha256:
         mock_sha256.return_value.hexdigest.return_value = expected_hash

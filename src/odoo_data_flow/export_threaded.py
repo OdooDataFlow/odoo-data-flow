@@ -11,7 +11,7 @@ from time import time
 from typing import Any, Optional, Union, cast
 
 import polars as pl
-import requests
+import httpx
 from rich.progress import (
     BarColumn,
     Progress,
@@ -228,8 +228,8 @@ class RPCThreadExport(RpcThread):
             return self._format_batch_results(raw_data)
 
         except (
-            requests.exceptions.ChunkedEncodingError,
-            requests.exceptions.ReadTimeout,
+            httpx.ReadError,
+            httpx.ReadTimeout,
         ) as e:
             # --- Resilient network error handling ---
             return self._execute_batch_with_retry(ids_to_export, num, e)

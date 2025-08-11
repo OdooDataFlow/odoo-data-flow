@@ -13,7 +13,7 @@ classifiers = ["Development Status :: 3 - Alpha"]
 dependencies = [
     "click >=8.0.1",
     "odoo-client-lib @ git+https://github.com/odoo/odoo-client-lib.git@refs/pull/5/head",
-    "requests",
+    "httpx",
     "lxml",
     "rich",
     "polars",
@@ -35,8 +35,7 @@ requires = [
     "mypy>=1.0",
     "click >=8.0.1",
     "odoo-client-lib",
-    "requests",
-    "types-requests",
+    "httpx",
     "lxml",
     "rich",
     "polars",
@@ -54,7 +53,6 @@ dev = [
     "pygments >=2.10.0",
     "nox >=2024.04.14",
     "pytest-mock",
-    "types-requests",
 ]
 lint = ["ruff >=0.5.5", "pydoclint >=0.5.0"]
 docs = [
@@ -65,9 +63,8 @@ docs = [
     "sphinx-click >=3.0.2",
     "sphinx_mermaid",
     "sphinx_copybutton",
-    "types-requests",
 ]
-mypy = ["mypy >=0.930", "pytest-mock", "types-requests"]
+mypy = ["mypy >=0.930", "pytest-mock"]
 typeguard = ["typeguard >=2.13.3"]
 xdoctest = ["xdoctest[colors] >=0.15.10"]
 
