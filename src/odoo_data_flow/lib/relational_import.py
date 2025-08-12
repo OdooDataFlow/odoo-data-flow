@@ -31,32 +31,26 @@ def _resolve_related_ids(
         f"Falling back to slow XML-ID resolution."
     )
     connection = conf_lib.get_connection_from_config(config_file=config)
-    if not connection.is_connected():
-        log.error("Cannot perform XML-ID lookup: Odoo connection failed.")
-        return None
 
     id_list = external_ids.drop_nulls().unique().to_list()
     log.info(f"Resolving {len(id_list)} unique external IDs for '{related_model}'...")
 
     # Split full XML-ID 'module.identifier' into components
-    split_ids = [(i.split(".", 1)[0], i.split(".", 1)[1]) for i in id_list if "." in i]
-    invalid_ids = [i for i in id_list if "." not in i]
-    if invalid_ids:
-        log.warning(
-            f"Skipping {len(invalid_ids)} invalid external_ids for model "
-            f"'{related_model}' (must be in 'module.identifier' format)."
-        )
+    split_ids = []
+    for i in id_list:
+        if "." in i:
+            split_ids.append((i.split(".", 1)[0], i.split(".", 1)[1]))
+        else:
+            split_ids.append(("__export__", i))
 
-    domain = [
-        "&",
-        ("module", "=", split_ids[0][0]),
-        ("name", "=", split_ids[0][1]),
-    ]
-    for module, name in split_ids[1:]:
-        domain.insert(0, "|")
-        domain.append("&")
-        domain.append(("module", "=", module))
-        domain.append(("name", "=", name))
+    if not split_ids:
+        log.warning("No valid external IDs found to resolve.")
+        return None
+    
+    domain = []
+    for module, name in split_ids:
+        domain.extend(["|", "&", ("module", "=", module), ("name", "=", name)])
+    domain = domain[1:]
 
     try:
         data_model = connection.get_model("ir.model.data")

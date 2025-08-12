@@ -210,6 +210,24 @@ def _get_odoo_fields(config: str, model: str) -> Optional[dict[str, Any]]:
         model_obj = connection.get_model(model)
         odoo_fields = cast(dict[str, Any], model_obj.fields_get())
 
+        # Supplement with ir.model.fields for m2m relation_table
+        ir_model_fields = connection.get_model("ir.model.fields")
+        m2m_fields = [
+            field_name
+            for field_name, field_attrs in odoo_fields.items()
+            if field_attrs.get("type") == "many2many"
+        ]
+        if m2m_fields:
+            field_details = ir_model_fields.search_read(
+                [("model", "=", model), ("name", "in", m2m_fields)],
+                ["name", "relation", "relation_field", "relation_table"],
+            )
+            for detail in field_details:
+                field_name = detail["name"]
+                for key in ["relation", "relation_field", "relation_table"]:
+                    if detail.get(key):
+                        odoo_fields[field_name][key] = detail[key]
+
         # 3. Save the result to the cache for next time
         cache.save_fields_get_cache(config, model, odoo_fields)
         return odoo_fields
@@ -301,14 +319,14 @@ def _plan_deferrals_and_strategies(
                     strategies[clean_field_name] = {
                         "strategy": "direct_relational_import",
                         "relation_table": field_info["relation_table"],
-                        "relation_field": field_info["relation_field"],
+                        "relation_field": field_info.get("relation_field", "id"),
                         "relation": field_info["relation"],
                     }
                 else:
                     strategies[clean_field_name] = {
                         "strategy": "write_tuple",
                         "relation_table": field_info["relation_table"],
-                        "relation_field": field_info["relation_field"],
+                        "relation_field": field_info.get("relation_field", "id"),
                         "relation": field_info["relation"],
                     }
             elif is_o2m:
