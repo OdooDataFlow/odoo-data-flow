@@ -24,7 +24,7 @@ trap 'handle_failure' ERR
 
 # Function to replace Odoo version in compose file
 replace_odoo_version() {
-    sed -i "s/image: odoo:.*/image: odoo:$ODOO_VERSION/g" $COMPOSE_FILE
+    sed "s/image: odoo:.*/image: odoo:$ODOO_VERSION/g" $COMPOSE_FILE > docker-compose.advanced.yml.tmp && mv docker-compose.advanced.yml.tmp $COMPOSE_FILE
 }
 
 # Clean up previous run
@@ -92,22 +92,26 @@ EOF
 
 # Run the export for categories
 echo "--- Exporting categories ---"
-docker-compose -f $COMPOSE_FILE exec -T --user root odoo-source bash -c "chown -R odoo:odoo /odoo-data-flow && cd /odoo-data-flow && su odoo -c 'odoo-data-flow export --config conf/connection.conf --model res.partner.category --domain \"[('name', 'like', 'Test Category%')]\" --fields \"id,name\" --output testdata/res_partner_category_advanced.csv'"
+docker-compose -f $COMPOSE_FILE exec -T --user root odoo-source bash -c "chown -R odoo:odoo /odoo-data-flow"
+docker-compose -f $COMPOSE_FILE exec -T --user odoo odoo-source bash -c "cd /odoo-data-flow && odoo-data-flow export --config conf/connection.conf --model res.partner.category --domain \"[('name', 'like', 'Test Category%')]\" --fields \"id,name\" --output testdata/res_partner_category_advanced.csv"
 
 # Run the export for partners
 echo "--- Exporting partners ---"
-docker-compose -f $COMPOSE_FILE exec -T --user root odoo-source bash -c "chown -R odoo:odoo /odoo-data-flow && cd /odoo-data-flow && su odoo -c 'odoo-data-flow export --config conf/connection.conf --model res.partner --domain \"[('name', 'like', 'Advanced Test Partner%')]\" --fields \"id,name,category_id/.id\" --output testdata/res_partner_advanced.csv'"
+docker-compose -f $COMPOSE_FILE exec -T --user root odoo-source bash -c "chown -R odoo:odoo /odoo-data-flow"
+docker-compose -f $COMPOSE_FILE exec -T --user odoo odoo-source bash -c "cd /odoo-data-flow && odoo-data-flow export --config conf/connection.conf --model res.partner --domain \"[('name', 'like', 'Advanced Test Partner%')]\" --fields \"id,name,category_id/.id\" --output testdata/res_partner_advanced.csv"
 
 # Modify the partner export header for import
-sed -i 's/category_id\/.id/category_id/g' testdata/res_partner_advanced.csv
+docker-compose -f $COMPOSE_FILE exec -T --user odoo odoo-source bash -c "cd /odoo-data-flow && sed -i 's/category_id\/.id/category_id/g' testdata/res_partner_advanced.csv"
 
 # Run the import for categories into the target
 echo "--- Importing categories into target ---"
-docker-compose -f $COMPOSE_FILE exec -T --user root odoo-target bash -c "chown -R odoo:odoo /odoo-data-flow && cd /odoo-data-flow && su odoo -c 'odoo-data-flow import --config conf_target/connection.conf --file testdata/res_partner_category_advanced.csv'"
+docker-compose -f $COMPOSE_FILE exec -T --user root odoo-target bash -c "chown -R odoo:odoo /odoo-data-flow"
+docker-compose -f $COMPOSE_FILE exec -T --user odoo odoo-target bash -c "cd /odoo-data-flow && odoo-data-flow import --config conf_target/connection.conf --file testdata/res_partner_category_advanced.csv"
 
 # Run the import for partners into the target
 echo "--- Importing partners into target ---"
-docker-compose -f $COMPOSE_FILE exec -T --user root odoo-target bash -c "chown -R odoo:odoo /odoo-data-flow && cd /odoo-data-flow && su odoo -c 'odoo-data-flow import --config conf_target/connection.conf --file testdata/res_partner_advanced.csv --strategy relational'"}
+docker-compose -f $COMPOSE_FILE exec -T --user root odoo-target bash -c "chown -R odoo:odoo /odoo-data-flow"
+docker-compose -f $COMPOSE_FILE exec -T --user odoo odoo-target bash -c "cd /odoo-data-flow && odoo-data-flow import --config conf_target/connection.conf --file testdata/res_partner_advanced.csv --strategy relational"
 
 # Verify the data in the target database
 echo "--- Verifying data in target database ---"
