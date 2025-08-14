@@ -4,10 +4,10 @@ import inspect
 import logging
 import os
 from typing import Any, Callable
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
+import httpx
 import pytest
-import requests
 
 from odoo_data_flow.lib import mapper
 from odoo_data_flow.lib.internal.exceptions import SkippingError
@@ -282,23 +282,36 @@ def test_binary_url_map_empty() -> None:
 
 def test_binary_url_map_skip_on_not_found(mocker: MagicMock) -> None:
     """Tests that binary_url_map raises SkippingError when request fails."""
-    mock_requests_get = mocker.patch("odoo_data_flow.lib.mapper.requests.get")
-    mock_requests_get.side_effect = requests.exceptions.RequestException("Timeout")
+    mock_httpx_get = mocker.patch("odoo_data_flow.lib.mapper.httpx.get")
+    mock_httpx_get.side_effect = httpx.RequestError(
+        "Timeout", request=httpx.Request("GET", "http://test.com")
+    )
     mapper_func = mapper.binary_url_map("col1", skip=True)
     with pytest.raises(SkippingError):
+        # Use LINE_SIMPLE directly, without the mapper. prefix
         mapper_func(LINE_SIMPLE, {})
 
 
 def test_binary_url_map_request_exception(mocker: MagicMock) -> None:
     """Tests that a warning is logged when a URL request fails and skip=False."""
-    mock_requests_get = mocker.patch("odoo_data_flow.lib.mapper.requests.get")
+    mock_httpx_get = mocker.patch("odoo_data_flow.lib.mapper.httpx.get")
     mock_log_warning = mocker.patch("odoo_data_flow.lib.mapper.log.warning")
 
-    mock_requests_get.side_effect = requests.exceptions.RequestException("Timeout")
+    mock_httpx_get.side_effect = httpx.RequestError(
+        "Timeout", request=httpx.Request("GET", "http://test.com")
+    )
+
     mapper_func = mapper.binary_url_map("col1", skip=False)
     assert mapper_func(LINE_SIMPLE, {}) == ""
-    mock_log_warning.assert_called_once()
-    assert "Cannot fetch file" in mock_log_warning.call_args[0][0]
+
+    # Create a list of the expected calls in order
+    expected_calls = [
+        call("binary_url_map is deprecated. Use binary_url_to_base64 instead."),
+        call("Failed to download from A: Timeout"),
+    ]
+
+    # Assert that the mock received the expected calls in order.
+    mock_log_warning.assert_has_calls(expected_calls)
 
 
 def test_legacy_mappers() -> None:

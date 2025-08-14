@@ -6,10 +6,9 @@ end-before: <!-- github-only -->
 
 # Odoo Data Flow
 
-**A robust, declarative library for managing complex data imports and exports with Odoo.**
+**A robust Python toolkit for high-performance, intelligent Odoo data workflows.**
 
-Odoo Data Flow is a powerful and flexible Python library designed to simplify the import and export of data to and from Odoo. It allows you to define data mappings and transformations in a declarative way, making complex data operations manageable and repeatable.
-You can easily manage complex transformations, relationships, and validations, making your data integration tasks simpler and more reliable.
+Odoo Data Flow is a powerful and flexible library designed to simplify complex data imports and exports with Odoo. It features a smart import engine with automatic error recovery, multi-threading, and a two-pass strategy for relational data, allowing you to manage complex transformations and validations with confidence.
 
 This library is the successor to the `odoo-csv-import-export` library, refactored for modern development practices and enhanced clarity.
 

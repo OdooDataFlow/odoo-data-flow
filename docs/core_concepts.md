@@ -147,25 +147,26 @@ This standard Python `dict` ties everything together. The keys are the column na
 
 A key strength of this library is its robust error handling, which ensures that a few bad records won't cause an entire import to fail. This is managed through a clever two-pass system.
 
-### The Two-Pass Load Sequence
+## The Smart Import Engine: Performance, Robustness, and Caching
 
-The generated `load.sh` script contains two commands designed to maximize both speed and accuracy.
+A key strength of this library is its "smart" import engine, which is designed to maximize both speed and success rates. It automatically handles common issues like individual bad records, complex data relationships, and redundant data lookups without requiring manual intervention.
 
-```bash
-# First pass (Normal Mode): Fast, parallel import. Writes recoverable errors to a .fail file.
-odoo-data-flow import --config conf/connection.conf --file data/res_partner.csv --model res.partner
-# Second pass: Slower, precise import of the failed records.
-odoo-data-flow import --config conf/connection.conf --fail --file data/res_partner.csv --model res.partner
-```
+This is managed through several core automatic strategies:
 
-1. **First Pass (Normal Mode)**: The command runs in its default, high-speed mode, importing records in batches. If an entire batch is rejected for any reason, the original records from that batch are written to an intermediate failure file named **`<model_name>.fail.csv`** (e.g., `res_partner_fail.csv`).
+### Tier 1: The `load` -> `create` Fallback for Robustness
 
-2. **Second Pass (`--fail` Mode)**: The command is invoked again with the `--fail` flag. In this mode, it automatically targets the `_fail.csv` file and retries each failed record individually. Records that still fail are written to a final, timestamped error file: **`<original_filename>_YYYYMMDD_HHMMSS_failed.csv`**. This file includes an additional **`_ERROR_REASON`** column to explain why each record failed, making it easy to identify and fix the problematic data manually.
+A common problem with batch imports is that a single invalid record can cause the entire batch of hundreds or thousands of records to be rejected. The smart importer solves this with a two-tier fallback system.
 
+1.  **Attempt `load`:** The importer first attempts to import each batch using Odoo's highly performant, multi-record `load` method.
+2.  **Fallback to `create`:** If the `load` method fails for a batch, the importer does **not** immediately write the entire batch to a fail file. Instead, it automatically retries each record within that single failed batch one-by-one using the slower but more precise `create` method.
 
-### Error Handling Flow Diagram
+This powerful feature "rescues" all the good records from a failed batch, ensuring they are imported successfully. Only the specific record that also fails the `create` call is written to the `_fail.csv` file, along with a detailed error message.
 
-This diagram visualizes how records flow through the two-pass system.
+This gives you the best of both worlds: the speed of `load` for clean batches and the pinpoint error accuracy of `create` for problematic ones.
+
+#### Error Handling Flow Diagram
+
+This diagram visualizes how a single batch flows through the smart import engine.
 (with res.partner model as an example.)
 ```{mermaid}
 ---
@@ -192,6 +193,28 @@ flowchart TD
     style F fill:#FF6D00
 
 ```
+
+### Tier 2: Automatic Strategy Selection for Relational Fields
+
+Importing data with interdependent relationships (like a `parent_id` on a partner that refers to another partner in the same file) is a complex challenge. The smart importer tackles this by automatically detecting relational fields and choosing the most performant import strategy.
+
+During the **pre-flight check**, the importer inspects the header of your CSV file and queries Odoo for the type of each field. Based on the field types it discovers, it automatically selects one of the following strategies:
+
+- **Standard Load**: For files with no relational fields, it uses the robust `load` -> `create` fallback method for maximum speed.
+- **Two-Pass Strategy (for `Many2one`)**: When it detects `Many2one` fields that create dependencies within the same file (e.g., `parent_id`), it automatically deactivates those columns for the first pass. It creates all the base records and then, in a second, multi-threaded pass, it efficiently `write`s the relational values.
+- **Three-Pass Strategy (for `Many2many` and `One2many`)**: For the most complex cases involving `Many2many` or `One2many` fields, it performs a three-pass import. This ensures that all records exist before attempting to create the complex relationships, maximizing the success rate.
+
+This automatic behavior means you no longer need to manually use `--ignore` or split your files to handle these common scenarios. The tool selects the best strategy for you.
+
+### Tier 3: Internal Caching for Speed
+
+To further accelerate the import process, `odoo-data-flow` implements an internal caching mechanism. It automatically caches metadata fetched from Odoo, such as:
+
+- Field definitions for models
+- `ir.model.data` records (external IDs)
+
+This cache is stored in the `.odf_cache` directory in your project root. On subsequent runs, the importer uses the cached data instead of repeatedly querying the Odoo server, leading to a significant speed-up, especially in large projects with many files or complex models. The cache is intelligently invalidated when the corresponding model in Odoo changes.
+
 
 ## The Export Concept
 

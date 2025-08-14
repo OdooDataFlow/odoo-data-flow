@@ -152,10 +152,10 @@ def test_export_cmd_streaming_mode(
 
 
 @patch("odoo_data_flow.__main__.run_write")
-def test_write_cmd_invalid_context(mock_run_write: MagicMock) -> None:
+def test_write_cmd_invalid_context(
+    mock_run_write: MagicMock, runner: CliRunner
+) -> None:
     """Tests that the 'write' command handles an invalid context string gracefully."""
-    runner = CliRunner()
-
     with patch("odoo_data_flow.__main__.log.error") as mock_log_error:
         result = runner.invoke(
             __main__.cli,
@@ -176,6 +176,55 @@ def test_write_cmd_invalid_context(mock_run_write: MagicMock) -> None:
         mock_run_write.assert_not_called()
         mock_log_error.assert_called_once()
         assert "Invalid --context dictionary provided" in mock_log_error.call_args[0][0]
+
+    @patch("odoo_data_flow.__main__.run_import")
+    def test_cli_import_deferred_options(mock_run_import: MagicMock) -> None:
+        """Test cli deferred option.
+
+        Test that --deferred-fields and --unique-id-field are passed correctly.
+        """
+        # --- Arrange ---
+        runner = CliRunner()
+        args = [
+            "import",
+            "--file",
+            "dummy.csv",
+            "--deferred-fields",
+            "parent_id,category_id",
+            "--unique-id-field",
+            "xml_id",
+        ]
+
+        # --- Act ---
+        result = runner.invoke(__main__.cli, args)
+
+        # --- Assert ---
+        assert result.exit_code == 0
+        mock_run_import.assert_called_once()
+
+        # Check the keyword arguments passed to the mocked run_import
+        kwargs = mock_run_import.call_args.kwargs
+        assert kwargs.get("deferred_fields") == "parent_id,category_id"
+        assert kwargs.get("unique_id_field") == "xml_id"
+
+    @patch("odoo_data_flow.__main__.run_import")
+    def test_cli_import_standard_options(
+        mock_run_import: MagicMock, runner: CliRunner
+    ) -> None:
+        """Test that deferred fields are None when not provided."""
+        # --- Arrange ---
+        args = ["import", "--file", "dummy.csv"]  # No deferred flags
+
+        # --- Act ---
+        result = runner.invoke(__main__.cli, args)
+
+        # --- Assert ---
+        assert result.exit_code == 0
+        mock_run_import.assert_called_once()
+
+        kwargs = mock_run_import.call_args.kwargs
+        assert kwargs.get("deferred_fields") is None
+        assert kwargs.get("unique_id_field") is None
 
 
 @patch("odoo_data_flow.__main__.run_path_to_image")

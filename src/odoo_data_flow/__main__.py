@@ -184,15 +184,6 @@ def invoice_v9_cmd(**kwargs: Any) -> None:
     run_invoice_v9_workflow(**kwargs)
 
 
-def split_by_comma(
-    ctx: click.Context, param: click.Parameter, value: Optional[str]
-) -> Optional[tuple[str, ...]]:
-    """Split comma separated values."""
-    if value:
-        return tuple(s.strip() for s in value.split(","))
-    return None
-
-
 # --- Import Command ---
 @cli.command(name="import")
 @click.option(
@@ -208,6 +199,20 @@ def split_by_comma(
     default=None,
     help="Odoo model to import into. If not provided, it's inferred from the filename.",
 )
+# --- ADDED: New options for the deferred import strategy ---
+@click.option(
+    "--deferred-fields",
+    default=None,
+    help="Comma-separated list of fields to defer to a second pass "
+    "(enables two-pass import).",
+)
+@click.option(
+    "--unique-id-field",
+    default=None,
+    help="The column that uniquely identifies records (e.g., 'xml_id'). "
+    "Required for deferred imports.",
+)
+# --- END ADDED ---
 @click.option(
     "--no-preflight-checks",
     is_flag=True,
@@ -241,11 +246,8 @@ def split_by_comma(
 @click.option("-s", "--sep", "separator", default=";", help="CSV separator character.")
 @click.option(
     "--groupby",
-    "split_by_cols",  # Renamed for clarity: plural as it's now a list
     default=None,
-    callback=split_by_comma,  # Use the callback to process the string
-    help="Comma-separated list of columns to group data by "
-    "(e.g., 'parent_id,category_id'). "
+    help="Comma-separated list of columns to group data by to prevent deadlocks."
     "Records with empty values for the first column are processed first, then grouped "
     "by that column. This process repeats for subsequent columns.",
 )
@@ -253,15 +255,9 @@ def split_by_comma(
     "--ignore", default=None, help="Comma-separated list of columns to ignore."
 )
 @click.option(
-    "--check",
-    is_flag=True,
-    default=False,
-    help="Check if records are imported after each batch.",
-)
-@click.option(
     "--context",
     default="{'tracking_disable': True}",
-    help="Odoo context as a dictionary string.",
+    help="Odoo context as a JSON string e.g., '{\"key\": true}'.",
 )
 @click.option(
     "--o2m",
@@ -272,6 +268,11 @@ def split_by_comma(
 @click.option("--encoding", default="utf-8", help="Encoding of the data file.")
 def import_cmd(**kwargs: Any) -> None:
     """Runs the data import process."""
+    try:
+        kwargs["context"] = ast.literal_eval(kwargs.get("context", "{}"))
+    except (ValueError, SyntaxError) as e:
+        log.error(f"Invalid --context dictionary provided: {e}")
+        return
     run_import(**kwargs)
 
 
@@ -351,11 +352,16 @@ def write_cmd(**kwargs: Any) -> None:
     type=int,
     help="Number of records to process per batch.",
 )
-@click.option(  # Add this new option decorator
+@click.option(
     "--streaming",
     is_flag=True,
     help="""Enable streaming to write data batch-by-batch.
     Use for very large datasets.""",
+)
+@click.option(
+    "--resume-session",
+    default=None,
+    help="Resume a previously failed export session using its ID.",
 )
 @click.option("-s", "--sep", "separator", default=";", help="CSV separator character.")
 @click.option(

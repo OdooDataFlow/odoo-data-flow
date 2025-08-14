@@ -20,7 +20,12 @@ def test_run_export_success(
 ) -> None:
     """Tests the main `run_export` function in a success scenario."""
     # 1. Setup
-    mock_export_data.return_value = pl.DataFrame({"id": [1, 2]})
+    mock_export_data.return_value = (
+        True,
+        "session-123",
+        2,
+        pl.DataFrame({"id": [1, 2]}),
+    )
 
     # 2. Action
     run_export(
@@ -84,7 +89,12 @@ def test_run_export_bad_context(
 def test_run_export_for_migration(mock_export_data: MagicMock) -> None:
     """Tests the `run_export_for_migration` function."""
     # 1. Setup
-    mock_export_data.return_value = pl.DataFrame({"id": [1], "name": ["Test Partner"]})
+    mock_export_data.return_value = (
+        True,
+        "session-123",
+        1,
+        pl.DataFrame({"id": [1], "name": ["Test Partner"]}),
+    )
     fields_list = ["id", "name"]
 
     # 2. Action
@@ -112,7 +122,7 @@ def test_run_export_for_migration_bad_domain(
     mock_log_warning: MagicMock, mock_export_data: MagicMock
 ) -> None:
     """Tests that `run_export_for_migration` handles a bad domain string."""
-    mock_export_data.return_value = pl.DataFrame()
+    mock_export_data.return_value = (True, "session-123", 0, pl.DataFrame())
     run_export_for_migration(
         config="dummy.conf",
         model="res.partner",
@@ -127,7 +137,12 @@ def test_run_export_for_migration_bad_domain(
 @patch("odoo_data_flow.exporter.export_threaded.export_data")
 def test_run_export_for_migration_no_data(mock_export_data: MagicMock) -> None:
     """Tests `run_export_for_migration` when no data is returned."""
-    mock_export_data.return_value = pl.DataFrame({"id": [], "name": []})
+    mock_export_data.return_value = (
+        True,
+        "session-123",
+        0,
+        pl.DataFrame({"id": [], "name": []}),
+    )
     header, data = run_export_for_migration(
         config="dummy.conf", model="res.partner", fields=["id", "name"]
     )
@@ -214,7 +229,7 @@ def test_run_export_failure(
     mock_show_error_panel: MagicMock, mock_export_data: MagicMock
 ) -> None:
     """Tests the main `run_export` function in a failure scenario."""
-    mock_export_data.return_value = None
+    mock_export_data.return_value = (False, "session-failed", 0, None)
     run_export(
         config="dummy.conf",
         model="res.partner",
@@ -223,6 +238,7 @@ def test_run_export_failure(
     )
     mock_show_error_panel.assert_called_once()
     assert "Export Failed" in mock_show_error_panel.call_args.args[0]
+    assert "session-failed" in mock_show_error_panel.call_args.args[1]
 
 
 @patch("odoo_data_flow.exporter.export_threaded.export_data")
@@ -230,7 +246,7 @@ def test_run_export_for_migration_bad_context(
     mock_export_data: MagicMock,
 ) -> None:
     """Tests `run_export_for_migration` with a bad context."""
-    mock_export_data.return_value = pl.DataFrame()
+    mock_export_data.return_value = (True, "session-123", 0, pl.DataFrame())
     run_export_for_migration(
         config="dummy.conf",
         model="res.partner",
@@ -243,7 +259,7 @@ def test_run_export_for_migration_bad_context(
 @patch("odoo_data_flow.exporter.export_threaded.export_data")
 def test_run_export_for_migration_none_df(mock_export_data: MagicMock) -> None:
     """Tests `run_export_for_migration` when the dataframe is None."""
-    mock_export_data.return_value = None
+    mock_export_data.return_value = (False, "session-123", 0, None)
     header, data = run_export_for_migration(
         config="dummy.conf",
         model="res.partner",
@@ -259,7 +275,12 @@ def test_run_export_success_with_dataframe(
     mock_show_success_panel: MagicMock, mock_export_data: MagicMock
 ) -> None:
     """Tests the main `run_export` function in a success scenario with a dataframe."""
-    mock_export_data.return_value = pl.DataFrame({"id": [1, 2]})
+    mock_export_data.return_value = (
+        True,
+        "session-123",
+        2,
+        pl.DataFrame({"id": [1, 2]}),
+    )
     run_export(
         config="dummy.conf",
         model="res.partner",
@@ -269,13 +290,71 @@ def test_run_export_success_with_dataframe(
     mock_show_success_panel.assert_called_once()
 
 
+@patch("odoo_data_flow.exporter.pl.read_csv")
+@patch("odoo_data_flow.exporter.export_threaded.export_data")
+@patch("odoo_data_flow.exporter._show_success_panel")
+def test_run_export_shows_verified_count(
+    mock_show_success: MagicMock, mock_export_data: MagicMock, mock_read_csv: MagicMock
+) -> None:
+    """Tests that the success panel shows a verified count when counts match."""
+    # --- Arrange ---
+    # The export returns 2 records.
+    mock_export_data.return_value = (True, "session-123", 2, None)
+    # The CSV reader also finds 2 records.
+    mock_read_csv.return_value = pl.DataFrame({"id": [1, 2]})
+
+    # --- Act ---
+    run_export(
+        config="dummy.conf",
+        model="res.partner",
+        fields="id,name",
+        output="partners.csv",
+    )
+
+    # --- Assert ---
+    mock_show_success.assert_called_once()
+    success_message = mock_show_success.call_args.args[0]
+    assert "Record count verified" in success_message
+
+
+@patch("odoo_data_flow.exporter.pl.read_csv")
+@patch("odoo_data_flow.exporter.export_threaded.export_data")
+@patch("odoo_data_flow.exporter._show_error_panel")
+def test_run_export_shows_warning_on_count_mismatch(
+    mock_show_error: MagicMock, mock_export_data: MagicMock, mock_read_csv: MagicMock
+) -> None:
+    """Tests that a warning is shown if the final record count mismatches."""
+    # --- Arrange ---
+    # The export returns 2 records.
+    mock_export_data.return_value = (True, "session-123", 2, None)
+    # The CSV reader finds only 1 record.
+    mock_read_csv.return_value = pl.DataFrame({"id": [1]})
+
+    # --- Act ---
+    run_export(
+        config="dummy.conf",
+        model="res.partner",
+        fields="id,name",
+        output="partners.csv",
+    )
+
+    # --- Assert ---
+    mock_show_error.assert_called_once()
+    error_title = mock_show_error.call_args.args[0]
+    error_message = mock_show_error.call_args.args[1]
+    assert "Count Validation Warning" in error_title
+    assert "Record count mismatch" in error_message
+    assert "Expected: 2" in error_message
+    assert "Found:    1" in error_message
+
+
 @patch("odoo_data_flow.exporter.export_threaded.export_data")
 @patch("odoo_data_flow.exporter._show_success_panel")
 def test_run_export_with_empty_dataframe(
     mock_show_success_panel: MagicMock, mock_export_data: MagicMock
 ) -> None:
     """Tests the main `run_export` function with an empty dataframe."""
-    mock_export_data.return_value = pl.DataFrame()
+    mock_export_data.return_value = (True, "session-123", 0, pl.DataFrame())
     run_export(
         config="dummy.conf",
         model="res.partner",

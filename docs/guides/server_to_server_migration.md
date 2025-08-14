@@ -1,6 +1,10 @@
-# Guide: Server-to-Server Migration
+# Guide: Direct Server-to-Server Migration
 
-The `odoo-data-flow` library includes a powerful `migrate` command designed to perform a direct, in-memory data migration from one Odoo database to another. This is an advanced feature that chains together the export, transform, and import processes into a single step, without needing to create intermediate CSV files on your local machine.
+The `odoo-data-flow` library includes a powerful `migrate` command designed to perform a **direct, in-memory** data migration from one Odoo database to another. This is an advanced feature that chains together the export, transform, and import processes into a single step, without creating intermediate CSV files.
+
+> **When to use this?** This method is fast and convenient for simple, one-shot migrations where you don't need to inspect or modify the data mid-process.
+>
+> For more complex, robust, and auditable migrations, we strongly recommend the **[File-Based Migration Workflow](./file_based_migration_workflow.md)**, which gives you much greater control and visibility.
 
 ```{mermaid}
 ---
@@ -41,13 +45,12 @@ flowchart LR
 
 This command is ideal for scenarios such as:
 
-- Migrating data from a staging or development server to a production server.
-- Consolidating data from one Odoo instance into another.
-- Performing a data transformation and re-importing into the same database.
+- Simple data transfers from a staging server to a production server.
+- Consolidating data from one Odoo instance into another where the data structure is identical.
 
-## The `odoo-data-flow migrate` Command
+## The `odf migrate` Command
 
-The migration is handled by the `migrate` sub-command. It works by exporting data from a source instance, applying an in-memory transformation using the same `mapper` functions, and then immediately importing the result into a destination instance.
+The migration is handled by the `migrate` sub-command. It works by exporting data from a source instance, applying an in-memory transformation, and then immediately importing the result into a destination instance.
 
 ### Command-Line Options
 
@@ -58,55 +61,55 @@ The command is configured using a set of options that combine parameters from bo
 | `--config-export`     | **Required**. Path to the `connection.conf` file for the **source** Odoo instance (where data is exported from).    |
 | `--config-import`     | **Required**. Path to the `connection.conf` file for the **destination** Odoo instance (where data is imported to). |
 | `--model`             | **Required**. The technical name of the Odoo model you want to migrate (e.g., `res.partner`).                       |
-| `--fields`            | **Required**. A comma-separated list of the technical field names you want to migrate.                              |
+| `--transformer-file`  | Optional. Path to a Python file containing a `Processor` instance named `processor` for data transformations.       |
+| `--fields`            | A comma-separated list of the technical field names you want to migrate. If omitted, all fields will be exported.   |
 | `--domain`            | An Odoo domain filter to select which records to export from the source instance. Defaults to `[]` (all records).   |
-| `--mapping`           | A dictionary string defining the transformation rules. If omitted, a direct 1-to-1 mapping is used.                 |
 | `--export-worker`     | The number of parallel workers to use for the export phase. Defaults to `1`.                                        |
 | `--export-batch-size` | The batch size for the export phase. Defaults to `100`.                                                             |
 | `--import-worker`     | The number of parallel workers to use for the import phase. Defaults to `1`.                                        |
 | `--import-batch-size` | The batch size for the import phase. Defaults to `10`.                                                              |
 
-> **Note on Data Integrity:** The migration process includes several features to ensure data is handled correctly between different Odoo versions and configurations.
->
-> * **Technical Values for Selection Fields:** The migration automatically exports the raw **technical values** for `Selection` fields (e.g., `delivery`) instead of the human-readable labels (e.g., `Shipping Address`). This is a deliberate design choice to ensure that the migration is robust and not dependent on the languages installed in the source or destination databases.
-> * **Type-Aware Cleaning of Empty Fields:** The export process intelligently handles empty fields. It inspects the field types on your source model and corrects common data inconsistencies, such as converting Odoo's `False` values to empty strings for non-boolean fields (like `phone` or `website`), while preserving `False` for actual boolean fields. This prevents incorrect data from being imported into your destination database.
+> **Note on Data Integrity:** The migration process automatically uses the equivalent of the `--technical-names` flag during export. This is a deliberate design choice to ensure that the migration is robust and not dependent on the languages installed in the source or destination databases.
 
 ## Full Migration Example
 
-Let's say we want to migrate all partners from a staging server to a production server. We also want to add a prefix to their names during the migration to indicate they came from the staging environment.
+Let's say we want to migrate all partners from a staging server to a production server. We also want to add a prefix to their names during the migration.
 
 **Step 1: Create two connection files**
 
 You would have two configuration files: `conf/staging.conf` and `conf/production.conf`.
 
-**Step 2: Define the mapping (optional)**
+**Step 2: Create a Transformer File (Optional)**
 
-If you need to transform the data, you can define a mapping. For this example, we'll pass it as a string on the command line.
-The mapping would look like this in Python:
+If you need to transform the data, create a transformer file (e.g., `partner_migrator.py`):
 
 ```python
-my_mapping = {
-    'id': mapper.concat('migrated_partner_', 'id'),
-    'name': mapper.concat('Staging - ', 'name'),
-    'phone': mapper.val('phone'),
-    # ... other fields
-}
-```
+# partner_migrator.py
+import polars as pl
+from odoo_data_flow.lib.transform import Processor
 
-As a command-line string, it would be: `"{'id': mapper.concat('migrated_partner_', 'id'), 'name': mapper.concat('Staging - ', 'name'), ...}"`
+processor = Processor(
+    mapping={
+        "name": "[STAGING] " + pl.col("name"),
+        # other fields will be mapped 1-to-1 automatically
+    }
+)
+```
 
 **Step 3: Run the `migrate` command**
 
 You would run the following command from your terminal:
 
 ```bash
-odoo-data-flow migrate \
+odf migrate \
     --config-export "conf/staging.conf" \
     --config-import "conf/production.conf" \
     --model "res.partner" \
     --fields "id,name,phone" \
-    --mapping "{'name': mapper.concat('Staging - ', 'name'), 'phone': mapper.val('phone')}"
+    --transformer-file "partner_migrator.py"
 ```
+
+If you don't provide a `--transformer-file`, the data will be migrated with a direct 1-to-1 field mapping.
 
 ### Result
 
@@ -114,6 +117,6 @@ This single command will:
 
 1.  Connect to the staging Odoo database.
 2.  Export the `id`, `name`, and `phone` fields for all `res.partner` records.
-3.  In memory, transform the data by prepending "Staging - " to each partner's name.
+3.  In memory, apply the transformations from `partner_migrator.py`.
 4.  Connect to the production Odoo database.
-5.  Import the transformed data, creating new partners with the updated names.
+5.  Import the transformed data.

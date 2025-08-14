@@ -10,8 +10,15 @@ def get_ext_modules():
     """Conditionally builds mypyc extensions."""
     # If the environment variable is set, compile import_threaded.py
     if os.environ.get("ODF_COMPILE_MYPYC") == "1":
-        print("Compiling 'import_threaded.py' with mypyc...")
-        return mypycify(["src/odoo_data_flow/import_threaded.py"])
+        print("Compiling 'import_threaded.py' and 'importer.py' with mypyc...")
+        return mypycify(
+            [
+                "src/odoo_data_flow/import_threaded.py",
+                "src/odoo_data_flow/importer.py",
+                "src/odoo_data_flow/lib/mapper.py",
+                "src/odoo_data_flow/export_threaded.py",
+            ]
+        )
 
     # Otherwise, return an empty list to build a pure Python package
     print("Skipping mypyc compilation. Building pure Python package...")

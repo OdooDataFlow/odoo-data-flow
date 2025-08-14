@@ -3,11 +3,12 @@
 from pathlib import Path
 from unittest.mock import MagicMock, call, mock_open, patch
 
-import requests
+import httpx
 from rich.panel import Panel
 from rich.progress import Progress, TaskID
 
 from odoo_data_flow import writer
+from odoo_data_flow.lib.writer import write_relational_failures_to_csv
 from odoo_data_flow.write_threaded import RPCThreadWrite
 from odoo_data_flow.writer import _read_data_file, run_write
 
@@ -218,8 +219,8 @@ class TestRPCThreadWrite:
     def test_execute_batch_json_decode_error(self) -> None:
         """Tests graceful handling of a JSONDecodeError."""
         mock_model = MagicMock()
-        mock_model.write.side_effect = requests.exceptions.JSONDecodeError(
-            "Expecting value", "", 0
+        mock_model.write.side_effect = httpx.DecodingError(
+            "Expecting value", request=None
         )
         header = ["id", "active"]
         lines = [["101", "False"]]
@@ -323,3 +324,106 @@ class TestRPCThreadWrite:
         )
 
         mock_write_data.assert_called_once()
+
+
+@patch("odoo_data_flow.lib.writer._show_error_panel")
+@patch("builtins.open", new_callable=mock_open)
+def test_write_relational_failures_to_csv_os_error(
+    mock_open_file: MagicMock, mock_show_error: MagicMock
+) -> None:
+    """Test that an OSError during file write is handled."""
+    # Arrange
+    mock_open_file.side_effect = OSError("Disk full")
+    failed_records = [
+        {
+            "model": "res.partner",
+            "field": "category_id",
+            "parent_external_id": "p1",
+            "related_external_id": "c1",
+            "error_reason": "Not found",
+        }
+    ]
+
+    # Act
+    write_relational_failures_to_csv(
+        "res.partner", "category_id", "/tmp/source.csv", failed_records
+    )
+
+    # Assert
+    mock_show_error.assert_called_once()
+    assert "File Write Error" in mock_show_error.call_args[0][0]
+    assert "Could not write to fail file" in mock_show_error.call_args[0][1]
+
+
+def test_write_relational_failures_to_csv_success(tmp_path: Path) -> None:
+    """Test successful writing of relational failures to a new CSV file."""
+    # Arrange
+    original_filename = tmp_path / "source.csv"
+    fail_filepath = tmp_path / "source_relations_fail.csv"
+    failed_records = [
+        {
+            "model": "res.partner",
+            "field": "category_id",
+            "parent_external_id": "p1",
+            "related_external_id": "c1",
+            "error_reason": "Not found",
+        }
+    ]
+
+    # Act
+    write_relational_failures_to_csv(
+        "res.partner", "category_id", str(original_filename), failed_records
+    )
+
+    # Assert
+    assert fail_filepath.exists()
+    with open(fail_filepath, "r") as f:
+        content = f.read()
+        assert "model,field,parent_external_id" in content
+        assert "res.partner,category_id,p1,c1,Not found" in content
+
+
+def test_write_relational_failures_to_csv_appends(tmp_path: Path) -> None:
+    """Test that relational failures are appended to an existing file."""
+    # Arrange
+    original_filename = tmp_path / "source.csv"
+    fail_filepath = tmp_path / "source_relations_fail.csv"
+    fail_filepath.write_text(
+        "model,field,parent_external_id,related_external_id,error_reason\n"
+        "res.users,groups_id,u1,g1,Old error\n"
+    )
+    failed_records = [
+        {
+            "model": "res.partner",
+            "field": "category_id",
+            "parent_external_id": "p1",
+            "related_external_id": "c1",
+            "error_reason": "New error",
+        }
+    ]
+
+    # Act
+    write_relational_failures_to_csv(
+        "res.partner", "category_id", str(original_filename), failed_records
+    )
+
+    # Assert
+    with open(fail_filepath, "r") as f:
+        content = f.read()
+        assert "Old error" in content
+        assert "New error" in content
+
+
+@patch("builtins.open", new_callable=mock_open)
+def test_write_relational_failures_no_records(mock_open_file: MagicMock) -> None:
+    """Test that the function does nothing if there are no failed records."""
+    # Arrange
+    failed_records = []
+
+    # Act
+    write_relational_failures_to_csv(
+        "res.partner", "category_id", "/tmp/source.csv", failed_records
+    )
+
+    # Assert
+    mock_open_file.assert_not_called()

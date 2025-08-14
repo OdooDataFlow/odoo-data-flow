@@ -36,7 +36,7 @@ class RpcThread:
         fun: Callable[..., Any],
         args: list[Any],
         kwargs: Optional[dict[str, Any]] = None,
-    ) -> None:
+    ) -> Any:
         """Submits a function to be executed by a worker thread in the pool.
 
         Args:
@@ -49,6 +49,7 @@ class RpcThread:
 
         future = self.executor.submit(fun, *args, **kwargs)
         self.futures.append(future)
+        return future
 
     def wait(self) -> None:
         """Waits for all submitted tasks to complete.

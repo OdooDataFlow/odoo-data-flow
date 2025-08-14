@@ -150,7 +150,7 @@ def mypy(session: nox.Session) -> None:
 
     session.install("mypy")
     session.install("pytest")
-    session.install("requests", "types-requests")
+    session.install("httpx")
     session.install("-e", ".")
     session.run("mypy", *args)
     if not session.posargs:
@@ -192,7 +192,17 @@ def tests_compiled(session: nox.Session) -> None:
 def coverage(session: nox.Session) -> None:
     """Produce the coverage report."""
     args = session.posargs or ["report"]
-    session.install("pytest", "coverage[toml]", "pytest-cov", "pytest-mock")
+    session.install(
+        "pytest",
+        "coverage[toml]",
+        "pytest-cov",
+        "pytest-mock",
+        "httpx",
+        "rich",
+        "polars",
+        "click",
+        "odoo-client-lib @ git+https://github.com/odoo/odoo-client-lib.git@refs/pull/5/head",
+    )
     session.install("-e", ".")
     session.log("Running pytest with coverage...")
     session.run("pytest", "--cov=src", "--cov-report=xml", "tests/")

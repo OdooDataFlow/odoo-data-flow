@@ -1,0 +1,170 @@
+Shared:
+Fail early
+- if database does not exsist.
+- Access Denied
+- on invalid field on export. (currently keeps re-trying whole batch)
+
+
+Implement create import method
+Improve feedback when running import in Fail mode
+Implement an automatic groupby feature.
+Should fallback mode be done on aa smaller batch??
+
+
+When there is no error.
+	Still an error file is written. containing only the header row.
+
+when import completed. write also to which server in the output.
+
+make the ignore parameter ccept comma separated list of fields
+Test: This should already be the case
+
+Canwe add a feedback ttttto the succespanel.
+I would like to know if all batches have succeeded.
+(without having to scroll up)
+
+
+Emailadresses:
+convert the field to lowercase
+
+
+odf workflow.
+If the partnername is empty, but there is a vat nummber villed in.
+trigger the auto complete.
+
+
+Odoo dataacleanup rule to write:
+Check if there is an @ character filled into the phone field.
+Check if there is an  @ character filled into the mobile field.
+check valid name. exclude names digits or special characters only
+
+Check if there has not been any sales or purchases oor interactions in previous 4 years.
+
+Improve preflight check.
+import example file data.csv without specifieng model.
+Result. A very nasty complicated traceback. Instead of nice error message model does not exists.
+
+
+
+cleanup:
+remove spaces from url fields, # characters, double http http:
+
+For example, it was failing on URLs with:
+
+    Typos in the protocol (e.g., htp:/)
+
+    Commas instead of periods (e.g., www,domain,com)
+
+    Email addresses mistakenly placed in the website field
+
+
+I have now completely re-engineered the clean_url function with a much more sophisticated, multi-pass strategy. It now specifically knows how to:
+
+    Extract URLs from Microsoft Safe Links and similar wrappers.
+
+    Intelligently find the most likely domain name even when it's surrounded by junk characters or text.
+
+    Gracefully handle multiple http:// prefixes and other common data entry mistakes.
+
+Should we rewrite http:// to https:// ?
+
+
+
+Test the fix for: Fix failure mechanism.
+This is the input file on res_partner_category
+color;name;id;parent_id/id
+1;"0bs Chilcd 1;test";res_partner_category_.584;res_partner_category_.583
+8;0bs Child 2;res_partner_category_.585;res_partner_category_.583
+9;0bs Main;res_partner_category_.583;
+When not using groupby (or on concurrent erros).
+The whole batch is rejected.. Because the parent field is written in the (same batch)
+Thus child records can not resolve the parent. The whole batch fails.
+This should be logged somewhere. But now, it does not show up in any of the error logs.
+
+
+Handlee jsonrpc error:
+Yes, absolutely. That's an excellent point. The way odoo-data-flow currently handles this error could be significantly improved.
+
+While the root cause is a server configuration issue, a robust data-loading tool should anticipate such common real-world problems and handle them more gracefully instead of just crashing with a raw traceback.
+
+## Advanced Improvements: Automatic Retries
+
+A more advanced and "smarter" solution would be for odoo-data-flow to attempt to resolve the issue automatically.
+
+When a batch fails with this specific error, the tool could:
+
+    Log a Warning: "Batch of 2000 failed, likely due to a timeout. Attempting to split and retry..."
+
+    Split the Batch: Automatically divide the failed batch of 2000 records into two smaller batches of 1000.
+
+    Retry: Send the two new, smaller batches to Odoo.
+
+If one of the smaller batches still fails, it could repeat the process (e.g., splitting 1000 into two batches of 500) until it either succeeds or reaches a minimum batch size. This would make the import process more resilient and could allow it to complete successfully without any manual intervention.
+
+- Automatic batch resizing on oom on import (just as we did for export)
+
+From the old odf
+
+    if args.fail:
+        file_csv = fail_file
+        fail_file = fail_file + ".bis"
+        batch_size = 1
+        max_connection = 1
+        split = False
+    So it is running a slow single threaded 1 batch size transaction.
+
+---
+I think I just discovered a design flaw in the library.
+
+Can you advise on the way forward.
+
+
+Currently we have both a normal mode and a fail mode.
+
+If I am correct the both call the create method trough the rpc.
+
+Only difference should be that the fail mode is doing it single threaded in a per record batch size.
+
+
+
+I would like to understand why in both methods the create method is used.
+
+Should a better design be the following import strategy.
+
+Normal mode:
+
+Import the records multi threaded in batches with the load function. Ignore the related fields automatically. (e.g. parent_id on res partner model)
+
+If a batch fails. re-try with the create method.
+
+After all batches are processed, automatically trigger the write method on the imported fields.
+
+The write method will link the imported record with their parent_id. (which we ignored earlier)
+
+Any erros occured will be written to fail file. e.g. res_partner_fail.csv. That file will be processed by the library running in fail mode.
+
+
+Fail mode:
+
+The library will utilize the create method to process the failed records from the fail file.
+
+It is running in single threaded single record mode. This is to be extra sure the records are to be imported. If there are records which still fail, they are written to the _failed.csv file with a detailed error reason. For human intervention to check them.
+
+
+Does this sound like a good architecture design of the library?
+
+---
+Can we restore the nice looking succes panel?
+instead of this one?
+╭───────────── Import Complete ─────────────╮
+│ Two-pass import for res.partner finished. │
+╰───────────────────────────────────────────╯
+
+
+update the status bar, to not only display the model name it is importing in. but also the db (or server)
+
+
+refactor replace requests with httpx.
+Since we are now using the patched version of odoo lib.
+requests has been replaced by httpx.
+Lets investigate which new featutures are availalb.Emaillike performance streaming.

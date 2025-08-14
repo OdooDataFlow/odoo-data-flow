@@ -11,7 +11,7 @@ from collections import defaultdict
 from time import time
 from typing import Any, Optional
 
-import requests
+import httpx
 from rich.progress import (
     BarColumn,
     Progress,
@@ -103,7 +103,7 @@ class RPCThreadWrite(RpcThread):
                         f"records with: {values_to_write}"
                     )
                     summary["success"] += len(record_ids)
-                except requests.exceptions.JSONDecodeError:
+                except httpx.DecodingError:
                     error_summary = (
                         "Server returned invalid (non-JSON) response."
                         "Likely a proxy timeout."

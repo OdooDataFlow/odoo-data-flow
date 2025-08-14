@@ -43,17 +43,14 @@ Currently, the following checks are performed by default:
 * `--skip`: The number of initial lines to skip in the source file before reading the header.
 * `--sep`: The character separating columns. Defaults to a semicolon (`;`).
 
-### Verifying Fields Before Import (`--verify-fields`)
+## Automatic Field Verification
 
-To prevent common errors, you can add the `--verify-fields` flag to your import command. This is a "pre-flight check" that connects to Odoo and verifies that every column in your CSV header exists as a field on the target model before the import begins.
+To prevent common errors, `odoo-data-flow` automatically verifies that every column in your CSV header exists as a field on the target Odoo model. This is a core part of the pre-flight checks that run by default before any data is imported.
 
-This is highly recommended as it allows you to "fail fast" with a clear error message, rather than waiting for a large import to fail on a single typo in a column name.
+This powerful check allows you to "fail fast" with a clear error message, rather than waiting for a large import to fail midway through due to a single typo in a column name.
 
-**Example Usage:**
-```bash
-odoo-data-flow import --file path/to/my_data.csv --model res.partner --verify-fields
-```
-If `my_data.csv` contains a column that does not exist on the `res.partner` model, the command will abort with an error message listing the invalid fields.
+!!! note "Now Automatic"
+    This behavior is now the default and runs automatically. The old `--verify-fields` flag has been removed and is no longer necessary.
 
 ## The "Upsert" Strategy: How External IDs Work
 
@@ -74,6 +71,38 @@ When you run an import, Odoo's `load` method performs the following logic for ea
 3. **If the ID Does Not Exist:** If no record with that external ID is found, Odoo **creates** a new record and assigns it that external ID.
 
 This built-in upsert logic is essential for incremental data loads and for re-running scripts to correct or enrich data that has already been imported.
+
+## Automatic Handling of Relational Data
+
+The `import` command is now "smart." It automatically detects complex relationships in your data and uses the best strategy to import it.
+
+When you import a file with self-referential fields (like `parent_id` on partners) or `many2many` fields, the importer will:
+1.  **Automatically detect** these fields during a pre-flight check.
+2.  **Automatically switch** to a robust, two-pass import strategy.
+3.  **Automatically use** the `id` column as the unique identifier to map relationships.
+
+This means for most standard cases, the import will work without any extra flags.
+
+```bash
+# If your file has an 'id' column, this is all you need.
+odoo-data-flow import --file path/to/res_partner_with_parents.csv --model res.partner
+```
+
+If your unique identifier column is named something else (e.g., external_id), you must specify it using the --unique-id-field option.
+
+```bash
+# Use this if your unique ID column is not named 'id'.
+odoo-data-flow import \
+    --file path/to/my_data.csv \
+    --unique-id-field "external_id"
+    --model res.partner
+```
+
+You can also manually force the two-pass strategy by providing the --deferred-fields option.
+
+!!! note
+The two-pass strategy is not compatible with `--fail` mode.
+
 
 ## Input File Requirements
 
@@ -99,7 +128,7 @@ To handle relational data and updates by database ID, the tool uses special colu
 Odoo's `load` method expects data for certain field types to be in a specific format.
 
 * **Boolean**: Must be `1` for True and `0` for False. The `mapper.bool_val` can help with this.
-* **Binary**: Must be a base64 encoded string. The `mapper.binary` and `mapper.binary_url_map` functions handle this automatically.
+* **Binary**: Must be a base64 encoded string. The `mapper.binary` and `mapper.binary_url_to_base64` functions handle this automatically.
 * **Date & Datetime**: The format depends on the user's language settings in Odoo, but the standard, safe formats are `YYYY-MM-DD` for dates and `YYYY-MM-DD HH:MM:SS` for datetimes.
 * **Float**: The decimal separator must be a dot (`.`). The `mapper.num` function handles converting comma separators automatically.
 * **Selection**: Must contain the internal value for the selection, not the human-readable label (e.g., `'draft'` instead of `'Draft'`).
@@ -228,8 +257,8 @@ The `params` dictionary allows you to control the behavior of the import client 
 | `context`    | `--context`                    | An Odoo context dictionary string. Essential for disabling mail threads, etc. (e.g., `"{'tracking_disable': True}"`) |
 | `worker`     | `--worker`                     | The number of parallel processes to use for the import.                                                           |
 | `size`       | `--size`                       | The number of records to process in a single Odoo transaction.                                                    |
-| `ignore`     | `--ignore`                     | A comma-separated string of fields to ignore during the import. Crucial for performance with related fields.       |
-| `skip`       | `--skip`                       | The number of initial lines to skip in the source file before reading the header.                                 |
+| `ignore`     | `--ignore`                     | A comma-separated string of fields to completely exclude from the import process.                                 |
+| `skip`       | `--skip`                       | The number of initial lines to skip in the source file before reading the header.                                 |                            |
 
 ## Generating the Script with `write_to_file()`
 

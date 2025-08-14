@@ -15,6 +15,7 @@ advanced_usage
 performance_tuning
 field_mapping_workflow
 odoo_workflows
+file_based_migration_workflow
 server_to_server_migration
 
 ```

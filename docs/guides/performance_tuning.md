@@ -222,30 +222,26 @@ The choice of mappers can impact performance.
 **Recommendation**: If you need to map values based on data in Odoo, it is much more performant to first export the necessary mapping data from Odoo (e.g., using `odoo-data-flow export`) into a Python dictionary or a separate CSV file, and then use the much faster `mapper.map_val` or other in-memory lookups to do the translation.
 
 ---
+## Performance Strategy for Relational Data (Automatic Two-Pass Import)
 
-## Importing Related or Computed Fields (A Major Performance Trap)
+A common performance trap when importing data is writing to relational fields (like `parent_id`) that have an inverse relation (like `child_ids`). In a single pass, updating the `parent_id` for 500 child records could cause Odoo to re-write the `child_ids` list on the single parent record 500 times, slowing the import to a crawl.
 
-A common but very slow practice is to import values into related or computed fields. This can lead to a massive number of "behind the scenes" updates and cause your import time to increase exponentially.
+`odoo-data-flow` solves this problem **automatically** with its smart, two-pass import engine.
 
-### The Problem: Cascading Updates
+### The New Workflow: Automatic and Efficient
 
-Consider an example where you are importing a list of contacts and setting their `parent_id` (parent company). If Odoo needs to update the `child_ids` field on the parent for every child, this becomes inefficient.
+When the pre-flight check detects a self-referential or `many2many` field, the importer automatically switches to this high-performance, two-pass strategy:
 
-```python
-# SLOW - DO NOT DO THIS
-my_mapping = {
-    'id': mapper.m2o_map('child_', 'Ref'),
-    'name': mapper.val('Name'),
-    # This next line, if imported directly, causes the performance issue
-    'parent_id/id': mapper.m2o_map('parent_', 'ParentRef'),
-}
-```
+1.  **Pass 1 (Create):** The tool **automatically excludes the relational fields** from the initial import. It then uses the fast, multi-threaded `load` method to create all the base records. This completely avoids the slow, cascading update problem.
 
-This triggers a cascade of updates. Each time a new child contact is imported for the same parent, Odoo re-writes the _entire_ list of children on the parent record. The number of database writes grows with every new record, slowing the import to a crawl.
+2.  **Pass 2 (Write):** After all records have been created, the tool performs a second, multi-threaded `write` pass that efficiently sets the relational fields (e.g., `parent_id`) on all the newly created records.
 
-### The Solution: Use the `--ignore` Option
+Because this process is automatic, you no longer need to manually use `--ignore` as a performance workaround for these types of fields.
 
-The correct way to handle this is to prevent the import client from writing to the problematic field. You can do this by adding the `ignore` key to your `params` dictionary.
+### The Correct Use of `--ignore`
+
+With the new smart importer, the `--ignore` option should be used for its original purpose: to **completely exclude a column from the import process**. Use it for source columns that you do not want to be sent to Odoo in either Pass 1 or Pass 2.
+
 
 - **CLI Option**: `--ignore`
 - **`params` Key**: `'ignore'`
@@ -273,6 +269,4 @@ processor.process(
 )
 ```
 
-This will generate a `load.sh` script with the `--ignore=parent_id/id` flag. The import client will then skip this column, avoiding the cascading updates entirely. Odoo's internal logic will still correctly establish the relationship based on the other direction of the field, but far more efficiently.
-
-**Recommendation**: For performance, **always** consider using `--ignore` for related fields that have an inverse relation (like `parent_id` and `child_ids`). Only import the "forward" direction of the relationship where necessary, letting Odoo manage the inverse.
+This will generate a `load.sh` script with the `--ignore=parent_id/id` flag. The import client will then skip this column, avoiding the cascading updates entirely.

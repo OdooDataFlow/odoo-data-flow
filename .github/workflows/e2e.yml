@@ -1,0 +1,29 @@
+name: End-to-End Tests
+
+on:
+  workflow_dispatch: # Manual trigger from the GitHub UI
+    inputs:
+      odoo_version:
+        description: "Odoo version to test (e.g., 16.0, 18.0)"
+        required: false
+        default: "all"
+  release:
+    types: [published] # Trigger on a new release
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools
+          python -m pip install .
+
+      - name: Run e2e tests for Odoo ${{ github.event.inputs.odoo_version }}
+        run: |
+          chmod +x ./run_e2e_tests.sh
+          ./run_e2e_tests.sh ${{ github.event.inputs.odoo_version }}

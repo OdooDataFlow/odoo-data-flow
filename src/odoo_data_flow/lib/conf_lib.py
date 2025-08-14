@@ -11,12 +11,14 @@ import odoolib
 
 from ..logging_config import log
 
+_connection_cache: dict[str, Any] = {}
+
 
 def get_connection_from_config(config_file: str) -> Any:
     """Get connection from config.
 
     Reads an Odoo connection configuration file and returns an
-    initialized OdooClient object.
+    initialized OdooClient object. It caches connections to reuse them.
 
     Args:
         config_file: The path to the connection.conf file.
@@ -26,6 +28,10 @@ def get_connection_from_config(config_file: str) -> Any:
         (returned by odoolib.get_connection)
         or raises an exception on failure.
     """
+    if config_file in _connection_cache:
+        log.debug(f"Reusing cached connection for {config_file}")
+        return _connection_cache[config_file]
+
     config = configparser.ConfigParser()
     if not config.read(config_file):
         log.error(f"Configuration file not found or is empty: {config_file}")
@@ -52,7 +58,7 @@ def get_connection_from_config(config_file: str) -> Any:
 
         # Use odoo-client-lib to establish the connection
         connection = odoolib.get_connection(**conn_details)
-
+        _connection_cache[config_file] = connection
         return connection
 
     except (KeyError, ValueError) as e:

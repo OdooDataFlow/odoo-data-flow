@@ -1,536 +1,515 @@
 """Test the high-level import orchestrator, including pre-flight checks."""
 
-import unittest
-from collections.abc import Generator
+import csv
 from pathlib import Path
-from typing import Any
-from unittest.mock import MagicMock, Mock, patch
+from typing import Any, ClassVar
+from unittest.mock import MagicMock, patch
 
-import polars as pl
-import pytest
-
-from odoo_data_flow.enums import PreflightMode
+from odoo_data_flow import import_threaded
 from odoo_data_flow.importer import (
-    _run_preflight_checks,
+    _get_fail_filename,
     run_import,
     run_import_for_migration,
 )
 
 
-@pytest.fixture
-def mock_conf_lib() -> Generator[MagicMock, None, None]:
-    """Fixture to mock conf_lib.get_connection_from_config."""
-    with patch(
-        "odoo_data_flow.importer.conf_lib.get_connection_from_config"
-    ) as mock_conn:
-        mock_model_obj = MagicMock()
-        mock_model_obj.fields_get.return_value = {
-            "id": {"type": "integer"},
-            "name": {"type": "char"},
-            "is_company": {"type": "boolean"},
-            "phone": {"type": "char"},
-        }
-        mock_connection = MagicMock()
-        mock_connection.get_model.return_value = mock_model_obj
-        mock_conn.return_value = mock_connection
-        yield mock_conn
-
-
-@patch("odoo_data_flow.importer._run_preflight_checks", return_value=True)
-@patch("odoo_data_flow.importer.import_threaded.import_data")
-def test_run_import_infers_model_from_filename(
-    mock_import_data: MagicMock, mock_run_checks: MagicMock, tmp_path: Path
-) -> None:
-    """Test infer model name.
-
-    Tests that the model name is correctly inferred from the filename
-    when the --model argument is not provided.
-    """
-    # 1. Setup: Create a dummy file for the function to read.
-    source_file = tmp_path / "res_partner.csv"
-    source_file.write_text("id,name\n1,test")
-
-    # 2. Action
-    run_import(config="dummy.conf", filename=str(source_file), separator=",")
-
-    # 3. Assertions
-    mock_run_checks.assert_called_once()
-    mock_import_data.assert_called_once()
-    # The second positional argument passed to import_data should be the model name.
-    called_model = mock_import_data.call_args.kwargs["model"]
-    assert called_model == "res.partner"
-
-
-@patch("odoo_data_flow.importer.import_threaded.import_data")
-@patch("odoo_data_flow.importer._show_error_panel")
-def test_run_import_no_model_fails(
-    mock_show_error: MagicMock, mock_import_data: MagicMock, tmp_path: Path
-) -> None:
-    """Test import with no fails.
-
-    Tests that the import fails if no model can be inferred from the filename.
-    """
-    # 1. Setup: A filename starting with a dot will result in an invalid model name.
-    bad_file = tmp_path / ".badfilename"
-    bad_file.touch()
-
-    # 2. Action
-    run_import(config="dummy.conf", filename=str(bad_file))
-    mock_show_error.assert_called_once()
-    assert "Model Not Found" in mock_show_error.call_args.args[0]
-    mock_import_data.assert_not_called()
-
-
-@patch("odoo_data_flow.importer._run_preflight_checks", return_value=True)
-@patch("odoo_data_flow.importer.import_threaded.import_data")
-def test_run_import_fail_mode(
-    mock_import_data: MagicMock, mock_run_checks: MagicMock, tmp_path: Path
-) -> None:
-    """Test import in fail mode.
-
-    Tests that when --fail is True, the correct parameters for a fail run
-    are passed down to the core import function.
-    """
-    # 1. Setup
-    source_file = tmp_path / "res_partner.csv"
-    source_file.write_text("id,name\n1,test")  # Original file, can be minimal
-
-    fail_file = tmp_path / "res_partner_fail.csv"
-    fail_file.write_text("id,name\n2,failed_record")
-
-    # 2. Action
-    run_import(
-        config="dummy.conf",
-        filename=str(source_file),
-        model="res.partner",
-        fail=True,
-    )
-
-    # 3. Assertions
-    mock_import_data.assert_called_once()
-
-    # Verify that the correct file (the fail file) was passed to the importer
-    call_kwargs = mock_import_data.call_args.kwargs
-    assert call_kwargs["file_csv"] == str(fail_file)
-    assert call_kwargs["is_fail_run"] is True
-
-
-@patch("odoo_data_flow.importer.Console")
-@patch("odoo_data_flow.importer.import_threaded.import_data")
-def test_run_import_fail_mode_no_records_to_retry(
-    mock_import_data: MagicMock, mock_console_class: MagicMock, tmp_path: Path
-) -> None:
-    """Test the no import running if no records in fail file.
-
-    Tests that a panel is displayed and the import is skipped if the fail
-    file is empty or missing.
-    """
-    # 1. Setup: Create a source file but an EMPTY fail file
-    source_file = tmp_path / "res_partner.csv"
-    source_file.write_text("id,name\n1,test")
-    (tmp_path / "res_partner_fail.csv").write_text("id,name\n")  # Header only
-
-    # Get a reference to the mock instance that will be created
-    mock_console_instance = mock_console_class.return_value
-
-    # 2. Action
-    run_import(
-        config="dummy.conf",
-        filename=str(source_file),
-        model="res.partner",
-        fail=True,
-        headless=False,  # Ensure headless is False for this test
-    )
-
-    # 3. Assertions
-    # The main import function should NOT have been called
-    mock_import_data.assert_not_called()
-
-    # The print method on our mock console instance should have been called
-    mock_console_instance.print.assert_called_once()
-
-    # Check the content of the printed panel
-    panel = mock_console_instance.print.call_args[0][0]
-    assert "No Recovery Needed" in str(panel.title)
-    assert "Nothing to retry" in str(panel.renderable)
-
-
-@patch("odoo_data_flow.importer._run_preflight_checks")
-@patch("odoo_data_flow.importer.import_threaded.import_data")
-def test_preflight_checks_run_by_default(
-    mock_import_data: MagicMock, mock_run_checks: MagicMock, tmp_path: Path
-) -> None:
-    """Tests that the pre-flight checks are run by default."""
-    source_file = tmp_path / "data.csv"
-    source_file.write_text("id,name\n1,test")
-    mock_run_checks.return_value = True  # Simulate checks passing
-
-    run_import(config="dummy.conf", filename=str(source_file), model="res.partner")
-
-    mock_run_checks.assert_called_once()
-    mock_import_data.assert_called_once()
-
-
-@patch("odoo_data_flow.importer._run_preflight_checks", return_value=True)
-@patch("odoo_data_flow.importer._show_error_panel")
-def test_run_import_bad_context_string(
-    mock_show_error: MagicMock, mock_run_checks: MagicMock, tmp_path: Path
-) -> None:
-    """Tests that a malformed context string is handled gracefully."""
-    # Setup: Create a dummy file to get past the file-read stage
-    source_file = tmp_path / "data.csv"
-    source_file.write_text("id,name\n1,test")
-
-    run_import(
-        config="dummy.conf",
-        filename=str(source_file),
-        model="res.partner",
-        context="this-is-not-a-dict",
-        separator=",",
-    )
-    mock_show_error.assert_called_once()
-    assert "Invalid Context" in mock_show_error.call_args.args[0]
-
-
-@patch("odoo_data_flow.importer._run_preflight_checks", return_value=True)
-@patch("odoo_data_flow.importer._show_error_panel")
-def test_run_import_context_not_a_dict(
-    mock_show_error: MagicMock, mock_run_checks: MagicMock, tmp_path: Path
-) -> None:
-    """Tests that an error is logged if the context string is not a dictionary."""
-    # Setup: Create a dummy file to get past the file-read stage
-    source_file = tmp_path / "data.csv"
-    source_file.write_text("id,name\n1,test")
-
-    # This context is a valid Python literal, but it's a list, not a dict.
-    run_import(
-        config="dummy.conf",
-        filename=str(source_file),
-        model="res.partner",
-        context="['not', 'a', 'dict']",
-        separator=",",
-    )
-    mock_show_error.assert_called_once()
-    assert "Invalid Context" in mock_show_error.call_args[0]
-
-
-@patch("odoo_data_flow.importer.import_threaded.import_data")
-def test_run_import_for_migration(mock_import_data: MagicMock) -> None:
-    """Tests the in-memory import runner used for migrations."""
-    # 1. Action
-    run_import_for_migration(
-        config="dummy.conf",
-        model="res.partner",
-        header=["id", "name"],
-        data=[["1", "Test"]],
-        worker=2,
-        batch_size=50,
-    )
-
-    # 2. Assertions
-    mock_import_data.assert_called_once()
-    call_kwargs = mock_import_data.call_args.kwargs
-    assert call_kwargs["max_connection"] == 2
-    assert call_kwargs["batch_size"] == 50
-    assert "tracking_disable" in call_kwargs["context"]
-
-
-@patch("odoo_data_flow.importer._run_preflight_checks")
-@patch("odoo_data_flow.importer.import_threaded.import_data")
-def test_preflight_checks_are_skipped(
-    mock_import_data: MagicMock, mock_run_checks: MagicMock, tmp_path: Path
-) -> None:
-    """Tests that the pre-flight checks are skipped when the flag is passed."""
-    source_file = tmp_path / "data.csv"
-    source_file.write_text("id,name\n1,test")
-
-    run_import(
-        config="dummy.conf",
-        filename=str(source_file),
-        model="res.partner",
-        no_preflight_checks=True,
-    )
-    mock_run_checks.assert_not_called()
-    mock_import_data.assert_called_once()
-
-
-@patch("odoo_data_flow.importer._run_preflight_checks")
-@patch("odoo_data_flow.importer.import_threaded.import_data")
-def test_import_aborts_on_preflight_failure(
-    mock_import_data: MagicMock, mock_run_checks: MagicMock, tmp_path: Path
-) -> None:
-    """Tests that the import is aborted if a pre-flight check fails."""
-    source_file = tmp_path / "data.csv"
-    source_file.write_text("id,name\n1,test")
-    mock_run_checks.return_value = False  # Simulate a check failing
-
-    run_import(config="dummy.conf", filename=str(source_file), model="res.partner")
-
-    mock_run_checks.assert_called_once()
-    mock_import_data.assert_not_called()
-
-
-@patch("odoo_data_flow.importer.import_threaded.import_data", return_value=False)
-@patch("odoo_data_flow.importer._show_error_panel")
-@patch("odoo_data_flow.importer._run_preflight_checks", return_value=True)
-@patch("os.path.exists", return_value=True)
-@patch("os.path.basename", return_value="dummy.csv")
-@patch("os.path.splitext", return_value=("dummy", ".csv"))
-def test_run_import_failure(
-    mock_splitext: MagicMock,
-    mock_basename: MagicMock,
-    mock_exists: MagicMock,
-    mock_run_preflight_checks: MagicMock,
-    mock_show_error_panel: MagicMock,
-    mock_import_data: MagicMock,
-) -> None:
-    """Test that run_import handles import failure."""
-    run_import(
-        config="dummy.conf",
-        filename="dummy.csv",
-        model="res.partner",
-    )
-    mock_show_error_panel.assert_called_once()
-    assert "Import Aborted" in mock_show_error_panel.call_args.args[0]
-
-
-@patch("odoo_data_flow.importer._show_error_panel")
-@patch("os.path.basename", return_value="invalid_file")
-@patch(
-    "os.path.splitext", return_value=("", "")
-)  # Modified to return empty string for inference failure
-@patch(
-    "os.path.exists", return_value=True
-)  # Added to allow preflight checks to proceed
-def test_run_import_model_inference_failure(
-    mock_splitext: MagicMock,
-    mock_basename: MagicMock,
-    mock_exists: MagicMock,
-    mock_show_error_panel: MagicMock,
-) -> None:
-    """Test that run_import handles model inference failure."""
-    run_import(
-        config="dummy.conf",
-        filename="invalid_file",
-    )
-    mock_show_error_panel.assert_called_once()
-    assert "Model Not Found" in mock_show_error_panel.call_args.args[0]
-
-
-@patch("odoo_data_flow.importer._show_error_panel")
-@patch("odoo_data_flow.importer._run_preflight_checks", return_value=True)
-@patch("os.path.exists", return_value=True)  # Added
-@patch(
-    "odoo_data_flow.importer.preflight.pl.read_csv",
-    return_value=pl.DataFrame({"id": [], "name": []}),
-)  # Added
-@patch("odoo_data_flow.importer.preflight.conf_lib.get_connection_from_config")  # Added
-@patch("odoo_data_flow.importer.preflight.language_check", return_value=True)  # Added
-@patch(
-    "odoo_data_flow.importer.preflight.field_existence_check", return_value=True
-)  # Added
-def test_run_import_invalid_context(
-    mock_run_preflight_checks: MagicMock,
-    mock_exists: MagicMock,
-    mock_read_csv: MagicMock,
-    mock_get_connection: MagicMock,
-    mock_language_check: MagicMock,
-    mock_field_existence_check: MagicMock,
-    mock_show_error_panel: MagicMock,
-) -> None:
-    """Test that run_import handles invalid context string."""
-    run_import(
-        config="dummy.conf",
-        filename="dummy.csv",
-        model="res.partner",
-        context="this-is-not-a-dict",
-    )
-    mock_show_error_panel.assert_called_once()
-    assert "Invalid Context" in mock_show_error_panel.call_args.args[0]
-
-
-def mock_preflight_check_fail(**kwargs: Any) -> bool:
-    """Mock a failling preflight check."""
-    return False
-
-
-def mock_preflight_check_pass(**kwargs: Any) -> bool:
-    """Mock a passing preflight check."""
-    return True
-
-
-@patch(
-    "odoo_data_flow.importer.preflight.PREFLIGHT_CHECKS",
-    [mock_preflight_check_fail],
-)
-def test_run_preflight_checks_fail() -> None:
-    """Test that _run_preflight_checks returns False if a check fails."""
-    assert not _run_preflight_checks(
-        PreflightMode.NORMAL,
-        model="test",
-        filename="test.csv",
-        config="test.conf",
-        headless=False,
-        separator=";",
-    )
-
-
-@patch(
-    "odoo_data_flow.importer.preflight.PREFLIGHT_CHECKS",
-    [mock_preflight_check_pass],
-)
-def test_run_preflight_checks_pass() -> None:
-    """Test that _run_preflight_checks returns True if all checks pass."""
-    assert _run_preflight_checks(
-        PreflightMode.NORMAL,
-        model="test",
-        filename="test.csv",
-        config="test.conf",
-        headless=False,
-        separator=";",
-    )
-
-
-class TestRunImportSplitArgumentHandling(unittest.TestCase):
-    """Test Split and spliy_by_cols handling.
-
-    Tests the argument handling for `split` and `split_by_cols`
-    in the `run_import` function.
-    """
-
-    def _get_common_kwargs(self) -> dict[str, Any]:
-        """Returns a dictionary of common arguments required by run_import."""
-        # We patch 'importer.preflight' to avoid running actual preflight checks
-        # which require a live Odoo connection and valid files.
-        patcher = patch(
-            "odoo_data_flow.importer._run_preflight_checks", return_value=True
-        )
-        self.addCleanup(patcher.stop)
-        patcher.start()
-
-        return {
-            "config": "dummy_config.cfg",
-            "filename": "dummy_file.csv",
-            "model": "res.partner",
-            "no_preflight_checks": True,  # Skip checks to isolate the test
-        }
-
-    @patch("odoo_data_flow.importer.import_threaded.import_data")
-    def test_split_by_cols_with_comma_separated_string(
-        self, mock_import_data: Mock
+class TestRunImport:
+    """Tests for the main run_import orchestrator function."""
+
+    DEFAULT_ARGS: ClassVar[dict[str, Any]] = {
+        "config": "dummy.conf",
+        "filename": "res.partner.csv",
+        "model": "res.partner",
+        "deferred_fields": [],
+        "unique_id_field": "id",
+        "no_preflight_checks": True,
+        "headless": True,
+        "worker": 1,
+        "batch_size": 100,
+        "skip": 0,
+        "fail": False,
+        "separator": ",",
+        "ignore": [],
+        "context": {},
+        "encoding": "utf-8",
+        "o2m": False,
+        "groupby": [],
+    }
+
+    @patch("odoo_data_flow.importer._infer_model_from_filename", return_value=None)
+    @patch("odoo_data_flow.importer._show_error_panel")
+    def test_run_import_no_model_fails(
+        self, mock_show_error: MagicMock, mock_infer: MagicMock, tmp_path: Path
     ) -> None:
-        """Verify comma separated string parsing.
-
-        Verify that a comma-separated string is correctly parsed into a list.
-        """
-        kwargs = self._get_common_kwargs()
-        kwargs["split_by_cols"] = "partner_id/id, company_id/id"
-        expected_list = ["partner_id/id", "company_id/id"]
-
-        run_import(**kwargs)
-
-        # Verify that import_data was called once, then check the specific argument
-        mock_import_data.assert_called_once()
-        self.assertEqual(
-            mock_import_data.call_args.kwargs["split_by_cols"], expected_list
-        )
+        """Tests that the import fails if no model can be inferred."""
+        test_args = self.DEFAULT_ARGS.copy()
+        test_args["model"] = None
+        run_import(**test_args)
+        mock_show_error.assert_called_once()
 
     @patch("odoo_data_flow.importer.import_threaded.import_data")
-    def test_split_by_cols_with_single_string(self, mock_import_data: Mock) -> None:
-        """Test splitting columns with single string.
-
-        Verify that a single string is correctly converted into a list.
-        """
-        kwargs = self._get_common_kwargs()
-        kwargs["split_by_cols"] = "parent_id/id"
-        expected_list = ["parent_id/id"]
-
-        run_import(**kwargs)
-
+    def test_run_import_routes_to_single_pass(
+        self, mock_import_data: MagicMock
+    ) -> None:
+        """Tests that a non-deferred call routes to import_data."""
+        mock_import_data.return_value = (True, {"total_records": 123})
+        test_args = self.DEFAULT_ARGS.copy()
+        test_args["context"] = "{}"
+        run_import(**test_args)
         mock_import_data.assert_called_once()
-        self.assertEqual(
-            mock_import_data.call_args.kwargs["split_by_cols"], expected_list
-        )
 
     @patch("odoo_data_flow.importer.import_threaded.import_data")
-    def test_split_by_cols_with_tuple(self, mock_import_data: Mock) -> None:
-        """Verify split by clumn tuple.
+    @patch("odoo_data_flow.importer._count_lines", return_value=0)
+    def test_run_import_fail_mode_no_records_to_retry(
+        self, mock_count: MagicMock, mock_import_data: MagicMock, tmp_path: Path
+    ) -> None:
+        """Tests that fail mode is skipped if the fail file is empty."""
+        fail_file = tmp_path / "res_partner_fail.csv"
+        fail_file.touch()
 
-        Verify that a tuple of strings is correctly converted into a list.
-        """
-        kwargs = self._get_common_kwargs()
-        kwargs["split_by_cols"] = ("partner_id/id", "company_id/id")
-        expected_list = ["partner_id/id", "company_id/id"]
+        test_args = self.DEFAULT_ARGS.copy()
+        test_args.update({"filename": str(tmp_path / "res.partner.csv"), "fail": True})
 
-        run_import(**kwargs)
+        run_import(**test_args)
+        mock_import_data.assert_not_called()
 
-        mock_import_data.assert_called_once()
-        self.assertEqual(
-            mock_import_data.call_args.kwargs["split_by_cols"], expected_list
+    @patch("odoo_data_flow.importer.log")
+    @patch("odoo_data_flow.importer._run_preflight_checks", return_value=True)
+    @patch("odoo_data_flow.importer.import_threaded.import_data")
+    def test_fail_mode_with_records_logs_count_and_proceeds(
+        self,
+        mock_import_data: MagicMock,
+        mock_preflight_checks: MagicMock,
+        mock_log: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Tests that fail mode with records logs the count and continues."""
+        source_file = tmp_path / "res_partner.csv"
+        source_file.touch()
+        fail_file = tmp_path / "res_partner_fail.csv"
+        fail_file.write_text("id,name\n1,a\n2,b\n3,c\n4,d\n5,e\n")
+        record_count = 5
+
+        mock_import_data.return_value = (True, {"total_records": record_count})
+
+        test_args = self.DEFAULT_ARGS.copy()
+        test_args["context"] = "{}"
+        test_args.update(
+            {
+                "filename": str(source_file),
+                "fail": True,
+            }
         )
 
-    @patch("odoo_data_flow.importer.import_threaded.import_data")
-    def test_split_by_cols_with_list(self, mock_import_data: Mock) -> None:
-        """Test split by columns with list.
-
-        Verify that a list of strings is passed through correctly.
-        """
-        kwargs = self._get_common_kwargs()
-        kwargs["split_by_cols"] = ["partner_id/id", "company_id/id"]
-        expected_list = ["partner_id/id", "company_id/id"]
-
-        run_import(**kwargs)
-
+        run_import(**test_args)
         mock_import_data.assert_called_once()
-        self.assertEqual(
-            mock_import_data.call_args.kwargs["split_by_cols"], expected_list
+
+    @patch("odoo_data_flow.importer.import_threaded.import_data")
+    def test_run_import_routes_correctly(self, mock_import_data: MagicMock) -> None:
+        """Tests that a standard call correctly delegates to the core engine."""
+        mock_import_data.return_value = (True, {"total_records": 123})
+        test_args = self.DEFAULT_ARGS.copy()
+        test_args["context"] = "{}"
+        test_args["deferred_fields"] = ["parent_id"]
+        run_import(**test_args)
+        mock_import_data.assert_called_once()
+        assert mock_import_data.call_args.kwargs["deferred_fields"] == ["parent_id"]
+
+    @patch(
+        "odoo_data_flow.importer.import_threaded.conf_lib.get_connection_from_config"
+    )
+    @patch("odoo_data_flow.importer._show_error_panel")
+    @patch("odoo_data_flow.importer._run_preflight_checks", return_value=True)
+    def test_pass_1_create_fallback_failure_creates_fail_file(
+        self,
+        mock_preflight: MagicMock,
+        mock_show_error: MagicMock,
+        mock_get_conn: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Tests that a `create` failure during Pass 1 fallback creates a fail file."""
+        source_file = tmp_path / "res.partner.csv"
+        fail_file = tmp_path / "res_partner_fail.csv"
+        header = ["id", "name"]
+        source_data = [["new_partner", "Partner Name"]]
+        with open(source_file, "w", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow(header)
+            writer.writerows(source_data)
+
+        mock_model = MagicMock()
+        mock_model.with_context.return_value = mock_model
+        mock_model.load.return_value = {
+            "ids": [],
+            "messages": [{"type": "error", "message": "Batch load failed"}],
+        }
+        mock_model.browse.return_value.env.ref.return_value = None
+        mock_model.create.side_effect = Exception("Validation Error on Create")
+        mock_get_conn.return_value.get_model.return_value = mock_model
+
+        test_args = self.DEFAULT_ARGS.copy()
+        test_args.update(
+            {
+                "filename": str(source_file),
+                "deferred_fields": [],
+                "no_preflight_checks": False,
+            }
+        )
+        run_import(**test_args)
+        mock_show_error.assert_called_once()
+        assert fail_file.exists()
+        with open(fail_file) as f:
+            reader = csv.reader(f)
+            content = list(reader)
+            assert len(content) == 2
+            assert content[0] == [*header, "_ERROR_REASON"]
+            assert content[1] == source_data[0] + ["Validation Error on Create"]
+
+    @patch("odoo_data_flow.importer.import_threaded.import_data")
+    @patch("odoo_data_flow.importer.Console")
+    def test_fail_mode_aborts_if_fail_file_is_empty(
+        self,
+        mock_console: MagicMock,
+        mock_import_data: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Test fail mode aborts if fail file is empty."""
+        source_file = tmp_path / "res.partner.csv"
+        source_file.touch()
+        fail_file = tmp_path / "res.partner_fail.csv"
+        fail_file.write_text("id,name,_ERROR_REASON\n")
+
+        test_args = self.DEFAULT_ARGS.copy()
+        test_args.update(
+            {
+                "filename": str(source_file),
+                "fail": True,
+            }
+        )
+        run_import(**test_args)
+        mock_import_data.assert_not_called()
+        mock_console.return_value.print.assert_called_once()
+
+    @patch(
+        "odoo_data_flow.importer.import_threaded.conf_lib.get_connection_from_config"
+    )
+    def test_import_data_simple_success(
+        self, mock_get_conn: MagicMock, tmp_path: Path
+    ) -> None:
+        """Tests a simple, successful import with no failures."""
+        source_file = tmp_path / "source.csv"
+        fail_file = tmp_path / "source_fail.csv"
+        header = ["id", "name"]
+        source_data = [["rec1", "Record 1"], ["rec2", "Record 2"]]
+        with open(source_file, "w", newline="") as f:
+            writer = csv.writer(f, delimiter=";")
+            writer.writerow(header)
+            writer.writerows(source_data)
+
+        mock_model = MagicMock()
+        mock_model.load.return_value = {"ids": [101, 102], "messages": []}
+        mock_get_conn.return_value.get_model.return_value = mock_model
+
+        success, stats = import_threaded.import_data(
+            config_file="dummy.conf",
+            model="res.partner",
+            unique_id_field="id",
+            file_csv=str(source_file),
+            fail_file=str(fail_file),
+        )
+        assert success is True
+        assert stats["total_records"] == 2
+        assert fail_file.exists()
+        with open(fail_file, encoding="utf-8") as f:
+            lines = f.readlines()
+            assert len(lines) == 1
+
+    @patch(
+        "odoo_data_flow.importer.import_threaded.conf_lib.get_connection_from_config"
+    )
+    def test_import_data_two_pass_success(
+        self, mock_get_conn: MagicMock, tmp_path: Path
+    ) -> None:
+        """Tests a successful two-pass import with deferred fields."""
+        source_file = tmp_path / "source.csv"
+        header = ["id", "name", "parent_id/id"]
+        source_data = [
+            ["parent1", "Parent One", ""],
+            ["child1", "Child One", "parent1"],
+        ]
+        with open(source_file, "w", newline="") as f:
+            writer = csv.writer(f, delimiter=";")
+            writer.writerow(header)
+            writer.writerows(source_data)
+
+        mock_model = MagicMock()
+        mock_model.with_context.return_value = mock_model
+        mock_model.load.return_value = {"ids": [10, 20], "messages": []}
+        mock_get_conn.return_value.get_model.return_value = mock_model
+
+        success, _ = import_threaded.import_data(
+            config_file="dummy.conf",
+            model="res.partner",
+            unique_id_field="id",
+            file_csv=str(source_file),
+            deferred_fields=["parent_id"],
+            separator=";",
+        )
+        assert success is True
+        mock_model.write.assert_called_once_with(
+            [20], {"parent_id": 10}, context={"tracking_disable": True}
         )
 
+
+class TestRunImportEdgeCases:
+    """Tests for edge cases and error handling in the importer."""
+
+    def test_get_fail_filename_recovery_mode(self) -> None:
+        """Tests that _get_fail_filename creates a timestamped name in fail mode."""
+        filename = _get_fail_filename("res.partner", is_fail_run=True)
+        assert "res_partner" in filename
+        assert "failed" in filename
+        assert any(char.isdigit() for char in filename)
+
     @patch("odoo_data_flow.importer.import_threaded.import_data")
-    def test_legacy_split_argument_is_handled(self, mock_import_data: Mock) -> None:
-        """Test compatability split argument.
+    def test_run_import_fail_mode_ignore_is_none(
+        self, mock_import_data: MagicMock, tmp_path: Path
+    ) -> None:
+        """Test fail mode with no ignore list."""
+        fail_file = tmp_path / "res_partner_fail.csv"
+        fail_file.write_text("id,name,_ERROR_REASON\n1,a,error")
 
-        Verify backward compatibility with the old `split` argument.
-        """
-        kwargs = self._get_common_kwargs()
-        kwargs["split"] = "parent_id/id"
-        expected_list = ["parent_id/id"]
-
-        run_import(**kwargs)
-
-        mock_import_data.assert_called_once()
-        self.assertEqual(
-            mock_import_data.call_args.kwargs["split_by_cols"], expected_list
+        args = TestRunImport.DEFAULT_ARGS.copy()
+        args.update(
+            {
+                "filename": str(tmp_path / "res.partner.csv"),
+                "fail": True,
+                "ignore": None,
+            }
         )
 
+        mock_import_data.return_value = (True, {"total_records": 1})
+        run_import(**args)
+        called_kwargs = mock_import_data.call_args.kwargs
+        assert "_ERROR_REASON" in called_kwargs["ignore"]
+
     @patch("odoo_data_flow.importer.import_threaded.import_data")
-    def test_split_by_cols_takes_precedence(self, mock_import_data: Mock) -> None:
-        """Test Split by clumn precedence.
+    def test_run_import_for_migration_success(
+        self, mock_import_data: MagicMock
+    ) -> None:
+        """Tests the successful execution of run_import_for_migration."""
+        header = ["id", "name"]
+        data = [[1, "Test"], [2, "Another"]]
 
-        Verify that `split_by_cols` is used if both it and `split` are provided.
-        """
-        kwargs = self._get_common_kwargs()
-        kwargs["split_by_cols"] = "new_arg"
-        kwargs["split"] = "old_arg"  # This one should be ignored
-        expected_list = ["new_arg"]
-
-        run_import(**kwargs)
-
-        mock_import_data.assert_called_once()
-        self.assertEqual(
-            mock_import_data.call_args.kwargs["split_by_cols"], expected_list
+        run_import_for_migration(
+            config="dummy.conf",
+            model="res.partner",
+            header=header,
+            data=data,
         )
 
-    @patch("odoo_data_flow.importer.import_threaded.import_data")
-    def test_no_split_argument_provided(self, mock_import_data: Mock) -> None:
-        """Test no split argument.
-
-        Verify that the argument is None if neither is provided.
-        """
-        kwargs = self._get_common_kwargs()
-        # No split or split_by_cols key added
-
-        run_import(**kwargs)
-
         mock_import_data.assert_called_once()
-        self.assertIsNone(mock_import_data.call_args.kwargs["split_by_cols"])
+        kwargs = mock_import_data.call_args.kwargs
+        assert kwargs["model"] == "res.partner"
+        assert kwargs["unique_id_field"] == "id"
+        assert "tmp" in kwargs["file_csv"]
+        assert kwargs["context"] == {"tracking_disable": True}
+
+    @patch("odoo_data_flow.importer._show_error_panel")
+    def test_run_import_file_not_found(self, mock_show_error: MagicMock) -> None:
+        """Tests that the import fails if the source file is not found."""
+        test_args = TestRunImport.DEFAULT_ARGS.copy()
+        test_args["filename"] = "non_existent_file.csv"
+        run_import(**test_args)
+        mock_show_error.assert_called_once()
+
+    @patch("odoo_data_flow.importer._show_error_panel")
+    def test_run_import_invalid_json_context(
+        self, mock_show_error: MagicMock, tmp_path: Path
+    ) -> None:
+        """Tests that the import fails if the context is not valid JSON."""
+        source_file = tmp_path / "source.csv"
+        source_file.touch()
+        test_args = TestRunImport.DEFAULT_ARGS.copy()
+        test_args["filename"] = str(source_file)
+        test_args["context"] = "this is not json"
+        run_import(**test_args)
+        mock_show_error.assert_called_once()
+
+    @patch("odoo_data_flow.importer.import_threaded.import_data")
+    @patch("odoo_data_flow.importer._run_preflight_checks", return_value=True)
+    @patch("odoo_data_flow.importer.Panel")
+    def test_run_import_summary_panel(
+        self,
+        mock_panel: MagicMock,
+        mock_preflight: MagicMock,
+        mock_import_data: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Tests that the summary panel is displayed with the correct stats."""
+        source_file = tmp_path / "source.csv"
+        source_file.touch()
+        mock_import_data.return_value = (
+            True,
+            {"total_records": 10, "created_records": 8, "updated_relations": 2},
+        )
+        test_args = TestRunImport.DEFAULT_ARGS.copy()
+        test_args["filename"] = str(source_file)
+        run_import(**test_args)
+        mock_panel.assert_called_once()
+        renderable = mock_panel.call_args[0][0]
+        assert (
+            "Import for [cyan]res.partner[/cyan] finished successfully." in renderable
+        )
+
+
+@patch("odoo_data_flow.importer.import_threaded.import_data")
+def test_run_import_with_vies_disabled(
+    mock_import_data: MagicMock, tmp_path: Path
+) -> None:
+    """Tests that the VIES check is disabled when the context is set."""
+    source_file = tmp_path / "source.csv"
+    source_file.touch()
+    mock_import_data.return_value = (True, {"total_records": 1})
+    test_args = TestRunImport.DEFAULT_ARGS.copy()
+    test_args["filename"] = str(source_file)
+    test_args["context"] = {"vat_check_vies": False}
+    run_import(**test_args)
+    mock_import_data.assert_called_once()
+    assert mock_import_data.call_args.kwargs["context"] == {"vat_check_vies": False}
+
+
+@patch("odoo_data_flow.importer.relational_import.run_direct_relational_import")
+@patch("odoo_data_flow.importer.import_threaded.import_data")
+@patch("odoo_data_flow.importer._run_preflight_checks")
+def test_run_import_orchestrates_direct_relational_strategy(
+    mock_preflight: MagicMock,
+    mock_import_data: MagicMock,
+    mock_relational_import: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Verify the importer correctly orchestrates the direct relational strategy."""
+    source_file = tmp_path / "source.csv"
+    source_file.write_text("id,name,category_id\n1,test,cat1")
+
+    # Create a dummy temp file for the relational import to return
+    relational_temp_file = tmp_path / "relational_temp.csv"
+    relational_temp_file.touch()
+
+    def preflight_side_effect(*args: Any, **kwargs: Any) -> bool:
+        kwargs["import_plan"]["strategies"] = {
+            "category_id": {
+                "strategy": "direct_relational_import",
+                "type": "many2many",
+                "relation_table": "res.partner.category.rel",
+                "relation_field": "partner_id",
+                "relation": "category_id",
+            }
+        }
+        return True
+
+    mock_preflight.side_effect = preflight_side_effect
+    mock_import_data.return_value = (True, {"id_map": {"p1": 1}})
+    mock_relational_import.return_value = {
+        "file_csv": str(relational_temp_file),
+        "model": "res.partner.category.rel",
+        "unique_id_field": "partner_id",
+    }
+
+    test_args = TestRunImport.DEFAULT_ARGS.copy()
+    test_args["filename"] = str(source_file)
+    test_args["no_preflight_checks"] = False
+
+    run_import(**test_args)
+    # The main import_data is called for the main file and for the relational file.
+    assert mock_import_data.call_count == 2
+    mock_relational_import.assert_called_once()
+    call_args = mock_relational_import.call_args[0]
+    assert call_args[1] == "res.partner"
+    assert call_args[2] == "category_id"
+
+
+@patch("odoo_data_flow.importer.relational_import.run_write_tuple_import")
+@patch("odoo_data_flow.importer.import_threaded.import_data")
+@patch("odoo_data_flow.importer._run_preflight_checks")
+def test_run_import_orchestrates_write_tuple_strategy(
+    mock_preflight: MagicMock,
+    mock_import_data: MagicMock,
+    mock_write_tuple_import: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Verify the importer correctly orchestrates the write tuple strategy."""
+    source_file = tmp_path / "source.csv"
+    source_file.write_text("id,name,category_id\n1,test,cat1")
+
+    def preflight_side_effect(*args: Any, **kwargs: Any) -> bool:
+        kwargs["import_plan"]["strategies"] = {
+            "category_id": {
+                "strategy": "write_tuple",
+                "type": "many2many",
+                "relation_table": "res.partner.category.rel",
+                "relation_field": "partner_id",
+                "relation": "category_id",
+            }
+        }
+        return True
+
+    mock_preflight.side_effect = preflight_side_effect
+    mock_import_data.return_value = (True, {"id_map": {"p1": 1}})
+
+    test_args = TestRunImport.DEFAULT_ARGS.copy()
+    test_args["filename"] = str(source_file)
+    test_args["no_preflight_checks"] = False
+
+    run_import(**test_args)
+    mock_import_data.assert_called_once()
+    mock_write_tuple_import.assert_called_once()
+    call_args = mock_write_tuple_import.call_args[0]
+    assert call_args[1] == "res.partner"
+    assert call_args[2] == "category_id"
+
+
+@patch("odoo_data_flow.importer.relational_import.run_write_o2m_tuple_import")
+@patch("odoo_data_flow.importer.relational_import.run_write_tuple_import")
+@patch("odoo_data_flow.importer.import_threaded.import_data")
+@patch("odoo_data_flow.importer._run_preflight_checks")
+def test_run_import_orchestrates_combined_strategies(
+    mock_preflight: MagicMock,
+    mock_import_data: MagicMock,
+    mock_write_tuple: MagicMock,
+    mock_write_o2m: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Verify the importer correctly orchestrates multiple strategies in one run."""
+    source_file = tmp_path / "source.csv"
+    source_file.write_text(
+        "id,name,parent_id,category_id,line_ids\n"
+        'p1,Parent,,cat1,"[{"product": "prodA"}]"\n'
+        "c1,Child,p1,cat2,\n"
+    )
+
+    def preflight_side_effect(*args: Any, **kwargs: Any) -> bool:
+        import_plan = kwargs["import_plan"]
+        import_plan["deferred_fields"] = ["parent_id", "category_id", "line_ids"]
+        import_plan["strategies"] = {
+            "category_id": {
+                "strategy": "write_tuple",
+                "relation": "res.partner.category",
+            },
+            "line_ids": {"strategy": "write_o2m_tuple"},
+        }
+        return True
+
+    mock_preflight.side_effect = preflight_side_effect
+    mock_import_data.return_value = (True, {"id_map": {"p1": 1, "c1": 2}})
+
+    test_args = TestRunImport.DEFAULT_ARGS.copy()
+    test_args["filename"] = str(source_file)
+    test_args["no_preflight_checks"] = False
+
+    run_import(**test_args)
+    mock_import_data.assert_called_once()
+    mock_write_tuple.assert_called_once()
+    mock_write_o2m.assert_called_once()
+    assert mock_write_tuple.call_args[0][2] == "category_id"
+    assert mock_write_o2m.call_args[0][2] == "line_ids"

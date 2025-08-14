@@ -227,6 +227,12 @@ M01,Master Record 1,field_value1_of_child1,field_value1_of_child2
 
 With the `--o2m` option, the processor understands that the lines with empty master fields belong to the last master record encountered. It will import "Master Record 1" with two `child1` records and three `child2` records simultaneously.
 
+!!! info "When to use --o2m vs. Automatic Two-Pass"
+The `--o2m` flag is specifically for the file format shown above, where child records do not have their own unique ID and are identified only by being on the lines below their parent.
+For standard relational fields (like `parent_id`) where **every record in the file has its own unique ID**, you do not need this flag. The importer will automatically detect the relationship and use the two-pass strategy.
+
+
+
 ### Transformation and Load
 
 Your mapping would use `mapper.record` and `mapper.cond` to process the child lines, similar to the `account.move.line` example. The key difference is enabling the `o2m` flag in your `params` dictionary.
@@ -249,30 +255,6 @@ This method is convenient but has significant consequences because **it is impos
 - The child records **cannot be referenced** by their external ID in any other import file.
 
 This method is best suited for simple, one-off imports of transactional data where the child lines do not need to be updated or referenced later.
-
----
-
-## Validating Imports (`--check` flag)
-
-The `--check` flag provides an extra layer of validation during the import process. When this flag is used, at the end of each transaction, the client compares the number of records sent in the batch with the number of records Odoo reports as successfully imported.
-
-If these numbers do not match, an error message is printed. This is an extremely useful tool for catching silent errors. The most common cause for a mismatch is having records with duplicate XML_IDs within the same batch.
-
-For more details on why this might happen, see the [Record Count Mismatch](../faq.md) section in the FAQ.
-
-### Usage
-
-To enable this feature, set the `check` key to `True` in your `params` dictionary.
-
-```python
-# In your transform.py
-params = {
-    'model': 'res.partner',
-    'check': True # Enable import validation
-}
-```
-
-The generated `load.sh` script will then include the `--check` flag in the `odoo-data-flow import` command.
 
 ---
 

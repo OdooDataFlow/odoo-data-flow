@@ -1,3 +1,6 @@
+# odoo-data-flow
+.odf_cache/
+
 # virtualenv
 .venv/
 
@@ -29,11 +32,13 @@ dist/
 
 # IDEs
 .idea/
+.idea*
 .vscode/
 
 # Odoo Data Flow specific
 *_fail.csv
 *_failed.csv
+testdata/
 
 # uv lock file
 uv.lock
@@ -53,3 +58,5 @@ docs/_build/
 .cache
 node_modules
 _build
+ODF_ Strategic Blueprint.md
+.coverage

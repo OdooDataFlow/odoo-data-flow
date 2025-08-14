@@ -1,974 +1,663 @@
-"""Test the low-level, multi-threaded import logic."""
+"""Tests for the refactored, low-level, multi-threaded import logic."""
 
 from pathlib import Path
-from typing import Any, Callable
-from unittest.mock import MagicMock, call, mock_open, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
-import requests
-from rich.progress import Progress, TaskID
+from rich.progress import Progress
 
 from odoo_data_flow.import_threaded import (
-    RPCThreadImport,
+    _create_batch_individually,
     _create_batches,
-    _filter_ignored_columns,
+    _execute_load_batch,
+    _format_odoo_error,
+    _orchestrate_pass_1,
+    _orchestrate_pass_2,
     _read_data_file,
     _setup_fail_file,
     import_data,
 )
 
 
-class TestRPCThreadImport:
-    """Tests for the RPCThreadImport class."""
+class TestImportDataRefactored:
+    """Tests for the main `import_data` orchestrator."""
 
-    def test_handle_rpc_error_without_adding_reason(self) -> None:
-        """Test _handle_rpc_error when add_error_reason is False.
-
-        This covers the else branch in the error handling logic, ensuring
-        the original lines are returned unmodified.
-        """
+    @patch("odoo_data_flow.import_threaded._read_data_file")
+    @patch("odoo_data_flow.import_threaded.conf_lib.get_connection_from_config")
+    @patch("odoo_data_flow.import_threaded._run_threaded_pass")
+    def test_import_data_success_path_no_defer(
+        self,
+        mock_run_pass: MagicMock,
+        mock_get_conn: MagicMock,
+        mock_read_file: MagicMock,
+    ) -> None:
+        """Test a successful single-pass import (no deferred fields)."""
         # Arrange
-        rpc_thread = RPCThreadImport(
-            max_connection=1, model=None, header=[], add_error_reason=False
+        mock_read_file.return_value = (["id", "name"], [["xml_a", "A"]])
+        mock_run_pass.return_value = (
+            {"id_map": {"xml_a": 101}, "failed_lines": []},  # results dict
+            False,  # aborted = False
         )
-        lines = [["1", "A"], ["2", "B"]]
-        error = Exception("Test Error")
+
+        mock_get_conn.return_value.get_model.return_value = MagicMock()
 
         # Act
-        failed_lines, _ = rpc_thread._handle_rpc_error(error, lines)
-
-        # Assert that the error reason was NOT appended
-        assert len(failed_lines[0]) == 2
-        # Ensure the original list is returned, not a modified copy
-        assert failed_lines is lines
-
-    def test_launch_batch_does_nothing_if_aborted(self) -> None:
-        """Test launch_batch does not spawn a thread if abort_flag is set.
-
-        This covers the early return path in the launch_batch method.
-        """
-        # Arrange
-        rpc_thread = RPCThreadImport(max_connection=1, model=None, header=[])
-
-        with patch(
-            "odoo_data_flow.import_threaded.RPCThreadImport.spawn_thread"
-        ) as mock_spawn_thread:
-            # Act
-            rpc_thread.abort_flag = True
-            rpc_thread.launch_batch(data_lines=[["1"]], batch_number=1)
-
-            # Assert
-            mock_spawn_thread.assert_not_called()
-
-    @patch("concurrent.futures.as_completed")
-    def test_wait_method_aborts_and_cancels_futures(
-        self, mock_as_completed: MagicMock
-    ) -> None:
-        """Test wait() aborts immediately if abort_flag is set.
-
-        This ensures that if the abort_flag is set, the wait() method
-        immediately attempts to shut down the executor and cancel pending futures.
-        """
-        # Arrange: Create an instance with a mock progress bar to enter the main logic
-        mock_progress = MagicMock(spec=Progress)
-        mock_task_id = MagicMock(spec=TaskID)
-        rpc_thread = RPCThreadImport(
-            1, None, [], progress=mock_progress, task_id=mock_task_id
+        result, _ = import_data(
+            config_file="dummy.conf",
+            model="res.partner",
+            unique_id_field="id",
+            file_csv="dummy.csv",
         )
 
-        # Arrange: Mock the executor to monitor calls to it
-        rpc_thread.executor = MagicMock()
+        # Assert
+        assert result is True
+        mock_run_pass.assert_called_once()  # Only Pass 1 should run
 
-        # Arrange: Add mock futures to the list
-        future1, future2 = MagicMock(), MagicMock()
-        rpc_thread.futures = [future1, future2]
-
-        # Arrange: Ensure the mocked as_completed returns the futures to allow iteration
-        mock_as_completed.return_value = rpc_thread.futures
-
-        # Act: Set the abort flag and call wait()
-        rpc_thread.abort_flag = True
-        rpc_thread.wait()
-
-        # Assert: The executor was shut down with cancel_futures=True
-        rpc_thread.executor.shutdown.assert_called_once_with(
-            wait=True, cancel_futures=True
-        )
-
-    def test_handle_odoo_messages_with_error_reason(self) -> None:
-        """Test _handle_odoo_messages with an error reason.
-
-        Tests that when add_error_reason is True, the reason is appended to
-        the failed lines.
-        """
-        header = ["id", "name"]
-        lines = [["1", "A"], ["2", "B"]]
-        rpc_thread = RPCThreadImport(1, None, header, add_error_reason=True)
-        messages = [{"message": "Generic Error"}]
-        failed_lines, _ = rpc_thread._handle_odoo_messages(messages, lines)
-        assert failed_lines[0][-1] == "Generic Error"
-
-    def test_handle_odoo_messages_no_error_reason(self) -> None:
-        """Test _handle_odoo_messages without an error reason.
-
-        Tests that when add_error_reason is False, the reason is not appended.
-        """
-        header = ["id", "name"]
-        lines = [["1", "A"], ["2", "B"]]
-
-        rpc_thread = RPCThreadImport(1, None, header, add_error_reason=False)
-        messages = [{"message": "Generic Error", "record": 0}]
-        failed_lines, _ = rpc_thread._handle_odoo_messages(messages, lines)
-        assert len(failed_lines[0]) == 2
-
-    def test_execute_batch_sets_abort_flag_on_connection_error(self) -> None:
-        """Test that a ConnectionError sets the abort_flag.
-
-        This test ensures that a critical connection error during a batch
-        import correctly sets the thread's abort_flag to stop further processing.
-        """
-        mock_model = MagicMock()
-        mock_model.load.side_effect = requests.exceptions.ConnectionError("Odoo down")
-
-        rpc_thread = RPCThreadImport(max_connection=1, model=mock_model, header=[])
-        assert rpc_thread.abort_flag is False  # Pre-condition
-
-        # Run the batch that will fail
-        rpc_thread._execute_batch(lines=[["1"]], num=1, do_check=False)
-
-        # Assert that the flag was set
-        assert rpc_thread.abort_flag is True
-
-    def test_handle_record_mismatch(self) -> None:
-        """Test _handle_record_mismatch.
-
-        Tests the logic for handling a mismatch between the number of records
-        sent and the number of IDs returned by Odoo.
-        """
-        header = ["id", "name"]
-        lines = [["1", "A"], ["2", "B"]]
-
-        rpc_thread = RPCThreadImport(1, None, header, add_error_reason=True)
-        response = {"ids": [123]}
-        failed_lines, _ = rpc_thread._handle_record_mismatch(response, lines)
-        assert len(failed_lines) == 2
-        assert "Record count mismatch" in failed_lines[0][2]
-
-    def test_handle_rpc_error(self) -> None:
-        """Test _handle_rpc_error.
-
-        Tests the logic for handling a general RPC exception during the call.
-        """
-        header = ["id", "name"]
-        lines = [["1", "A"], ["2", "B"]]
-
-        rpc_thread = RPCThreadImport(1, None, header, add_error_reason=True)
-        error = Exception("Connection Timed Out")
-        failed_lines, _ = rpc_thread._handle_rpc_error(error, lines)
-        assert len(failed_lines) == 2
-        assert failed_lines[0][2] == "Connection Timed Out"
-
-    def test_execute_batch_handles_json_decode_error(self) -> None:
-        """Test _execute_batch with a JSONDecodeError.
-
-        Tests that a JSONDecodeError is handled gracefully with a
-        user-friendly message.
-        """
-        header = ["id", "name"]
-        lines = [["xml_id_1", "Record 1"]]
-        mock_writer = MagicMock()
-        mock_model = MagicMock()
-        mock_model.load.side_effect = requests.exceptions.JSONDecodeError(
-            "Expecting value", "", 0
-        )
-
-        rpc_thread = RPCThreadImport(
-            1, mock_model, header, mock_writer, add_error_reason=True
-        )
-
-        with patch("odoo_data_flow.import_threaded.log.error") as mock_log_error:
-            rpc_thread._execute_batch(lines, "0", do_check=False)
-
-            mock_log_error.assert_called_once()
-            assert "invalid (non-JSON) response" in mock_log_error.call_args[0][0]
-            mock_writer.writerows.assert_called_once()
-            failed_data = mock_writer.writerows.call_args[0][0]
-            assert "invalid (non-JSON) response" in failed_data[0][-1]
-
-    def test_handle_odoo_messages_saves_all_records_from_failed_batch(
+    @patch("odoo_data_flow.import_threaded._read_data_file")
+    @patch("odoo_data_flow.import_threaded.conf_lib.get_connection_from_config")
+    @patch("odoo_data_flow.import_threaded._run_threaded_pass")
+    def test_import_data_success_path_with_defer(
         self,
+        mock_run_pass: MagicMock,
+        mock_get_conn: MagicMock,
+        mock_read_file: MagicMock,
     ) -> None:
-        """Test _handle_odoo_messages saves all records from a failed batch.
-
-        Tests that when Odoo reports specific record errors, all other records
-        in that same batch are also marked as failed to simulate a rollback.
-        """
-        header = ["id", "name"]
-        lines = [
-            ["xml_id_1", "Alice"],
-            ["xml_id_2", ""],
-            ["xml_id_3", "Charlie"],
+        """Test a successful two-pass import (with deferred fields)."""
+        # Arrange
+        mock_read_file.return_value = (
+            ["id", "name", "parent_id"],
+            [["xml_a", "A", ""], ["xml_b", "B", "xml_a"]],
+        )
+        # Simulate results for Pass 1 and Pass 2
+        mock_run_pass.side_effect = [
+            (
+                {"id_map": {"xml_a": 101, "xml_b": 102}, "failed_lines": []},
+                False,
+            ),  # Pass 1 (results, aborted)
+            (
+                {"failed_writes": []},
+                False,
+            ),  # Pass 2 (results, aborted)
         ]
+        mock_get_conn.return_value.get_model.return_value = MagicMock()
 
-        rpc_thread = RPCThreadImport(1, None, header, add_error_reason=True)
-        messages = [{"message": "Name is required", "record": 1}]
-
-        failed_lines, first_error = rpc_thread._handle_odoo_messages(messages, lines)
-
-        assert len(failed_lines) == 3
-        assert first_error == "Name is required"
-
-        failed_record = next(line for line in failed_lines if line[0] == "xml_id_2")
-        rolled_back_record = next(
-            line for line in failed_lines if line[0] == "xml_id_1"
-        )
-        assert failed_record[-1] == "Name is required"
-        assert "rolled back" in rolled_back_record[-1]
-
-    @patch("odoo_data_flow.lib.internal.rpc_thread.RpcThread.wait")
-    def test_wait_fallback_without_progress(self, mock_super_wait: MagicMock) -> None:
-        """Tests that wait() calls super().wait() if no progress bar is given."""
-        rpc_thread = RPCThreadImport(1, None, [], None)
-        rpc_thread.wait()
-        mock_super_wait.assert_called_once()
-
-    def test_wait_updates_progress_bar(self) -> None:
-        """Test wait() updates the progress bar.
-
-        Tests that the wait method correctly updates the rich progress bar
-        on task completion.
-        """
-        mock_progress = MagicMock(spec=Progress)
-        mock_task_id = MagicMock(spec=TaskID)
-        rpc_thread = RPCThreadImport(
-            1, None, [], progress=mock_progress, task_id=mock_task_id
-        )
-        future = MagicMock()
-        future.result.return_value = 5
-        rpc_thread.futures = [future]
-
-        with patch("concurrent.futures.as_completed", return_value=[future]):
-            rpc_thread.wait()
-
-        mock_progress.update.assert_called_once_with(mock_task_id, advance=5)
-
-    @patch("odoo_data_flow.lib.internal.rpc_thread.log.error")
-    def test_wait_handles_and_logs_exception(self, mock_log_error: MagicMock) -> None:
-        """Test wait() handles exceptions from futures.
-
-        Tests that the wait method correctly catches and logs exceptions
-        that occur within a worker thread's future.
-        """
-        mock_progress = MagicMock(spec=Progress)
-        mock_task_id = MagicMock(spec=TaskID)
-
-        rpc_thread = RPCThreadImport(
-            1, None, [], progress=mock_progress, task_id=mock_task_id
-        )
-        future = MagicMock()
-        future.result.side_effect = ValueError("Worker thread failed")
-        rpc_thread.futures = [future]
-
-        with patch("concurrent.futures.as_completed", return_value=[future]):
-            rpc_thread.wait()
-
-        mock_log_error.assert_called_once()
-        assert "task in a worker thread failed" in mock_log_error.call_args[0][0]
-        assert mock_log_error.call_args.kwargs["exc_info"] is True
-
-    def test_execute_batch_writes_failed_lines(self) -> None:
-        """Test _execute_batch writes failed lines.
-
-        Tests that when a batch fails the Odoo `load` call, the failed
-        records are correctly written to the fail file writer.
-        """
-        header = ["id", "name"]
-        lines_to_process = [["1", "Record A"]]
-        mock_writer = MagicMock()
-        mock_model = MagicMock()
-        mock_model.load.return_value = {
-            "messages": [{"message": "A specific Odoo error", "record": 0}],
-            "ids": False,
-        }
-        # FIX: Corrected constructor arguments and removed invalid 'thread_id' kwarg.
-        rpc_thread = RPCThreadImport(
-            max_connection=1,
-            model=mock_model,
-            header=header,
-            writer=mock_writer,
-            add_error_reason=True,
-        )
-
-        rpc_thread._execute_batch(lines_to_process, "batch_1", do_check=True)
-
-        expected_failed_line = [["1", "Record A", "A specific Odoo error"]]
-        mock_writer.writerows.assert_called_once_with(expected_failed_line)
-
-
-class TestHelperFunctions:
-    """Tests for the standalone helper functions in the module."""
-
-    def test_read_data_file_not_found(self) -> None:
-        """Test _read_data_file with a non-existent file.
-
-        Tests that _read_data_file returns empty lists for a file that
-        does not exist.
-        """
-        header, data = _read_data_file("non_existent_file.csv", ";", "utf-8", 0)
-        assert header == []
-        assert data == []
-
-    @patch("builtins.open", new_callable=mock_open)
-    def test_setup_fail_file_os_error(self, mock_open: MagicMock) -> None:
-        """Test _setup_fail_file when OSError occurs."""
-        mock_open.side_effect = OSError("Permission denied")
-        writer, handle = _setup_fail_file("fail.csv", ["id"], False, ";", "utf-8")
-        assert writer is None
-        assert handle is None
-
-    @patch("odoo_data_flow.import_threaded._read_data_file", return_value=([], []))
-    def test_import_data_empty_file(self, mock_read_data_file: MagicMock) -> None:
-        """Test import_data when the data file is empty."""
-        result = import_data("dummy.conf", "model", file_csv="dummy.csv")
-        assert result is False
-
-    def test_handle_odoo_messages_with_error_reason_generic(self) -> None:
-        """Test _handle_odoo_messages.
-
-        Test _handle_odoo_messages with generic messages and add_error_reason=True.
-        """
-        rpc_thread = RPCThreadImport(1, MagicMock(), [], add_error_reason=True)
-        messages = [{"message": "Generic Error"}]
-        original_lines = [["1", "Test"], ["2", "Test2"]]
-        failed_lines, _ = rpc_thread._handle_odoo_messages(messages, original_lines)
-        assert failed_lines == [
-            ["1", "Test", "Generic Error"],
-            ["2", "Test2", "Generic Error"],
-        ]
-
-    def test_read_data_file_with_skip(self, tmp_path: Path) -> None:
-        """Tests that _read_data_file correctly skips the specified number of lines."""
-        source_file = tmp_path / "test.csv"
-        source_file.write_text("id,name\n1,A\n2,B\n3,C")
-        header, data = _read_data_file(str(source_file), ",", "utf-8", skip=1)
-        assert header == ["id", "name"]
-        assert data == [["2", "B"], ["3", "C"]]
-
-    def test_create_batches_with_o2m(self) -> None:
-        """Tests batch creation with o2m handling."""
-        header = ["id", "rel_id", "value"]
-        data = [
-            ["rec1", "relA", "v1"],
-            ["", "relA", "v2"],  # o2m line for relA
-            ["rec2", "relB", "v3"],
-            ["rec3", "relB", "v4"],
-        ]
-        batches = list(_create_batches(data, ["rel_id"], header, 2, o2m=True))
-        assert len(batches) == 2
-        assert batches[0][0] == 1
-        assert len(batches[0][1]) == 2  # rec1 and its o2m line
-        assert batches[1][0] == 2
-        assert len(batches[1][1]) == 2  # rec2 and rec3 for relB
-
-    def test_handle_odoo_messages_record_index_out_of_bounds(self) -> None:
-        """Tests that messages with out-of-bounds record indices are handled."""
-        rpc_thread = RPCThreadImport(1, MagicMock(), [], add_error_reason=True)
-        messages = [{"message": "Error", "record": 99}]  # Index 99 is out of bounds
-        original_lines = [["1", "Test"]]
-        failed_lines, _ = rpc_thread._handle_odoo_messages(messages, original_lines)
-        # The message is generic now, so it applies to all lines
-        assert len(failed_lines) == 1
-        assert failed_lines[0][-1] == "Error"
-
-    def test_create_batches_value_error(self) -> None:
-        """Test _create_batches when split_by_col is not found."""
-        header = ["id", "name"]
-        data = [["1", "Test"]]
-        batches = list(_create_batches(data, ["non_existent_col"], header, 1, False))
-        assert batches == []
-
-    @patch(
-        "odoo_data_flow.import_threaded.open",
-        side_effect=Exception("Read error"),
-    )
-    def test_read_data_file_generic_exception(self, mock_open: MagicMock) -> None:
-        """Test _read_data_file with a generic exception.
-
-        Tests that _read_data_file handles generic exceptions during file read.
-        """
-        header, data = _read_data_file("any_file.csv", ";", "utf-8", 0)
-        assert header == []
-        assert data == []
-
-    def test_read_data_file_no_id_column(self, tmp_path: Path) -> None:
-        """Test _read_data_file with a missing 'id' column.
-
-        Tests that _read_data_file raises a ValueError if the required 'id'
-        column for external IDs is missing from the header.
-        """
-        source_file = tmp_path / "no_id.csv"
-        source_file.write_text("name,value\nTest,100")
-        with pytest.raises(ValueError, match="'id' column for external IDs"):
-            _read_data_file(str(source_file), ",", "utf-8", 0)
-
-    def test_create_batches_split_by_size(self) -> None:
-        """Test _create_batches splits by size correctly.
-
-        Tests that batches are created based on `batch_size` when the group
-        value remains the same across records.
-        """
-        header = ["id", "group_id"]
-        data = [["1", "A"], ["2", "A"], ["3", "A"], ["4", "A"], ["5", "A"]]
-        batches = list(_create_batches(data, ["group_id"], header, 3, False))
-        assert len(batches) == 2
-        assert len(batches[0][1]) == 3
-        assert len(batches[1][1]) == 2
-
-    def test_create_batches_value_error_split_by_col_not_found(self) -> None:
-        """Test create batches value error by split col.
-
-        _create_batches logs error and returns empty when split_by_col
-        is not found.
-        """
-        header = ["col1", "col2"]
-        data = [["a", "1"], ["b", "2"]]
-        with patch("odoo_data_flow.import_threaded.log") as mock_log:
-            batches = list(
-                _create_batches(data, ["non_existent_col"], header, 1, False)
-            )
-            assert batches == []
-            mock_log.error.assert_called_once()
-            # FIX: Check if the expected message is contained in the actual log call
-            assert "not found in header" in mock_log.error.call_args[0][0]
-
-    @patch(
-        "odoo_data_flow.import_threaded._setup_fail_file",
-        return_value=(None, None),
-    )
-    @patch("odoo_data_flow.lib.conf_lib.get_connection_from_config")
-    def test_import_data_setup_fail_file_fails(
-        self, mock_get_connection: MagicMock, mock_setup_fail_file: MagicMock
-    ) -> None:
-        """Test import_data returns False if _setup_fail_file fails."""
-        mock_model = mock_get_connection.return_value.get_model.return_value
-        # The mock must return a dictionary with 1 ID to match the data
-        mock_model.load.return_value = {"ids": [123], "messages": []}
+        # Act
         result = import_data(
-            "dummy.conf",
-            "model",
-            header=["id"],
-            data=[["1"]],
-            fail_file="fail.csv",
+            config_file="dummy.conf",
+            model="res.partner",
+            unique_id_field="id",
+            file_csv="dummy.csv",
+            deferred_fields=["parent_id"],
         )
+
+        # Assert
+        assert result[0] is True
+        assert mock_run_pass.call_count == 2  # Both passes should run
+
+    @patch("odoo_data_flow.import_threaded._read_data_file")
+    def test_import_data_fails_if_unique_id_not_in_header(
+        self, mock_read_file: MagicMock
+    ) -> None:
+        """Test that the import fails if the unique_id_field is missing."""
+        # Arrange
+        mock_read_file.return_value = (["name"], [["A"]])  # No 'id' column
+
+        # Act
+        result, _ = import_data(
+            config_file="dummy.conf",
+            model="res.partner",
+            unique_id_field="id",  # We expect 'id' but it's not there
+            file_csv="dummy.csv",
+        )
+
+        # Assert
         assert result is False
 
-    @patch("odoo_data_flow.import_threaded.log.error")
-    def test_read_data_file_value_error(self, mock_log_error: MagicMock) -> None:
-        """Test _read_data_file handles ValueError."""
-        with patch(
-            "builtins.open", mock_open(read_data="id,name\n1,test")
-        ) as mock_file:
-            mock_file.side_effect = ValueError("Test error")
-            with pytest.raises(ValueError):
-                _read_data_file("dummy.csv", ",", "utf-8", 0)
-            mock_log_error.assert_called_once_with(
-                f"Failed to read file dummy.csv: {ValueError('Test error')}"
+    @patch("odoo_data_flow.import_threaded._create_batches")
+    @patch("odoo_data_flow.import_threaded._run_threaded_pass")
+    def test_orchestrate_pass_1_does_not_sort_for_o2m(
+        self, mock_run_pass: MagicMock, mock_create_batches: MagicMock
+    ) -> None:
+        """Verify Pass 1 does NOT sort data when o2m is True."""
+        mock_run_pass.return_value = ({}, False)
+        header = ["id", "name", "parent_id"]
+        data = [
+            ["child1", "C1", "parent1"],
+            ["parent1", "P1", ""],
+        ]
+
+        with Progress() as progress:
+            _orchestrate_pass_1(
+                progress,
+                MagicMock(),
+                "res.partner",
+                header,
+                data,
+                "id",
+                [],
+                [],
+                {},
+                None,
+                None,
+                1,
+                10,
+                o2m=True,
+                split_by_cols=None,
             )
 
-    def test_handle_rpc_error_no_error_reason(self) -> None:
-        """Tests that when add_error_reason is False, the reason is not appended."""
-        header = ["id", "name"]
-        lines = [["1", "A"], ["2", "B"]]
-        mock_writer = MagicMock()
-        rpc_thread = RPCThreadImport(
-            1, None, header, mock_writer, add_error_reason=False
-        )
-        error = Exception("Connection Timed Out")
-        failed_lines, _ = rpc_thread._handle_rpc_error(error, lines)
-        assert len(failed_lines) == 2
-        assert len(failed_lines[0]) == 2  # No error reason appended
+        # Check that the data passed to _create_batches was NOT sorted
+        call_args = mock_create_batches.call_args[0]
+        unsorted_data = call_args[0]
+        assert unsorted_data[0][0] == "child1"
+        assert unsorted_data[1][0] == "parent1"
 
-    @patch("odoo_data_flow.import_threaded.log.error")
-    @patch("odoo_data_flow.import_threaded.RPCThreadImport.spawn_thread")
-    def test_launch_batch_fun_generic_exception(
-        self, mock_spawn_thread: MagicMock, mock_log_error: MagicMock
+
+class TestExecuteLoadBatch:
+    """Tests for the _execute_load_batch function's resilience features."""
+
+    @patch("odoo_data_flow.import_threaded._create_batch_individually")
+    def test_batch_scales_down_on_memory_error(
+        self, mock_create_individually: MagicMock
     ) -> None:
-        """Tests that a generic exception in launch_batch_fun is handled."""
+        """Verify batch size is reduced on memory errors and eventually succeeds."""
         mock_model = MagicMock()
-        mock_model.load.side_effect = Exception("Generic Error")
-        rpc_thread = RPCThreadImport(1, mock_model, ["id"], None)
+        # Fail on batches of 4, then 2, then succeed on 1
+        mock_model.load.side_effect = [
+            Exception("out of memory"),
+            Exception("memory error"),
+            {"ids": [1]},
+            {"ids": [2]},
+            {"ids": [3]},
+            {"ids": [4]},
+        ]
+        mock_progress = MagicMock()
+        thread_state = {
+            "model": mock_model,
+            "progress": mock_progress,
+            "unique_id_field_index": 0,
+            "ignore_list": [],
+        }
+        batch_header = ["id", "name"]
+        batch_lines = [
+            ["rec1", "A"],
+            ["rec2", "B"],
+            ["rec3", "C"],
+            ["rec4", "D"],
+        ]
 
-        def spawn_side_effect(
-            func: Callable[..., Any],
-            args: tuple[Any, ...],
-            kwargs: dict[str, Any],
-        ) -> Any:
-            # Call the function immediately
-            func(*args, **kwargs)
+        result = _execute_load_batch(thread_state, batch_lines, batch_header, 1)
 
-        mock_spawn_thread.side_effect = spawn_side_effect
-
-        rpc_thread.launch_batch([["1"]], 1, False)
-
-        mock_log_error.assert_called_once()
-        assert (
-            "RPC call for batch 1 failed: Generic Error"
-            in mock_log_error.call_args[0][0]
+        assert result["success"] is True
+        assert len(result["id_map"]) == 4
+        assert result["id_map"] == {"rec1": 1, "rec2": 2, "rec3": 3, "rec4": 4}
+        assert mock_model.load.call_count == 6
+        mock_create_individually.assert_not_called()
+        mock_progress.console.print.assert_any_call(
+            "[yellow]WARN:[/] Batch 1 hit scalable error. "
+            "Reducing chunk size to 2 and retrying."
+        )
+        mock_progress.console.print.assert_any_call(
+            "[yellow]WARN:[/] Batch 1 hit scalable error. "
+            "Reducing chunk size to 1 and retrying."
         )
 
-    @patch("odoo_data_flow.import_threaded.log.error")
-    @patch("odoo_data_flow.import_threaded.RPCThreadImport.spawn_thread")
-    def test_launch_batch_fun_record_mismatch(
-        self, mock_spawn_thread: MagicMock, mock_log_error: MagicMock
+    @patch("odoo_data_flow.import_threaded._create_batch_individually")
+    def test_batch_scales_down_on_gateway_error(
+        self, mock_create_individually: MagicMock
     ) -> None:
-        """Tests that a record mismatch in launch_batch_fun is handled."""
+        """Verify batch size is reduced on 502 gateway errors."""
         mock_model = MagicMock()
-        mock_model.load.return_value = {"ids": [1]}  # Mismatch: 2 lines sent, 1 id back
-        rpc_thread = RPCThreadImport(1, mock_model, ["id"], None, add_error_reason=True)
+        mock_model.load.side_effect = [
+            Exception("502 Bad Gateway"),
+            {"ids": [1, 2]},
+            {"ids": [3, 4]},
+        ]
+        mock_progress = MagicMock()
+        thread_state = {
+            "model": mock_model,
+            "progress": mock_progress,
+            "unique_id_field_index": 0,
+            "ignore_list": [],
+        }
+        batch_header = ["id", "name"]
+        batch_lines = [["rec1", "A"], ["rec2", "B"], ["rec3", "C"], ["rec4", "D"]]
 
-        def spawn_side_effect(
-            func: Callable[..., Any],
-            args: tuple[Any, ...],
-            kwargs: dict[str, Any],
-        ) -> Any:
-            # Call the function immediately
-            func(*args, **kwargs)
+        result = _execute_load_batch(thread_state, batch_lines, batch_header, 1)
 
-        mock_spawn_thread.side_effect = spawn_side_effect
+        assert result["success"] is True
+        assert len(result["id_map"]) == 4
+        assert mock_model.load.call_count == 3
+        mock_create_individually.assert_not_called()
+        mock_progress.console.print.assert_called_once_with(
+            "[yellow]WARN:[/] Batch 1 hit scalable error. "
+            "Reducing chunk size to 2 and retrying."
+        )
 
-        lines_to_send = [["1"], ["2"]]
-        with patch.object(
-            rpc_thread,
-            "_handle_record_mismatch",
-        ) as mock_handle_mismatch:
-            rpc_thread.launch_batch(lines_to_send, 1, True)
-            mock_handle_mismatch.assert_called_once()
-
-    @patch("odoo_data_flow.import_threaded.log.error")
-    @patch("odoo_data_flow.import_threaded.RPCThreadImport.spawn_thread")
-    def test_launch_batch_connection_error(
-        self, mock_spawn_thread: MagicMock, mock_log_error: MagicMock
+    @patch("odoo_data_flow.import_threaded._create_batch_individually")
+    def test_batch_falls_back_for_non_scalable_error(
+        self, mock_create_individually: MagicMock
     ) -> None:
-        """Tests that a ConnectionError in launch_batch_fun is handled."""
+        """Verify fallback to create for regular errors."""
         mock_model = MagicMock()
-        mock_model.load.side_effect = requests.exceptions.ConnectionError(
-            "Connection Error"
-        )
-        rpc_thread = RPCThreadImport(1, mock_model, ["id"], None)
+        mock_model.load.side_effect = [ValueError("Invalid field value")]
+        mock_create_individually.return_value = {
+            "id_map": {"rec1": 1},
+            "failed_lines": [["rec2", "B", "Error"]],
+        }
+        mock_progress = MagicMock()
+        thread_state = {
+            "model": mock_model,
+            "progress": mock_progress,
+            "unique_id_field_index": 0,
+            "ignore_list": [],
+        }
+        batch_header = ["id", "name"]
+        batch_lines = [["rec1", "A"], ["rec2", "B"]]
 
-        def spawn_side_effect(
-            func: Callable[..., Any],
-            args: tuple[Any, ...],
-            kwargs: dict[str, Any],
-        ) -> Any:
-            func(*args, **kwargs)
+        result = _execute_load_batch(thread_state, batch_lines, batch_header, 1)
 
-        mock_spawn_thread.side_effect = spawn_side_effect
+        assert result["success"] is True
+        assert result["id_map"] == {"rec1": 1}
+        assert len(result["failed_lines"]) == 1
+        mock_model.load.assert_called_once()
+        mock_create_individually.assert_called_once()
 
-        rpc_thread.launch_batch([["1"]], 1, False)
 
-        assert rpc_thread.abort_flag is True
-        mock_log_error.assert_called_once()
-        assert (
-            "Connection to Odoo failed: Connection Error"
-            in mock_log_error.call_args[0][0]
-        )
+class TestBatchingHelpers:
+    """Tests for the batch creation helper functions."""
 
-    def test_create_batches_with_grouping_and_o2m(self) -> None:
-        """Test _create_batches with both grouping and o2m enabled.
+    def test_create_batches_handles_o2m_format(self) -> None:
+        """Test _create_batches with the o2m flag enabled.
 
-        This test covers the complex interaction where records are grouped by a
-        specific column, and some of those records have one-to-many child lines
-        that must stay with their parent.
+        Verifies that records with empty key fields are correctly grouped with
+        their preceding parent record into a single batch.
         """
         # --- Arrange ---
-        header = ["id", "rel_id", "value"]
+        header = ["id", "name", "line_item"]
         data = [
-            ["rec1", "relA", "v1"],
-            ["", "relA", "v2"],  # o2m line for rec1
-            ["rec2", "relB", "v3"],
-            ["rec3", "relA", "v4"],  # Another record for group relA
-            ["", "relA", "v5"],  # o2m line for rec3
+            ["order1", "Order One", "item_A"],
+            ["", "", "item_B"],  # Child of order1
+            ["order2", "Order Two", "item_C"],
+            ["", "", "item_D"],  # Child of order2
+            ["", "", "item_E"],  # Child of order2
+            ["order3", "Order Three", "item_F"],
         ]
 
         # --- Act ---
-        # Group by 'rel_id', which should create two separate batches.
-        batches = list(_create_batches(data, ["rel_id"], header, 10, o2m=True))
+        batches = list(
+            _create_batches(
+                data=data,
+                split_by_cols=None,  # Not grouping by column value
+                header=header,
+                batch_size=10,  # Batch size is large enough to not interfere
+                o2m=True,
+            )
+        )
 
         # --- Assert ---
-        # We expect two batches, one for 'relA' and one for 'relB'.
-        assert len(batches) == 2
-
-        # Find the batches by checking the rel_id of their first record.
-        batch_a = next(b for b in batches if b[1][0][1] == "relA")
-        batch_b = next(b for b in batches if b[1][0][1] == "relB")
-
-        # The 'relA' batch should contain rec1,
-        # its o2m line, and rec3 with its o2m line.
-        assert len(batch_a[1]) == 4
-        assert batch_a[1][0][0] == "rec1"
-        assert batch_a[1][1][0] == ""  # o2m line
-        assert batch_a[1][2][0] == "rec3"
-        assert batch_a[1][3][0] == ""  # o2m line
-
-        # The 'relB' batch should contain only rec2.
-        assert len(batch_b[1]) == 1
-        assert batch_b[1][0][0] == "rec2"
-
-
-class TestImportData:
-    """Tests for the main import_data orchestrator function."""
-
-    def test_import_data_no_header_or_data(self) -> None:
-        """Test import_data with no data provided.
-
-        Tests that import_data raises a ValueError if it is called without a
-        data file or explicit header/data arguments.
-        """
-        with pytest.raises(ValueError, match="Please provide either a data file"):
-            import_data(config_file="dummy.conf", model="dummy.model")
-
-    @patch("odoo_data_flow.import_threaded.conf_lib.get_connection_from_config")
-    def test_import_data_connection_fails(self, mock_get_conn: MagicMock) -> None:
-        """Test import_data when the Odoo connection fails.
-
-        Tests that the function exits gracefully and returns False if the
-        initial connection to Odoo cannot be established.
-        """
-        mock_get_conn.side_effect = Exception("Cannot connect")
-        result = import_data(
-            config_file="bad.conf",
-            model="dummy.model",
-            header=["id"],
-            data=[["1"]],
-        )
-        assert result is False
-
-    @patch("odoo_data_flow.import_threaded.conf_lib.get_connection_from_config")
-    @patch("odoo_data_flow.import_threaded.open")
-    @patch("odoo_data_flow.import_threaded.os.makedirs")
-    def test_import_data_fail_file_oserror(
-        self,
-        mock_makedirs: MagicMock,
-        mock_open: MagicMock,
-        mock_get_conn: MagicMock,
-    ) -> None:
-        """Tests that the function handles an OSError when opening the fail file."""
-        mock_get_conn.return_value = MagicMock()
-        mock_open.side_effect = OSError("Permission denied")
-        result = import_data(
-            config_file="dummy.conf",
-            model="dummy.model",
-            header=["id"],
-            data=[["1"]],
-            fail_file="protected/fail.csv",
-        )
-        assert result is False
-        mock_open.assert_called_once()
-
-    @patch("odoo_data_flow.import_threaded.RPCThreadImport")
-    def test_import_data_ignore_columns(self, mock_rpc_thread: MagicMock) -> None:
-        """Tests that the 'ignore' parameter correctly filters columns."""
-        header = ["id", "name", "field_to_ignore"]
-        data = [["1", "A", "ignore_me"]]
-        with patch(
-            "odoo_data_flow.import_threaded.conf_lib.get_connection_from_config"
-        ):
-            import_data(
-                config_file="dummy.conf",
-                model="dummy.model",
-                header=header,
-                data=data,
-                ignore=["field_to_ignore"],
-            )
-        init_args = mock_rpc_thread.call_args.args
-        filtered_header = init_args[2]
-        assert filtered_header == ["id", "name"]
-
-    @patch("odoo_data_flow.import_threaded.RPCThreadImport")
-    def test_import_data_aborts_on_connection_error(
-        self, mock_rpc_thread_class: MagicMock
-    ) -> None:
-        """Tests that the import process aborts on a connection error."""
-        mock_rpc_instance = mock_rpc_thread_class.return_value
-
-        def launch_side_effect(*args: Any, **kwargs: Any) -> None:
-            mock_rpc_instance.abort_flag = True
-
-        mock_rpc_instance.launch_batch.side_effect = launch_side_effect
-        with patch(
-            "odoo_data_flow.import_threaded.conf_lib.get_connection_from_config"
-        ):
-            result = import_data(
-                config_file="dummy.conf",
-                model="dummy.model",
-                header=["id"],
-                data=[["1"], ["2"], ["3"]],
-                batch_size=1,
-            )
-        assert result is False
-
-    @patch("odoo_data_flow.import_threaded.conf_lib.get_connection_from_config")
-    def test_import_data_returns_true_on_success(
-        self, mock_get_conn: MagicMock
-    ) -> None:
-        """Test import_data returns True on a successful run.
-
-        Mocks a successful Odoo `load` call and asserts that the final
-        return value of the import is True.
-        """
-        mock_model = mock_get_conn.return_value.get_model.return_value
-        mock_model.load.return_value = {"ids": [123], "messages": []}
-        result = import_data(
-            config_file="dummy.conf",
-            model="dummy.model",
-            header=["id"],
-            data=[["1"]],
-        )
-        assert result is True
-
-    def test_handle_odoo_messages_no_record_details(self) -> None:
-        """Test _handle_odoo_messages when Odoo sends generic messages."""
-        rpc_thread = RPCThreadImport(1, MagicMock(), [], add_error_reason=True)
-        messages = [{"message": "Generic Error"}]
-        original_lines = [["1", "Test"], ["2", "Test2"]]
-        failed_lines, _ = rpc_thread._handle_odoo_messages(messages, original_lines)
-        assert failed_lines == [
-            ["1", "Test", "Generic Error"],
-            ["2", "Test2", "Generic Error"],
+        assert len(batches) == 3
+        assert batches[0][1] == [
+            ["order1", "Order One", "item_A"],
+            ["", "", "item_B"],
+        ]
+        assert batches[1][1] == [
+            ["order2", "Order Two", "item_C"],
+            ["", "", "item_D"],
+            ["", "", "item_E"],
+        ]
+        assert batches[2][1] == [
+            ["order3", "Order Three", "item_F"],
         ]
 
-    def test_handle_rpc_error_with_error_reason_appends_message(self) -> None:
-        """Test _handle_rpc_error.
-
-        Test _handle_rpc_error appends error message when add_error_reason is True.
-        """
-        rpc_thread = RPCThreadImport(1, MagicMock(), [], add_error_reason=True)
-        error = Exception("Test RPC Error")
-        lines = [["1", "data1"], ["2", "data2"]]
-        failed_lines, _ = rpc_thread._handle_rpc_error(error, lines)
-        assert failed_lines == [
-            ["1", "data1", "Test RPC Error"],
-            ["2", "data2", "Test RPC Error"],
-        ]
-
-    def test_handle_record_mismatch_with_error_reason_appends_message(
-        self,
-    ) -> None:
-        """Test _handle_record_mismatch.
-
-        Test _handle_record_mismatch appends error message when add_error_reason
-        is True.
-        """
-        rpc_thread = RPCThreadImport(1, MagicMock(), [], add_error_reason=True)
-        response = {"ids": [1]}
-        lines = [["1", "data1"], ["2", "data2"]]
-        failed_lines, error_summary = rpc_thread._handle_record_mismatch(
-            response, lines
-        )
-        assert failed_lines[0][-1].startswith("Record count mismatch")
-        assert error_summary.startswith("Record count mismatch")
-
-    @patch("odoo_data_flow.import_threaded.RPCThreadImport.spawn_thread")
-    def test_launch_batch_with_failed_lines_and_writer(
-        self,
-        mock_spawn_thread: MagicMock,
-    ) -> None:
-        """Test launch_batch writes failed lines when writer is present."""
-        mock_writer = MagicMock()
-        mock_model = MagicMock()
-        rpc_thread = RPCThreadImport(1, mock_model, [], writer=mock_writer)
-
-        # Simulate a failed batch by making model.load return messages
-        mock_model.load.return_value = {"messages": [{"message": "Error", "record": 0}]}
-
-        def spawn_side_effect(
-            func: Callable[..., Any],
-            args: tuple[Any, ...],
-            kwargs: dict[str, Any],
-        ) -> None:
-            # Call the function synchronously to simulate the thread's execution
-            func(*args, **kwargs)
-
-        mock_spawn_thread.side_effect = spawn_side_effect
-        # Call the correct method to trigger the spawn_thread mock
-        rpc_thread.launch_batch(data_lines=[["1", "Test"]], batch_number=1, check=False)
-
-        mock_writer.writerows.assert_called_once()
-
-    def test_wait_method_without_progress_bar(self) -> None:
-        """Test the wait() method's fallback when no progress bar is given.
-
-        This test ensures that the wait() method completes without errors when
-        the RPCThreadImport instance is created without a progress bar.
-        """
-        rpc_thread = RPCThreadImport(max_connection=1, model=None, header=[])
-
-        def trivial_task() -> int:
-            return 5
-
-        future = rpc_thread.executor.submit(trivial_task)
-        rpc_thread.futures = [future]
-
-        try:
-            rpc_thread.wait()
-        except Exception as e:
-            pytest.fail(f"rpc_thread.wait() raised an unexpected exception: {e}")
-
-        assert rpc_thread.executor._shutdown
-
-    @patch("odoo_data_flow.import_threaded.conf_lib.get_connection_from_config")
-    def test_import_data_aborts_on_rpc_error(self, mock_get_conn: MagicMock) -> None:
-        """Test import_data aborts and returns False on an RPC error.
-
-        Simulates a connection error during the `load` call and asserts that
-        the import process stops and returns False.
-        """
-        mock_model = mock_get_conn.return_value.get_model.return_value
-        mock_model.load.side_effect = requests.exceptions.ConnectionError("RPC Error")
-        result = import_data(
-            config_file="dummy.conf",
-            model="dummy.model",
-            header=["id"],
-            data=[["1"], ["2"]],
-            batch_size=1,
-        )
-        assert result is False
-
-    def test_filter_ignored_columns_empty_ignore(self) -> None:
-        """Test _filter_ignored_columns when ignore list is empty."""
+    def test_create_batches_no_data(self) -> None:
+        """Test that _create_batches handles empty data."""
         header = ["id", "name"]
-        data = [["1", "Test"]]
-        new_header, new_data = _filter_ignored_columns([], header, data)
-        assert new_header == header
-        assert new_data == data
+        data: list[list[str]] = []
+        batches = list(_create_batches(data, None, header, 10, False))
+        assert len(batches) == 0
 
-    @patch("odoo_data_flow.import_threaded.RPCThreadImport.spawn_thread")
-    def test_launch_batch_abort_flag(self, mock_spawn_thread: MagicMock) -> None:
-        """Test launch_batch when abort_flag is True."""
-        rpc_thread = RPCThreadImport(1, MagicMock(), [])
-        rpc_thread.abort_flag = True
-        rpc_thread.launch_batch([["1", "Test"]], 1)
-        mock_spawn_thread.assert_not_called()
 
-    @patch("concurrent.futures.as_completed")
-    @patch("concurrent.futures.ThreadPoolExecutor")
-    def test_wait_abort_flag(
-        self, mock_thread_pool_executor: MagicMock, mock_as_completed: MagicMock
+class TestPass2Batching:
+    """Tests for the Pass 2 batching and writing logic."""
+
+    @patch("odoo_data_flow.import_threaded._run_threaded_pass")
+    def test_pass_2_groups_writes_correctly(self, mock_run_pass: MagicMock) -> None:
+        """Verify that Pass 2 groups records by identical write values."""
+        # Arrange
+        mock_run_pass.return_value = ({}, False)  # Simulate a successful run
+        mock_model = MagicMock()
+        header = ["id", "name", "parent_id", "user_id"]
+        all_data = [
+            ["c1", "C1", "p1", "u1"],
+            ["c2", "C2", "p1", "u1"],
+            ["c3", "C3", "p2", "u1"],
+            ["c4", "C4", "p2", "u2"],
+        ]
+        id_map = {
+            "c1": 1,
+            "c2": 2,
+            "c3": 3,
+            "c4": 4,
+            "p1": 101,
+            "p2": 102,
+            "u1": 201,
+            "u2": 202,
+        }
+        deferred_fields = ["parent_id", "user_id"]
+
+        # Act
+        with Progress() as progress:
+            _orchestrate_pass_2(
+                progress,
+                mock_model,
+                "res.partner",
+                header,
+                all_data,
+                "id",
+                id_map,
+                deferred_fields,
+                {},
+                MagicMock(),
+                MagicMock(),
+                max_connection=1,
+                batch_size=10,
+            )
+
+        # Assert
+        # We expect two separate write calls because the vals are different
+        assert mock_run_pass.call_count == 1
+
+        # Get the batches that were passed to the runner
+        call_args = mock_run_pass.call_args[0]
+        batches = list(call_args[2])  # The batches iterable
+
+        assert len(batches) == 3  # Three unique sets of values to write
+
+        # Convert batches to a more easily searchable dict
+        batch_dict = {
+            frozenset(vals.items()): ids for (ids, vals) in [b[1] for b in batches]
+        }
+
+        # Check group 1: parent=p1, user=u1
+        group1_key = frozenset({"parent_id": 101, "user_id": 201}.items())
+        assert group1_key in batch_dict
+        assert sorted(batch_dict[group1_key]) == [1, 2]
+
+        # Check group 2: parent=p2, user=u1
+        group2_key = frozenset({"parent_id": 102, "user_id": 201}.items())
+        assert group2_key in batch_dict
+        assert batch_dict[group2_key] == [3]
+
+        # Check group 3: parent=p2, user=u2
+        group3_key = frozenset({"parent_id": 102, "user_id": 202}.items())
+        assert group3_key in batch_dict
+        assert batch_dict[group3_key] == [4]
+
+    @patch("odoo_data_flow.import_threaded._run_threaded_pass")
+    def test_pass_2_handles_failed_batch(self, mock_run_pass: MagicMock) -> None:
+        """Verify that a failed batch write in Pass 2 is handled correctly."""
+        # Arrange
+        mock_fail_writer = MagicMock()
+        mock_model = MagicMock()
+
+        header = ["id", "name", "parent_id"]
+        all_data = [["c1", "C1", "p1"], ["c2", "C2", "p1"]]
+        id_map = {"c1": 1, "c2": 2, "p1": 101}
+        deferred_fields = ["parent_id"]
+
+        # Simulate a failure from the threaded runner for this batch
+        failed_write_result = {
+            "failed_writes": [
+                (1, {"parent_id": 101}, "Access Error"),
+                (2, {"parent_id": 101}, "Access Error"),
+            ],
+        }
+        mock_run_pass.return_value = (failed_write_result, False)  # result, aborted
+
+        # Act
+        with Progress() as progress:
+            result = _orchestrate_pass_2(
+                progress,
+                mock_model,
+                "res.partner",
+                header,
+                all_data,
+                "id",
+                id_map,
+                deferred_fields,
+                {},
+                mock_fail_writer,
+                MagicMock(),  # fail_handle
+                max_connection=1,
+                batch_size=10,
+            )
+
+        # Assert
+        assert result[0] is False  # The orchestration should report failure
+        mock_fail_writer.writerows.assert_called_once()
+
+        # Check that the rows written to the fail file are correct
+        failed_rows = mock_fail_writer.writerows.call_args[0][0]
+        assert len(failed_rows) == 2
+        assert failed_rows[0] == ["c1", "C1", "p1", "Access Error"]
+        assert failed_rows[1] == ["c2", "C2", "p1", "Access Error"]
+
+    def test_orchestrate_pass_2_no_relations(self) -> None:
+        """Test that Pass 2 handles no relations to update."""
+        mock_model = MagicMock()
+        header = ["id", "name"]
+        all_data = [["c1", "C1"], ["c2", "C2"]]
+        id_map = {"c1": 1, "c2": 2}
+        deferred_fields: list[str] = []
+        with Progress() as progress:
+            result, updates = _orchestrate_pass_2(
+                progress,
+                mock_model,
+                "res.partner",
+                header,
+                all_data,
+                "id",
+                id_map,
+                deferred_fields,
+                {},
+                None,
+                None,
+                1,
+                10,
+            )
+        assert result is True
+        assert updates == 0
+
+
+class TestImportThreadedEdgeCases:
+    """Tests for edge cases and error handling in import_threaded.py."""
+
+    def test_format_odoo_error_not_a_string(self) -> None:
+        """Test that _format_odoo_error handles non-string errors."""
+        error_obj = {"key": "value"}
+        formatted = _format_odoo_error(error_obj)
+        assert formatted == "{'key': 'value'}"
+
+    def test_format_odoo_error_fallback(self) -> None:
+        """Test that _format_odoo_error handles non-dictionary strings."""
+        error_string = "A simple error message"
+        formatted = _format_odoo_error(error_string)
+        assert formatted == "A simple error message"
+
+    def test_read_data_file_not_found(self) -> None:
+        """Test that _read_data_file handles a FileNotFoundError."""
+        header, data = _read_data_file("non_existent_file.csv", ",", "utf-8", 0)
+        assert header == []
+        assert data == []
+
+    @patch("builtins.open", side_effect=ValueError("bad file"))
+    def test_read_data_file_general_exception(self, mock_open: MagicMock) -> None:
+        """Test that _read_data_file handles a general exception."""
+        with pytest.raises(ValueError):
+            _read_data_file("any.csv", ",", "utf-8", 0)
+
+    def test_read_data_file_no_id_column(self, tmp_path: Path) -> None:
+        """Test that a ValueError is raised if the 'id' column is missing."""
+        source_file = tmp_path / "source.csv"
+        source_file.write_text("name,age\nAlice,30")
+        with pytest.raises(
+            ValueError, match="Source file must contain an 'id' column."
+        ):
+            _read_data_file(str(source_file), ",", "utf-8", 0)
+
+    @patch("builtins.open", side_effect=OSError("Permission denied"))
+    def test_setup_fail_file_os_error(self, mock_open: MagicMock) -> None:
+        """Test that _setup_fail_file handles an OSError."""
+        writer, handle = _setup_fail_file("fail.csv", ["id"], ",", "utf-8")
+        assert writer is None
+        assert handle is None
+
+    def test_create_batch_individually_malformed_row(self) -> None:
+        """Test handling of malformed rows."""
+        mock_model = MagicMock()
+        batch_header = ["id", "name"]
+        # This row has only one column, but the header has two
+        batch_lines = [["record1"]]
+
+        result = _create_batch_individually(
+            mock_model, batch_lines, batch_header, 0, {}, []
+        )
+
+        assert len(result["failed_lines"]) == 1
+        assert "Row has 1 columns, but header has 2" in result["failed_lines"][0][-1]
+        assert result["error_summary"] == "Malformed CSV row detected"
+
+    @patch(
+        "odoo_data_flow.import_threaded.concurrent.futures.as_completed",
+        side_effect=KeyboardInterrupt,
+    )
+    def test_run_threaded_pass_keyboard_interrupt(
+        self, mock_as_completed: MagicMock
     ) -> None:
-        """Test wait when abort_flag is True."""
-        mock_executor_instance = MagicMock()
-        mock_thread_pool_executor.return_value = mock_executor_instance
-        mock_progress = MagicMock()
-        mock_task_id = MagicMock()
-        rpc_thread = RPCThreadImport(
-            1, MagicMock(), [], progress=mock_progress, task_id=mock_task_id
-        )
-        rpc_thread.abort_flag = True
-        mock_future = MagicMock()
-        mock_future.result.return_value = {"processed": 1}
-        mock_as_completed.return_value = [mock_future]
-        rpc_thread.futures = [mock_future]
-        rpc_thread.wait()
-        mock_executor_instance.shutdown.assert_called_once_with(
-            wait=True, cancel_futures=True
-        )
+        """Test that a KeyboardInterrupt is handled gracefully."""
+        from odoo_data_flow.import_threaded import RPCThreadImport, _run_threaded_pass
 
-    @patch("concurrent.futures.as_completed")
-    def test_wait_future_exception(self, mock_as_completed: MagicMock) -> None:
-        """Test wait when a future raises an exception."""
-        rpc_thread = RPCThreadImport(
-            1, MagicMock(), [], progress=MagicMock(), task_id=MagicMock()
-        )
-        mock_future = MagicMock()
-        mock_future.result.side_effect = Exception("Future error")
-        mock_as_completed.return_value = [mock_future]
-        rpc_thread.futures = [mock_future]
-        rpc_thread.executor = MagicMock()
-        rpc_thread.wait()
-        rpc_thread.executor.shutdown.assert_called_once_with(wait=True)
+        rpc_thread = RPCThreadImport(1, Progress(), MagicMock())
+        rpc_thread.task_id = rpc_thread.progress.add_task("test")
+        target_func = MagicMock()
+        target_func.__name__ = "mock_func"
+        with patch.object(rpc_thread, "spawn_thread", return_value=MagicMock()):
+            _, aborted = _run_threaded_pass(rpc_thread, target_func, [(1, {})], {})
+            assert aborted is True
 
-    @patch("odoo_data_flow.import_threaded.Progress")
-    @patch("odoo_data_flow.import_threaded.conf_lib.get_connection_from_config")
-    def test_import_data_with_progress(
-        self, mock_get_conn: MagicMock, mock_progress_class: MagicMock
+    @patch(
+        "odoo_data_flow.import_threaded.conf_lib.get_connection_from_config",
+        side_effect=Exception("Conn fail"),
+    )
+    def test_import_data_connection_failure(self, mock_get_conn: MagicMock) -> None:
+        """Test that import_data handles a connection failure gracefully."""
+        # Arrange
+        with patch(
+            "odoo_data_flow.import_threaded._read_data_file",
+            return_value=(["id"], [["a"]]),
+        ):
+            # Act
+            success, count = import_data("dummy.conf", "res.partner", "id", "dummy.csv")
+
+            # Assert
+            assert success is False
+            assert count == {}
+
+    @patch("odoo_data_flow.import_threaded._read_data_file", return_value=([], []))
+    def test_import_data_no_header(self, mock_read_file: MagicMock) -> None:
+        """Test that import_data handles a CSV with no header."""
+        success, stats = import_data("dummy.conf", "res.partner", "id", "dummy.csv")
+        assert success is False
+        assert stats == {}
+
+    @patch("odoo_data_flow.lib.internal.ui._show_error_panel")
+    @patch(
+        "odoo_data_flow.import_threaded.conf_lib.get_connection_from_config",
+        side_effect=Exception("Conn fail"),
+    )
+    def test_import_data_connection_failure_shows_panel(
+        self, mock_get_conn: MagicMock, mock_show_error: MagicMock
     ) -> None:
-        """Test import_data uses the rich progress bar.
+        """Test that import_data shows the error panel on connection failure."""
+        # Arrange
+        with patch(
+            "odoo_data_flow.import_threaded._read_data_file",
+            return_value=(["id"], [["a"]]),
+        ):
+            # Act
+            import_data("dummy.conf", "res.partner", "id", "dummy.csv")
 
-        Tests that the main import function correctly initializes and uses the
-        rich Progress bar during its operation.
-        """
-        mock_model = mock_get_conn.return_value.get_model.return_value
-        mock_model.load.return_value = {"ids": [1], "messages": []}
+            # Assert
+            mock_show_error.assert_called_once()
+            call_args, _ = mock_show_error.call_args
+            assert call_args[0] == "Odoo Connection Error"
+            assert "Could not connect to Odoo" in call_args[1]
 
-        # Get the mock instance that will be created inside import_data
-        mock_progress_instance = mock_progress_class.return_value
+    def test_filter_ignored_columns(self) -> None:
+        """Test that ignored columns are correctly filtered."""
+        from odoo_data_flow.import_threaded import _filter_ignored_columns
 
-        import_data(
-            config_file="dummy.conf",
-            model="dummy.model",
-            header=["id"],
-            data=[["1"]],
+        header = ["id", "name", "age", "city"]
+        data = [
+            ["1", "Alice", "30", "New York"],
+            ["2", "Bob", "25", "London"],
+        ]
+        ignore = ["age", "city"]
+        new_header, new_data = _filter_ignored_columns(ignore, header, data)
+        assert new_header == ["id", "name"]
+        assert new_data == [["1", "Alice"], ["2", "Bob"]]
+
+
+class TestRecursiveBatching:
+    """Tests for the recursive batch creation logic."""
+
+    def test_recursive_batching_single_column(self) -> None:
+        """Test recursive batching with a single grouping column."""
+        from odoo_data_flow.import_threaded import _recursive_create_batches
+
+        header = ["id", "name", "country"]
+        data = [
+            ["1", "A", "USA"],
+            ["2", "B", "USA"],
+            ["3", "C", "Canada"],
+            ["4", "D", "USA"],
+        ]
+        batches = list(_recursive_create_batches(data, ["country"], header, 10, False))
+        assert len(batches) == 2
+        assert batches[0][1][0][2] == "Canada"
+        assert batches[1][1][0][2] == "USA"
+
+    def test_recursive_batching_multiple_columns(self) -> None:
+        """Test recursive batching with multiple grouping columns."""
+        from odoo_data_flow.import_threaded import _recursive_create_batches
+
+        header = ["id", "name", "country", "state"]
+        data = [
+            ["1", "A", "USA", "CA"],
+            ["2", "B", "USA", "NY"],
+            ["3", "C", "Canada", "QC"],
+            ["4", "D", "USA", "CA"],
+        ]
+        batches = list(
+            _recursive_create_batches(data, ["country", "state"], header, 10, False)
         )
+        assert len(batches) == 3
+        # Note: The order of batches is not guaranteed, so we check the content
+        # of each batch.
+        batch_contents = [tuple(row) for _, batch_data in batches for row in batch_data]
+        assert ("1", "A", "USA", "CA") in batch_contents
+        assert ("4", "D", "USA", "CA") in batch_contents
+        assert ("2", "B", "USA", "NY") in batch_contents
+        assert ("3", "C", "Canada", "QC") in batch_contents
 
-        # Assert that the progress bar was used
-        mock_progress_class.assert_called_once()
-        mock_progress_instance.add_task.assert_called_once()
-        mock_progress_instance.update.assert_called()
+    def test_recursive_batching_group_col_not_found(self) -> None:
+        """Test that an error is logged if a grouping column is not found."""
+        from odoo_data_flow.import_threaded import _recursive_create_batches
 
-    @patch("builtins.open", new_callable=mock_open)
-    @patch("odoo_data_flow.import_threaded.conf_lib.get_connection_from_config")
-    @patch("odoo_data_flow.import_threaded.os.makedirs")
-    def test_import_data_returns_false_if_setup_fail_file_fails(
-        self,
-        mock_makedirs: MagicMock,
-        mock_get_conn: MagicMock,
-        mock_open_file: MagicMock,
-    ) -> None:
-        """Test import_data returns False if _setup_fail_file fails.
-
-        Patches the fail file setup function to simulate a failure and asserts
-        that the main import function returns False as a result.
-        """
-        # 1. Simulate a failure within the real _setup_fail_file by making
-        #    the 'open' call it depends on raise an error.
-        mock_open_file.side_effect = OSError("Permission denied")
-        mock_get_conn.return_value.get_model.return_value = MagicMock()
-
-        # 2. Call the function under test
-        result = import_data(
-            config_file="dummy.conf",
-            model="model",
-            header=["id"],
-            data=[["1"]],
-            fail_file="protected/fail.csv",
-        )
-
-        # 3. Assert that the error was handled and the function returned False
-        assert result is False
-        mock_open_file.assert_called_once_with(
-            "protected/fail.csv", "w", newline="", encoding="utf-8"
-        )
-
-
-@patch("csv.field_size_limit")
-def test_csv_field_size_limit_overflow(
-    mock_field_size_limit: MagicMock,
-) -> None:
-    """Test that csv.field_size_limit handles OverflowError."""
-    # Arrange: Make the first call fail, subsequent calls succeed.
-    mock_field_size_limit.side_effect = [OverflowError, None]
-
-    # Act: Reload the module to trigger the top-level code.
-    import importlib
-
-    from odoo_data_flow import import_threaded
-
-    # We need to patch sys.maxsize for the reload to have a predictable start value
-    with patch("sys.maxsize", 100):
-        importlib.reload(import_threaded)
-
-    # Assert
-    # The function should have been called twice.
-    assert mock_field_size_limit.call_count == 2
-    mock_field_size_limit.assert_has_calls([call(100), call(2**30)])
+        header = ["id", "name"]
+        data = [["1", "A"]]
+        with patch("odoo_data_flow.import_threaded.log") as mock_log:
+            list(_recursive_create_batches(data, ["non_existent"], header, 10, False))
+            mock_log.error.assert_called_once_with(
+                "Grouping column 'non_existent' not found. Cannot use --groupby."
+            )

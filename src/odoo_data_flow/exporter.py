@@ -3,6 +3,7 @@
 import ast
 from typing import Any, Optional
 
+import polars as pl
 from rich.console import Console
 from rich.panel import Panel
 
@@ -41,6 +42,7 @@ def run_export(
     encoding: str = "utf-8",
     technical_names: bool = False,
     streaming: bool = False,
+    resume_session: Optional[str] = None,
 ) -> None:
     """Orchestrates the data export process."""
     log.info(f"Starting export for model '{model}'...")
@@ -68,7 +70,7 @@ def run_export(
 
     fields_list = fields.split(",")
 
-    result_df = export_threaded.export_data(
+    success, session_id, record_count, _ = export_threaded.export_data(
         config_file=config,
         model=model,
         domain=parsed_domain,
@@ -81,17 +83,55 @@ def run_export(
         separator=separator,
         technical_names=technical_names,
         streaming=streaming,
+        resume_session=resume_session,
     )
 
-    if result_df is not None:
-        _show_success_panel(
-            f"Successfully exported {len(result_df)} records to "
-            f"[bold cyan]{output}[/bold cyan]"
+    if success:
+        base_message = (
+            f"Successfully streamed {record_count} records to "
+            f"[bold cyan]{output}[/bold cyan]."
+            if streaming
+            else f"Successfully exported {record_count} records to "
+            f"[bold cyan]{output}[/bold cyan]."
         )
+
+        # --- Record Count Validation ---
+        if output:
+            try:
+                actual_count = len(pl.read_csv(output, separator=separator))
+                if actual_count == record_count:
+                    final_message = (
+                        f"{base_message}\n[green]Record count verified.[/green]"
+                    )
+                    _show_success_panel(final_message)
+                else:
+                    warning_message = (
+                        f"{base_message}\n\n"
+                        "[bold yellow]Warning:[/bold yellow] "
+                        "Record count mismatch detected.\n"
+                        f" - Expected: {record_count} records\n"
+                        f" - Found:    {actual_count} records in the output file."
+                    )
+                    _show_error_panel("Count Validation Warning", warning_message)
+            except Exception as e:
+                log.warning(f"Could not validate record count in {output}: {e}")
+                _show_success_panel(
+                    base_message
+                )  # Show original message if validation fails
+        else:
+            _show_success_panel(base_message)
     else:
+        error_message = "The export process failed. Please check the logs for details."
+        if session_id:
+            error_message += (
+                f"\n\nThis export was running under session ID: "
+                f"[bold]{session_id}[/bold]"
+                "\nTo resume this job, add the following flag to your command:"
+                f"\n[bold cyan]--resume-session {session_id}[/bold cyan]"
+            )
         _show_error_panel(
             "Export Failed",
-            "The export process failed. Please check the logs above for details.",
+            error_message,
         )
 
 
@@ -127,7 +167,7 @@ def run_export_for_migration(
     except Exception:
         parsed_context = {}
 
-    result_df = export_threaded.export_data(
+    success, _, _, result_df = export_threaded.export_data(
         config_file=config,
         model=model,
         domain=parsed_domain,
@@ -141,7 +181,7 @@ def run_export_for_migration(
         technical_names=technical_names,
     )
 
-    if result_df is None:
+    if not success or result_df is None:
         return fields, None
 
     header = result_df.columns

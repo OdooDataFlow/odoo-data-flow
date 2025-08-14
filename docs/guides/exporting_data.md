@@ -54,6 +54,7 @@ The `export` command is built for scalability. To handle massive datasets, it us
 * **Low Memory Usage:** Records are fetched in batches, processed, and written directly to the output file, ensuring a low memory footprint even for huge exports.
 * **Type-Aware Cleaning:** The tool inspects Odoo field types to correct common data inconsistencies, like converting `False` values to empty strings for non-boolean fields.
 * **Automatic Batch Resizing:** If the Odoo server runs out of memory on a large batch, the tool automatically splits the batch and retries, making the export process highly resilient.
+* **Record Count Validation**: After a successful export, the tool automatically verifies that the number of rows in the output CSV file matches the number of records found in Odoo, providing an extra layer of data integrity.
 
 ### Command-Line Options
 
@@ -69,7 +70,52 @@ The `export` command is built for scalability. To handle massive datasets, it us
 | `--sep` | The character separating columns. Defaults to a semicolon (`;`). |
 | `--technical-names` | A flag to force the use of the high-performance raw export mode. Often enabled automatically. |
 | `--streaming` | A flag to enable streaming mode for very large datasets. Slower but uses minimal memory. |
+| `--resume-session` | The ID of a failed export session to resume. The tool will append records to the existing output file. |
 
+
+### Resuming Failed Exports
+
+When exporting extremely large datasets, network outages or server restarts can interrupt the process. Starting over from the beginning is inefficient. To solve this, `odoo-data-flow` includes a session-based resume feature.
+
+**How It Works**
+
+1.  **Session ID Generation**: Every time a new export is started, a unique **Session ID** is generated based on the export parameters (model, domain, and fields). This ID is logged to the console.
+2.  **State Tracking**: The tool creates a session directory inside `.odf_cache/sessions/`. It stores two files:
+    *   `all_ids.json`: A complete list of all record IDs that match the export domain.
+    *   `completed_ids.txt`: A list of record IDs that have been successfully exported and written to the CSV file. This file is updated after each batch.
+3.  **Resuming**: If the export fails, you can restart it using the `--resume-session <session_id>` flag. The tool will:
+    *   Read the two state files.
+    *   Calculate the set of remaining IDs that still need to be exported.
+    *   Continue the export process, fetching only the missing records and appending them to the output CSV file without a header.
+4.  **Automatic Cleanup**: Upon a fully successful export, the corresponding session directory is automatically deleted to prevent clutter. If the job fails, the directory is kept, making it available for you to resume.
+
+**Example Usage**
+
+First, start a large export:
+
+```bash
+odoo-data-flow export \
+    --config conf/connection.conf \
+    --model "account.move.line" \
+    --fields "id,name,move_id/.id,account_id/.id,debit,credit" \
+    --output "data/all_journal_entries.csv"
+```
+
+The console will log the session ID:
+`INFO - Starting new export session: a1b2c3d4e5f6a7b8`
+
+If the process fails midway, you can find the session ID in the logs or in the final error message. To resume, simply add the `--resume-session` flag:
+
+```bash
+odoo-data-flow export \
+    --config conf/connection.conf \
+    --model "account.move.line" \
+    --fields "id,name,move_id/.id,account_id/.id,debit,credit" \
+    --output "data/all_journal_entries.csv" \
+    --resume-session "a1b2c3d4e5f6a7b8"
+```
+
+The tool will then calculate the remaining records and continue where it left off.
 
 ### Understanding the `--domain` Filter
 

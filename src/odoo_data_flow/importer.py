@@ -5,25 +5,60 @@ It handles file I/O, pre-flight checks, and the delegation of the core
 import tasks to the multi-threaded `import_threaded` module.
 """
 
-import ast
 import csv
+import json
 import os
+import re
+import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Optional, cast
 
+import polars as pl
 from rich.console import Console
 from rich.panel import Panel
+from rich.progress import Progress
 
 from . import import_threaded
 from .enums import PreflightMode
-from .lib import preflight
+from .lib import cache, preflight, relational_import, sort
 from .lib.internal.ui import _show_error_panel
 from .logging_config import log
 
 
+def _count_lines(filepath: str) -> int:
+    """Counts the number of lines in a file, returning 0 if it doesn't exist."""
+    try:
+        with open(filepath, encoding="utf-8") as f:
+            return sum(1 for _ in f)
+    except FileNotFoundError:
+        return 0
+
+
+def _infer_model_from_filename(filename: str) -> Optional[str]:
+    """Tries to guess the Odoo model from a CSV filename."""
+    basename = Path(filename).stem
+    # Remove common suffixes like _fail, _transformed, etc.
+    clean_name = re.sub(r"(_fail|_transformed|\d+)$", "", basename)
+    # Convert underscores to dots
+    model_name = clean_name.replace("_", ".")
+    if "." in model_name:
+        return model_name
+    return None
+
+
 def _get_fail_filename(model: str, is_fail_run: bool) -> str:
-    """Generates a standardized filename for failed records."""
+    """Generates a standardized filename for failed records.
+
+    Args:
+        model (str): The Odoo model name being imported.
+        is_fail_run (bool): If True, indicates a recovery run, and a
+            timestamp will be added to the filename.
+
+    Returns:
+        str: The generated filename for the fail file.
+    """
     model_filename = model.replace(".", "_")
     if is_fail_run:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -31,10 +66,24 @@ def _get_fail_filename(model: str, is_fail_run: bool) -> str:
     return f"{model_filename}_fail.csv"
 
 
-def _run_preflight_checks(preflight_mode: PreflightMode, **kwargs: Any) -> bool:
-    """Iterates through and runs all registered pre-flight checks."""
+def _run_preflight_checks(
+    preflight_mode: PreflightMode, import_plan: dict[str, Any], **kwargs: Any
+) -> bool:
+    """Iterates through and runs all registered pre-flight checks.
+
+    Args:
+        preflight_mode (PreflightMode): The current mode (NORMAL or FAIL_MODE).
+        import_plan (dict[str, Any]): A dictionary that checks can populate
+            with strategy details (e.g., detected deferred fields).
+        **kwargs (Any): A dictionary of arguments to pass to each check.
+
+    Returns:
+        bool: True if all checks pass, False otherwise.
+    """
     for check_func in preflight.PREFLIGHT_CHECKS:
-        if not check_func(preflight_mode=preflight_mode, **kwargs):
+        if not check_func(
+            preflight_mode=preflight_mode, import_plan=import_plan, **kwargs
+        ):
             return False
     return True
 
@@ -42,208 +91,252 @@ def _run_preflight_checks(preflight_mode: PreflightMode, **kwargs: Any) -> bool:
 def run_import(  # noqa: C901
     config: str,
     filename: str,
-    model: Optional[str] = None,
-    no_preflight_checks: bool = False,
-    headless: bool = False,
-    worker: int = 1,
-    batch_size: int = 10,
-    skip: int = 0,
-    fail: bool = False,
-    separator: str = ";",
-    split: Optional[Union[str, tuple[str, ...], list[str]]] = None,
-    split_by_cols: Optional[Union[str, tuple[str, ...], list[str]]] = None,
-    ignore: Optional[str] = None,
-    check: bool = False,
-    context: str = "{'tracking_disable' : True}",
-    o2m: bool = False,
-    encoding: str = "utf-8",
+    model: Optional[str],
+    deferred_fields: Optional[list[str]],
+    unique_id_field: Optional[str],
+    no_preflight_checks: bool,
+    headless: bool,
+    worker: int,
+    batch_size: int,
+    skip: int,
+    fail: bool,
+    separator: str,
+    ignore: Optional[list[str]],
+    context: Any,  # Accept Any type for robustness
+    encoding: str,
+    o2m: bool,
+    groupby: Optional[list[str]],
 ) -> None:
-    """Orchestrates the data import process from a CSV file.
-
-    Args:
-        config: Path to the connection configuration file.
-        filename: Path to the source CSV file to import.
-        model: The Odoo model to import data into. If not provided, it's inferred
-               from the filename.
-        no_preflight_checks: If True, skips all pre-flight validation checks.
-        headless: If True, runs in non-interactive mode, auto-confirming any
-                  prompts (e.g., installing languages).
-        worker: The number of simultaneous connections to use.
-        batch_size: The number of records to process in each batch.
-        skip: The number of initial lines to skip in the source file.
-        fail: If True, runs in fail mode, retrying records from the _fail.csv file.
-        separator: The delimiter used in the CSV file.
-        split: [DEPRECATED] Use `split_by_cols` instead. Kept for backward
-               compatibility with internal tests.
-        split_by_cols: A column name (string), or a list/tuple of column
-                       names to group records by to avoid concurrent updates on
-                       the same parent record.
-        ignore: A comma-separated string of column names to ignore.
-        check: If True, checks if records were successfully imported.
-        context: A string representation of the Odoo context dictionary.
-        o2m: If True, enables special handling for one-to-many imports.
-        encoding: The file encoding of the source file.
-    """
+    """Main entry point for the import command, handling all orchestration."""
     log.info("Starting data import process from file...")
 
-    final_model = model
-    if not final_model:
-        base_name = os.path.basename(filename)
-        inferred_model = os.path.splitext(base_name)[0].replace("_", ".")
-        if not inferred_model or inferred_model.startswith("."):
+    parsed_context: dict[str, Any]
+    if isinstance(context, str):
+        try:
+            parsed_context = json.loads(context)
+            if not isinstance(parsed_context, dict):
+                raise TypeError
+        except (json.JSONDecodeError, TypeError):
             _show_error_panel(
-                "Model Not Found",
-                "Model not specified and could not be inferred from filename "
-                f"'{base_name}'.\nPlease use the --model option.",
+                "Invalid Context",
+                "The --context argument must be a valid JSON dictionary string.",
             )
             return
-        final_model = inferred_model
-        log.info(f"No model provided. Inferred model '{final_model}' from filename.")
-
-    current_preflight_mode = PreflightMode.NORMAL
-    fail_filename = _get_fail_filename(final_model, is_fail_run=False)
-    fail_file_path = Path(filename).parent / fail_filename
-    if fail:
-        current_preflight_mode = PreflightMode.FAIL_MODE
-
-        file_has_records_to_retry = False
-        if fail_file_path.exists():
-            with open(fail_file_path, encoding="utf-8") as f:
-                # Check if there is more than just a header line
-                reader = csv.reader(f)
-                try:
-                    next(reader)  # Skip header
-                    next(reader)  # Try to read the first data row
-                    file_has_records_to_retry = True
-                except StopIteration:
-                    # This means the file has a header but no data rows
-                    file_has_records_to_retry = False
-
-        if not file_has_records_to_retry:
-            console = Console()
-            console.print(
-                Panel(
-                    f"No records found in '{fail_file_path}'. Nothing to retry.",
-                    title="[bold green]No Recovery Needed[/bold green]",
-                    border_style="green",
-                )
-            )
-            return
-
-        log.info(f"Running in --fail mode. Retrying records from: {fail_file_path}")
-        filename = str(fail_file_path)
-
-    # --- Pre-flight Checks ---
-    if not no_preflight_checks:
-        if not _run_preflight_checks(
-            preflight_mode=current_preflight_mode,
-            model=final_model,
-            filename=filename,
-            config=config,
-            headless=headless,
-            separator=separator,
-        ):
-            return
-        # elif fail and no_preflight_checks:
-    if fail and no_preflight_checks:
-        log.warning(
-            "Both --fail and --no-preflight-checks were specified. "
-            "Skipping all checks as per explicit request."
-        )
-    try:
-        parsed_context = ast.literal_eval(context)
-        if not isinstance(parsed_context, dict):
-            raise TypeError("Context must be a dictionary.")
-    except Exception as e:
+    elif isinstance(context, dict):
+        parsed_context = context
+    else:
         _show_error_panel(
-            "Invalid Context",
-            f"The --context argument must be a valid Python dictionary string.\n"
-            f"Error: {e}",
+            "Invalid Context", "The context must be a dictionary or a JSON string."
         )
         return
 
-    ignore_list = ignore.split(",") if ignore else []
+    if not model:
+        model = _infer_model_from_filename(filename)
+        if not model:
+            _show_error_panel(
+                "Model Not Found",
+                "Could not infer model from filename. Please use the --model option.",
+            )
+            return
 
-    file_dir = os.path.dirname(filename)
-    file_to_process: str
-    fail_output_file: str
-    is_fail_run: bool
-    batch_size_run: int
-    max_connection_run: int
+    file_to_process = filename
+    if fail:
+        fail_path = Path(filename).parent / _get_fail_filename(model, False)
+        line_count = _count_lines(str(fail_path))
+        if line_count <= 1:
+            Console().print(
+                Panel(
+                    f"No records to retry in '{fail_path}'.",
+                    title="[bold green]No Recovery Needed[/bold green]",
+                )
+            )
+            return
+        log.info(
+            f"Running in --fail mode. Retrying {line_count - 1} records from: "
+            f"{fail_path}"
+        )
+        file_to_process = str(fail_path)
+        if ignore is None:
+            ignore = []
+        if "_ERROR_REASON" not in ignore:
+            log.info("Ignoring the internal '_ERROR_REASON' column for re-import.")
+            ignore.append("_ERROR_REASON")
 
-    model_filename_part = final_model.replace(".", "_")
+    import_plan: dict[str, Any] = {}
+    if not no_preflight_checks:
+        validation_filename = filename if fail else file_to_process
+        if not _run_preflight_checks(
+            preflight_mode=PreflightMode.FAIL_MODE if fail else PreflightMode.NORMAL,
+            import_plan=import_plan,
+            model=model,
+            filename=file_to_process,
+            validation_filename=validation_filename,
+            config=config,
+            headless=headless,
+            separator=separator,
+            unique_id_field=unique_id_field,
+            ignore=ignore or [],
+            o2m=o2m,
+        ):
+            return
+
+    # --- Strategy Execution ---
+    sorted_temp_file = None
+    if import_plan.get("strategy") == "sort_and_one_pass_load":
+        log.info("Executing 'Sort & One-Pass Load' strategy.")
+        sorted_temp_file = sort.sort_for_self_referencing(
+            file_to_process,
+            id_column=import_plan["id_column"],
+            parent_column=import_plan["parent_column"],
+            encoding=encoding,
+        )
+        if sorted_temp_file:
+            file_to_process = sorted_temp_file
+            # Disable deferred fields for this strategy
+            deferred_fields = []
+
+    final_deferred = deferred_fields or import_plan.get("deferred_fields", [])
+    final_uid_field = unique_id_field or import_plan.get("unique_id_field") or "id"
+    fail_output_file = str(Path(filename).parent / _get_fail_filename(model, fail))
 
     if fail:
-        log.info("Running in --fail mode. Retrying failed records...")
-        file_to_process = os.path.join(file_dir, f"{model_filename_part}_fail.csv")
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        fail_output_file = os.path.join(
-            file_dir, f"{model_filename_part}_{timestamp}_failed.csv"
-        )
+        log.info("Single-record batching enabled for this import strategy.")
+        max_conn = 1
         batch_size_run = 1
-        max_connection_run = 1
-        is_fail_run = True
+        force_create = True
     else:
-        file_to_process = filename
-        fail_output_file = os.path.join(file_dir, f"{model_filename_part}_fail.csv")
-        batch_size_run = int(batch_size)
-        max_connection_run = int(worker)
-        is_fail_run = False
+        max_conn = worker
+        batch_size_run = batch_size
+        force_create = False
 
-    log.info(f"Importing file: {file_to_process}")
-    log.info(f"Target model: {final_model}")
-    log.info(f"Workers: {max_connection_run}, Batch Size: {batch_size_run}")
-    log.info(f"Failed records will be saved to: {fail_output_file}")
-
-    # --- Compatibility Shim ---
-    final_split_argument = split_by_cols or split
-
-    split_by_cols_for_import = None
-    if isinstance(final_split_argument, str):
-        # This will handle a string like "id,name"
-        split_by_cols_for_import = [
-            col.strip() for col in final_split_argument.split(",")
-        ]
-    elif isinstance(final_split_argument, (list, tuple)):
-        # This will handle the TUPLE that your debug log proved is there
-        split_by_cols_for_import = list(final_split_argument)
-
-    # Now, 'split_by_cols_for_import' is reliably a list of strings or None
-
-    success = import_threaded.import_data(
-        config_file=config,
-        model=final_model,
-        file_csv=file_to_process,
-        context=parsed_context,
-        fail_file=fail_output_file,
-        encoding=encoding,
-        separator=separator,
-        ignore=ignore_list,
-        split_by_cols=split_by_cols_for_import,
-        check=check,
-        max_connection=max_connection_run,
-        batch_size=batch_size_run,
-        skip=int(skip),
-        o2m=o2m,
-        is_fail_run=is_fail_run,
-    )
-
-    console = Console()
-    if success:
-        console.print(
-            Panel(
-                f"Import process for model [bold cyan]{final_model}[/bold cyan] "
-                f"finished successfully.",
-                title="[bold green]Import Complete[/bold green]",
-                border_style="green",
-            )
+    start_time = time.time()
+    try:
+        success, stats = import_threaded.import_data(
+            config_file=config,
+            model=model,
+            unique_id_field=final_uid_field,
+            file_csv=file_to_process,
+            deferred_fields=final_deferred,
+            context=parsed_context,
+            fail_file=fail_output_file,
+            encoding=encoding,
+            separator=separator,
+            ignore=ignore or [],
+            max_connection=max_conn,
+            batch_size=batch_size_run,
+            skip=skip,
+            force_create=force_create,
+            o2m=o2m,
+            split_by_cols=groupby,
         )
+    finally:
+        if sorted_temp_file and os.path.exists(sorted_temp_file):
+            os.remove(sorted_temp_file)
+
+    elapsed = time.time() - start_time
+
+    fail_file_was_created = _count_lines(fail_output_file) > 1
+    is_truly_successful = success and not fail_file_was_created
+
+    if is_truly_successful:
+        id_map = cast(dict[str, int], stats.get("id_map", {}))
+        if id_map:
+            cache.save_id_map(config, model, id_map)
+
+        # --- Pass 2: Relational Strategies ---
+        if import_plan.get("strategies"):
+            source_df = pl.read_csv(
+                filename, separator=separator, truncate_ragged_lines=True
+            )
+            with Progress() as progress:
+                task_id = progress.add_task(
+                    "Pass 2/2: Relational fields",
+                    total=len(import_plan["strategies"]),
+                )
+                for field, strategy_info in import_plan["strategies"].items():
+                    if strategy_info["strategy"] == "direct_relational_import":
+                        import_details = relational_import.run_direct_relational_import(
+                            config,
+                            model,
+                            field,
+                            strategy_info,
+                            source_df,
+                            id_map,
+                            max_conn,
+                            batch_size_run,
+                            progress,
+                            task_id,
+                            filename,
+                        )
+                        if import_details:
+                            import_threaded.import_data(
+                                config_file=config,
+                                model=import_details["model"],
+                                unique_id_field=import_details["unique_id_field"],
+                                file_csv=import_details["file_csv"],
+                                max_connection=max_conn,
+                                batch_size=batch_size_run,
+                            )
+                            Path(import_details["file_csv"]).unlink()
+                    elif strategy_info["strategy"] == "write_tuple":
+                        relational_import.run_write_tuple_import(
+                            config,
+                            model,
+                            field,
+                            strategy_info,
+                            source_df,
+                            id_map,
+                            max_conn,
+                            batch_size_run,
+                            progress,
+                            task_id,
+                            filename,
+                        )
+                    elif strategy_info["strategy"] == "write_o2m_tuple":
+                        relational_import.run_write_o2m_tuple_import(
+                            config,
+                            model,
+                            field,
+                            strategy_info,
+                            source_df,
+                            id_map,
+                            max_conn,
+                            batch_size_run,
+                            progress,
+                            task_id,
+                            filename,
+                        )
+                    progress.update(task_id, advance=1)
+
+        log.info(
+            f"{stats.get('total_records', 0)} records processed. "
+            f"Total time: {elapsed:.2f}s."
+        )
+        if final_deferred:  # It was a two-pass import
+            summary = (
+                f"Records: {stats.get('total_records', 0)}, "
+                f"Created: {stats.get('created_records', 0)}, "
+                f"Updated: {stats.get('updated_relations', 0)}"
+            )
+            title = f"[bold green]Import Complete for [cyan]{model}[/cyan][/bold green]"
+            Console().print(
+                Panel(
+                    summary,
+                    title=title,
+                    expand=False,
+                )
+            )
+        else:  # Single pass
+            Console().print(
+                Panel(
+                    f"Import for [cyan]{model}[/cyan] finished successfully.",
+                    title="[bold green]Import Complete[/bold green]",
+                )
+            )
     else:
-        # log.error(
         _show_error_panel(
-            "Import Aborted",
-            "The import process was aborted due to a critical error. "
-            "Please check the logs above for details.",
+            "Import Failed",
+            "The import process failed. Check logs for details.",
         )
 
 
@@ -257,29 +350,40 @@ def run_import_for_migration(
 ) -> None:
     """Orchestrates the data import process from in-memory data.
 
+    This function adapts in-memory data to the file-based import engine by
+    writing the data to a temporary file. This allows it to leverage all the
+    robust features of the main importer.
+
     Args:
-        config: Path to the connection configuration file.
-        model: The Odoo model to import data into.
-        header: A list of strings representing the column headers.
-        data: A list of lists representing the data rows.
-        worker: The number of simultaneous connections to use.
-        batch_size: The number of records to process in each batch.
+        config (str): Path to the connection configuration file.
+        model (str): The Odoo model to import data into.
+        header (list[str]): A list of strings representing the column headers.
+        data (list[list[Any]]): A list of lists representing the data rows.
+        worker (int): The number of simultaneous connections to use.
+        batch_size (int): The number of records to process in each batch.
     """
     log.info("Starting data import from in-memory data...")
-
-    parsed_context = {"tracking_disable": True}
-
-    log.info(f"Importing {len(data)} records into model: {model}")
-    log.info(f"Workers: {worker}, Batch Size: {batch_size}")
-
-    import_threaded.import_data(
-        config,
-        model,
-        header=header,
-        data=data,
-        context=parsed_context,
-        max_connection=int(worker),
-        batch_size=int(batch_size),
-    )
+    tmp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w+", delete=False, suffix=".csv", newline=""
+        ) as tmp:
+            writer = csv.writer(tmp)
+            writer.writerow(header)
+            writer.writerows(data)
+            tmp_path = tmp.name
+        log.info(f"In-memory data written to temporary file: {tmp_path}")
+        import_threaded.import_data(
+            config_file=config,
+            model=model,
+            unique_id_field="id",  # Migration import assumes 'id'
+            file_csv=tmp_path,
+            context={"tracking_disable": True},
+            max_connection=int(worker),
+            batch_size=int(batch_size),
+        )
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
     log.info("In-memory import process finished.")

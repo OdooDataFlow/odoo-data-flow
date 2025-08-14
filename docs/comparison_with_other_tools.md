@@ -6,15 +6,16 @@ This guide provides an in-depth comparison of `odoo-data-flow` with other common
 
 ## Feature Comparison at a Glance
 
-| Feature                | Odoo's Built-in Tool        | Direct SQL                | Custom Python Script   | odoo-data-flow         |
-| :--------------------- | :-------------------------- | :------------------------ | :--------------------- | :--------------------- |
-| **Ease of Use** | Very High                   | Very Low                  | Low                    | Medium                 |
-| **Transformation Power** | Very Low                    | High                      | Very High              | Very High              |
-| **Error Handling** | Low                         | None (High Risk)          | Low (Manual)           | Very High              |
-| **Repeatability** | Low (Manual)                | Medium                    | High                   | Very High              |
-| **Safety (Odoo Logic)**| High                        | **None (Very Dangerous)** | High                   | Very High              |
-| **Performance** | Low to Medium               | Very High                 | Medium                 | High                   |
-| **Best For** | Simple, one-off imports by end-users. | Very specific, low-level data surgery by expert DBAs. | Highly unique, one-off scripted tasks. | Complex, repeatable data migrations and workflows. |
+
+| Feature                | Odoo's Built-in Tool                    | Direct SQL                | Custom Python Script   | odoo-data-flow                                                         |
+| :--------------------- | :-------------------------------------- | :------------------------ | :--------------------- | :--------------------------------------------------------------------- |
+| **Ease of Use** | Very High                               | Very Low                  | Low                    | Medium                                                                 |
+| **Transformation Power** | Very Low                                | High                      | Very High              | Very High                                                              |
+| **Error Handling** | Low                                     | None (High Risk)          | Low (Manual)           | Very High                                                              |
+| **Repeatability** | Low (Manual)                            | Medium                    | High                   | Very High                                                              |
+| **Safety (Odoo Logic)**| High                                    | **None (Very Dangerous)** | High                   | Very High                                                              |
+| **Performance** | Low to Medium                           | Very High                 | Medium                 | High                                                                   |
+| **Best For** | Simple, one-off imports by end-users. | Very specific, low-level data surgery by expert DBAs. | Highly unique, one-off scripted tasks. | Complex, repeatable data migrations with automatic error recovery and relational data handling. |
 
 ---
 
@@ -31,7 +32,7 @@ This is the standard import/export tool available in the Odoo user interface.
 * **Cons:**
     * **Very Limited Transformations:** You cannot perform any significant data cleaning or restructuring. Your source file must already be in a nearly perfect format.
     * **Poor Error Handling for Large Files:** If an error occurs in a large file, Odoo often provides a generic and unhelpful error message. Finding the single bad row in a file with thousands of lines is very difficult.
-    * **"All or Nothing" Transactions:** By default, if one record in a file fails, the entire import is rolled back. This makes importing large datasets very inefficient.
+    * **"All or Nothing" Transactions:** By default, if one record in a file fails, the entire import is rolled back. This makes importing large datasets very inefficient, a problem that `odoo-data-flow` now solves with its automatic `load` -> `create` fallback mechanism.
     * **Not Repeatable:** The process is entirely manual (clicking through the UI), which makes it unsuitable for automated, repeatable migrations between environments (e.g., from staging to production).
 
 * **Verdict:** Perfect for simple, one-off tasks performed by functional users. It is not designed for the complex, repeatable migrations that developers often face.
@@ -73,7 +74,8 @@ This library is designed to be the "sweet spot" between the simplicity of the bu
 * **Pros:**
     * **Powerful Transformations:** It gives you the full power of Python through the `mapper` system, allowing you to handle any complex data transformation.
     * **Structured and Repeatable:** It enforces a clean separation between the transform and load phases, resulting in well-organized, maintainable, and easily repeatable migration projects.
-    * **Robust Error Handling Built-In:** The two-tier failure handling system (`_fail.csv` and the final `..._failed.csv` with error reasons) is provided automatically, saving you from having to build this complex logic yourself.
+    * **Robust Error Handling Built-In:** The new `load` -> `create` fallback mechanism automatically rescues good records from failed batches, isolating only the truly problematic rows for review. This combines the speed of batch `load` with the precision of single-record `create`.
+    * **Smart Relational Handling:** The tool automatically detects interdependent relationships (like parent/child records in the same file) and switches to a high-performance, two-pass import strategy, eliminating a whole class of complex import order errors.
     * **Performance Features Included:** It comes with built-in, easy-to-use features for parallel processing (`--worker`) and deadlock prevention (`--groupby`).
     * **Safe:** It exclusively uses Odoo's standard API methods, ensuring all business logic and validations are respected.
 

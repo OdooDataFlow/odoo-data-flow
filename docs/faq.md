@@ -16,7 +16,7 @@ While Odoo's built-in import is great for simple tasks, `odoo-data-flow` offers 
 
 **loading** logic (importing into Odoo).
 
-- **Robust Error Handling**: Its two-pass import system intelligently handles errors, ensuring that one bad record doesn't stop the entire process.
+- **Robust Error Handling**: Its `load` -> `create` fallback mechanism provides the speed of batch imports while automatically switching to single-record imports for failed batches to provide precise, row-level error messages. The smart, automatic two-pass strategy seamlessly handles complex relational data.
 
 - **Powerful Transformations**: You can use the full power of Python and a rich set of built-in `mapper` functions to handle almost any data transformation challenge.
 
@@ -130,15 +130,30 @@ When an import fails, understanding why is key. Here are some of the most common
 
 ### Understanding the Failure Files
 
-The two-pass import process is designed to isolate errors effectively and generates two different types of failure files for two different purposes.
+The library uses a powerful two-tier failure handling system to maximize success and provide clear feedback.
 
-* **`<model_name>_fail.csv` (e.g., `res_partner_fail.csv`)**:
+#### Tier 1: The `load` -> `create` Fallback (During a Normal Import)
+
+When you run a normal import, the tool first tries to import each batch of records using Odoo's fast, multi-record `load` method.
+
+- **If `load` fails for a batch**: Instead of writing the entire batch to a fail file, the importer automatically **falls back** to a slower, more robust `create` method for each record *within that failed batch*.
+- **This "rescues" the good records**: Any records that succeed during the `create` retry are imported successfully.
+- **`_fail.csv` is created**: Only the single, specific record that failed the `create` call is written to the `<model_name>_fail.csv` file.  (e.g., `res_partner_fail.csv`)**:
 
   * **When it's created**: During the **first pass** (a normal import).
 
   * **What it contains**: If a batch of records fails to import, this file will contain the *entire original, unmodified batch* that failed.
 
   * **Purpose**: This file is for **automated processing**. It's the input for the second pass (`--fail` mode).
+
+#### Tier 2: The `--fail` Mode
+
+When you run the import again with the `--fail` flag, it enters a dedicated recovery mode:
+
+-   It reads the highly-focused `<model_name>_fail.csv` file.
+-   It uses a safe, single-threaded, "create-only" mode to retry each record.
+-   Any records that *still* fail are written to a final, timestamped `..._failed.csv` file for your manual review.
+
 
 * `<original_filename>_YYYYMMDD_HHMMSS_failed.csv` (e.g., **`data_20250626_095500_failed.csv`)**:
 
@@ -218,6 +233,8 @@ A very common reason for the `No matching record found` error is that you are tr
   1. **First, import `res.partner.category`**: Run a transformation and load process for your contact tags. This creates the tags and their external IDs in Odoo.
 
   2. **Then, import `res.partner`**: Run a separate process for your contacts. The mapping for the `category_id/id` field can now successfully use `mapper.m2o_map` to look up the external IDs of the tags you created in the first step.
+
+However, for self-referential models (like importing partners with a `parent_id` that refers to another partner in the **same file**), the tool's new **automatic two-pass import strategy** handles this for you. It will automatically create all records in the first pass and then link the relationships in a second pass, removing the need for manual sorting or multiple import runs for a single file.
 
 ## Why is one of my exported columns completely empty?
 

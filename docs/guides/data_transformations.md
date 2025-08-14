@@ -387,7 +387,7 @@ Reads a local file path from the source column `field` and converts the file con
 | ---------------------------------- |
 | iVBORw0KGgoAAAANSUhEUg... (etc.) |
 
-### `mapper.binary_url_map(field)`
+### `mapper.binary_url_to_base64(field)`
 
 Reads a URL from the source column `field`, downloads the content from that URL, and converts it into a base64-encoded string.
 
@@ -403,7 +403,7 @@ Reads a URL from the source column `field`, downloads the content from that URL,
 **Transformation Code**
 ```python
 # Downloads the image from the URL and encodes it
-'image_1920': mapper.binary_url_map('ImageURL')
+'image_1920': mapper.binary_url_to_base64('ImageURL')
 ```
 
 **Output Data**

@@ -115,6 +115,7 @@ python transform.py
 Let's look at what was created.
 
 **File: `data/res_partner.csv` (Transformed & Clean Data)**
+This file remains the same, containing the clean, Odoo-ready data.
 
 ```{code-block} text
 :caption: data/res_partner.csv
@@ -129,7 +130,9 @@ This file now contains commands that use the new, clean `odoo-data-flow` command
 ```{code-block} bash
 :caption: load.sh
 #!/bin/bash
+# Pass 1: Runs the main import using the smart engine.
 odoo-data-flow import --config conf/connection.conf --file data/res_partner.csv --model res.partner --context "{'tracking_disable': True}"
+# Pass 2: If the first pass created a _fail.csv, this retries those records.
 odoo-data-flow import --config conf/connection.conf --fail --file data/res_partner.csv --model res.partner --context "{'tracking_disable': True}"
 ```
 
@@ -141,6 +144,12 @@ Finally, execute the generated shell script to upload the data.
 bash load.sh
 ```
 
-The `odoo-data-flow` tool will connect to your database and import the records. Log in to your Odoo instance and navigate to the **Contacts** app to see your newly imported contacts.
+The `odoo-data-flow` tool will connect to your database and execute the first command.
+
+Because the import engine is "smart," it automatically detects relational fields to select the most performant import strategy and uses its `load` -> `create` fallback to rescue good records if any batch fails, ensuring the highest possible success rate.
+
+The second command with the `--fail` flag will then automatically process any records that were truly invalid and written to the res_partner_fail.csv file.
+
+Log in to your Odoo instance and navigate to the **Contacts** app to see your newly imported contacts.
 
 Congratulations! You have successfully completed a full transform and load workflow with the new `odoo-data-flow` tool.

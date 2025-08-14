@@ -42,7 +42,7 @@ def _wait_for_languages_to_be_active(
 def _install_languages_modern(
     connection: Any, languages: list[str], version: int
 ) -> None:
-    """Installs languages using the wizard method for Odoo 15, 16, and 17."""
+    """Installs languages using the wizard method for Odoo 15+."""
     log.info(f"Using modern installation wizard (Odoo {version}).")
     wizard_obj = connection.get_model("base.language.install")
     lang_model = connection.get_model("res.lang")
@@ -82,52 +82,78 @@ def _install_languages_modern(
             raise e
 
 
-def _install_languages_v18_and_legacy(connection: Any, languages: list[str]) -> None:
-    """Installs languages using the method for Odoo <=14 and Odoo 18+."""
-    log.info("Using per-language wizard installation method (Odoo <=14 or 18+).")
+def _install_languages_legacy(connection: Any, languages: list[str]) -> None:
+    """Installs languages using the method for Odoo <=14."""
+    log.info("Using per-language wizard installation method (Odoo <=14).")
     wizard_obj = connection.get_model("base.language.install")
 
     for lang_code in languages:
         try:
             log.info(f"Creating install wizard for language: {lang_code}")
-            wizard_id = wizard_obj.create({"lang": lang_code})
+            wizard_id = wizard_obj.create({"lang": lang_code, "overwrite": False})
             wizard_obj.browse(wizard_id).lang_install()
             log.info(f"Successfully triggered installation for '{lang_code}'.")
         except Exception as e:
             log.error(f"Failed to install language '{lang_code}': {e}")
+            raise
 
 
 def run_language_installation(config: str, languages: list[str]) -> bool:
-    """Connects to Odoo and installs a list of languages, auto-detecting the version."""
-    log.info(f"--- Starting Language Installation for: {', '.join(languages)} ---")
+    """Installs a list of languages into the Odoo database.
+
+    Args:
+        config: Path to the connection configuration file.
+        languages: A list of language codes to install (e.g., ['de_DE', 'fr_FR']).
+
+    Returns:
+        True if all languages were installed successfully, False otherwise.
+    """
     try:
-        connection: Any = conf_lib.get_connection_from_config(config_file=config)
+        connection = conf_lib.get_connection_from_config(config_file=config)
         odoo_version = odoo_lib.get_odoo_version(connection)
+
+        installer_model = connection.get_model("base.language.install")
+        all_success = True
+
+        for lang_code in languages:
+            log.info(f"Preparing to install language: {lang_code}...")
+            try:
+                wizard_vals = {}
+                # FIX: Add the version-switching logic
+                if odoo_version < 15:
+                    wizard_vals = {"lang": lang_code, "overwrite": False}
+                else:
+                    # Logic for modern versions (15+)
+                    lang_model = connection.get_model("res.lang")
+                    lang_ids = lang_model.search(
+                        [("code", "=", lang_code)],
+                        context={"active_test": False},
+                    )
+                    if not lang_ids:
+                        log.error(f"Language code '{lang_code}' not found in Odoo.")
+                        all_success = False
+                        continue
+
+                    if odoo_version < 17:
+                        wizard_vals = {
+                            "langs": [(6, 0, lang_ids)],
+                            "overwrite": False,
+                        }
+                    else:  # Odoo 17+
+                        wizard_vals = {
+                            "lang_ids": [(6, 0, lang_ids)],
+                            "overwrite": False,
+                        }
+
+                wizard_id = installer_model.create(wizard_vals)
+                installer_model.lang_install([wizard_id])
+                log.info(f"Successfully installed language '{lang_code}'.")
+
+            except Exception as e:
+                log.error(f"Failed to install language '{lang_code}': {e}")
+                all_success = False
+
+        return all_success
     except Exception as e:
-        log.error(f"Failed to connect to Odoo or detect version: {e}")
-        return False
-
-    try:
-        # Odoo 18 and legacy versions (<15) share the same simple installation method.
-        if odoo_version >= 18 or odoo_version < 15:
-            _install_languages_v18_and_legacy(connection, languages)
-
-        # Odoo 15, 16, and 17 use a more complex wizard that takes a list of IDs.
-        else:  # This covers versions 15, 16, and 17
-            _install_languages_modern(connection, languages, odoo_version)
-
-        log.info("Language installation process triggered successfully.")
-
-        # After triggering, wait for the languages to become active.
-        if not _wait_for_languages_to_be_active(connection, languages):
-            log.error("Installation failed or timed out.")
-            return False
-
-        log.info("--- Language Installation Finished ---")
-        return True
-    except Exception as e:
-        log.error(
-            f"An unexpected error occurred during language installation: {e}",
-            exc_info=True,
-        )
+        log.error(f"Could not connect to Odoo for language installation: {e}")
         return False
