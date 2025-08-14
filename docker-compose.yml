@@ -23,4 +23,3 @@ services:
 
     volumes:
       - .:/odoo-data-flow:z
-

@@ -5,7 +5,6 @@ It handles file I/O, pre-flight checks, and the delegation of the core
 import tasks to the multi-threaded `import_threaded` module.
 """
 
-import csv
 import json
 import os
 import re

@@ -46,7 +46,7 @@ def _resolve_related_ids(
     if not split_ids:
         log.warning("No valid external IDs found to resolve.")
         return None
-    
+
     domain = []
     for module, name in split_ids:
         domain.extend(["|", "&", ("module", "=", module), ("name", "=", name)])
