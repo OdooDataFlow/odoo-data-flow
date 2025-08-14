@@ -75,6 +75,7 @@ def _str_to_mapper(field: Any) -> MapperFunc:
     return cast(MapperFunc, field)
 
 
+
 def _list_to_mappers(args: tuple[Any, ...]) -> list[MapperFunc]:
     """Converts a list of strings or mappers into a list of mappers."""
     return [_str_to_mapper(f) for f in args]
