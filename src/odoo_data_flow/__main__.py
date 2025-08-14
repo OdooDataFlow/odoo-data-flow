@@ -476,6 +476,9 @@ def url_to_image_cmd(**kwargs: Any) -> None:
 )
 def migrate_cmd(**kwargs: Any) -> None:
     """Performs a direct server-to-server data migration."""
+    if "fields" in kwargs and isinstance(kwargs["fields"], str):
+        kwargs["fields"] = [field.strip() for field in kwargs["fields"].split(",")]
+
     if kwargs.get("mapping"):
         try:
             parsed_mapping = ast.literal_eval(kwargs["mapping"])

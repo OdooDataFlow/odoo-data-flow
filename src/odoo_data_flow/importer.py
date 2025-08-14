@@ -347,6 +347,7 @@ def run_import_for_migration(
     data: list[list[Any]],
     worker: int = 1,
     batch_size: int = 10,
+    encoding: str = "utf-8",
 ) -> None:
     """Orchestrates the data import process from in-memory data.
 
@@ -365,19 +366,21 @@ def run_import_for_migration(
     log.info("Starting data import from in-memory data...")
     tmp_path = ""
     try:
+        # Use polars to write the DataFrame to a temporary CSV file
+        df = pl.DataFrame(data, schema=header)
         with tempfile.NamedTemporaryFile(
-            mode="w+", delete=False, suffix=".csv", newline=""
+            mode="w+b", delete=False, suffix=".csv"
         ) as tmp:
-            writer = csv.writer(tmp)
-            writer.writerow(header)
-            writer.writerows(data)
+            df.write_csv(tmp, separator=";")
             tmp_path = tmp.name
+
         log.info(f"In-memory data written to temporary file: {tmp_path}")
         import_threaded.import_data(
             config_file=config,
             model=model,
             unique_id_field="id",  # Migration import assumes 'id'
             file_csv=tmp_path,
+            separator=";",
             context={"tracking_disable": True},
             max_connection=int(worker),
             batch_size=int(batch_size),

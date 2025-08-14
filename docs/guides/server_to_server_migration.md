@@ -1,5 +1,11 @@
 # Guide: Direct Server-to-Server Migration
 
+```{warning}
+This is an experimental feature.
+While it has been unit-tested, it has not been extensively tested in a variety of real-world scenarios.
+Please use with caution and always back up your data before proceeding.
+```
+
 The `odoo-data-flow` library includes a powerful `migrate` command designed to perform a **direct, in-memory** data migration from one Odoo database to another. This is an advanced feature that chains together the export, transform, and import processes into a single step, without creating intermediate CSV files.
 
 > **When to use this?** This method is fast and convenient for simple, one-shot migrations where you don't need to inspect or modify the data mid-process.

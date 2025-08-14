@@ -140,7 +140,9 @@ class RPCThreadExport(RpcThread):
                 else:
                     base_field = field.split("/")[0].replace(".id", "id")
                     value = record.get(base_field)
-                    if field == ".id":
+                    if field == "id":
+                        new_record["id"] = record.get("id")
+                    elif field == ".id":
                         new_record[".id"] = record.get("id")
                     elif field.endswith("/.id"):
                         new_record[field] = (

@@ -283,11 +283,14 @@ class Processor:
 
     def get_o2o_mapping(self) -> dict[str, MapperRepr]:
         """Generates a direct 1-to-1 mapping dictionary."""
-        return {
+        mapping = {
             str(column): MapperRepr(f"mapper.val('{column}')", mapper.val(column))
             for column in self.dataframe.columns
             if column
         }
+        if "id" not in mapping:
+            mapping["id"] = MapperRepr("mapper.val('id')", mapper.val("id"))
+        return mapping
 
     def process(
         self,
