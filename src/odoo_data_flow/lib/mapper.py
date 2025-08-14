@@ -71,7 +71,7 @@ def _str_to_mapper(field: Any) -> MapperFunc:
     If the input is not a string, it is assumed to be a valid mapper function.
     """
     if isinstance(field, str):
-        return val(field)
+        return val(field, default="")
     return cast(MapperFunc, field)
 
 
