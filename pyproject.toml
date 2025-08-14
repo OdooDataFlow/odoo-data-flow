@@ -4,7 +4,7 @@ version = "0.0.1"
 description = "Odoo Data Flow"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { file = "LICENSE" }
+license = "LGPL-3.0-only"
 authors = [
     { name = "bosd", email = "c5e2fd43-d292-4c90-9d1f-74ff3436329a@anonaddy.me" },
 ]

@@ -1,3 +1,5 @@
+permissions:
+  contents: read
 name: End-to-End Tests
 
 on:
@@ -27,3 +29,37 @@ jobs:
         run: |
           chmod +x ./run_e2e_tests.sh
           ./run_e2e_tests.sh ${{ github.event.inputs.odoo_version }}
+
+  e2e-migration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools
+          python -m pip install .
+
+      - name: Run migration e2e tests for Odoo ${{ github.event.inputs.odoo_version }}
+        run: |
+          chmod +x ./run_migration_e2e_tests.sh
+          ./run_migration_e2e_tests.sh ${{ github.event.inputs.odoo_version }}
+
+  e2e-advanced:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools
+          python -m pip install .
+
+      - name: Run advanced e2e tests for Odoo ${{ github.event.inputs.odoo_version }}
+        run: |
+          chmod +x ./run_advanced_e2e_tests.sh
+          ./run_advanced_e2e_tests.sh ${{ github.event.inputs.odoo_version }}

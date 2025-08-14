@@ -1,0 +1,46 @@
+services:
+  db-source:
+    image: postgres:15
+    container_name: odf_adv_db_source
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_PASSWORD=odoo
+      - POSTGRES_USER=odoo
+
+  odoo-source:
+    image: odoo:16.0
+    container_name: odf_adv_odoo_source
+    depends_on:
+      - db-source
+    ports:
+      - "8069:8069"
+    environment:
+      - HOST=db-source
+      - PORT=5432
+      - USER=odoo
+      - PASSWORD=odoo
+    volumes:
+      - .:/odoo-data-flow:z
+
+  db-target:
+    image: postgres:15
+    container_name: odf_adv_db_target
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_PASSWORD=odoo
+      - POSTGRES_USER=odoo
+
+  odoo-target:
+    image: odoo:16.0
+    container_name: odf_adv_odoo_target
+    depends_on:
+      - db-target
+    ports:
+      - "8070:8069"
+    environment:
+      - HOST=db-target
+      - PORT=5432
+      - USER=odoo
+      - PASSWORD=odoo
+    volumes:
+      - .:/odoo-data-flow:z
