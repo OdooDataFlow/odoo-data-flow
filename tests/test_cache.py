@@ -88,7 +88,10 @@ def test_save_id_map_handles_empty_id_map(tmp_path: Path, caplog: "MagicMock") -
 @patch("odoo_data_flow.lib.cache.get_cache_dir")
 @patch("polars.DataFrame.write_parquet")
 def test_save_id_map_handles_write_error(
-    mock_write_parquet: MagicMock, mock_get_cache_dir: MagicMock, tmp_path: Path, caplog: "MagicMock"
+    mock_write_parquet: MagicMock,
+    mock_get_cache_dir: MagicMock,
+    tmp_path: Path,
+    caplog: "MagicMock",
 ) -> None:
     """Verify save_id_map handles write errors."""
     mock_get_cache_dir.return_value = tmp_path
@@ -107,7 +110,10 @@ def test_load_id_map_handles_no_cache_dir(mock_get_cache_dir: MagicMock) -> None
 @patch("odoo_data_flow.lib.cache.get_cache_dir")
 @patch("polars.read_parquet")
 def test_load_id_map_handles_read_error(
-    mock_read_parquet: MagicMock, mock_get_cache_dir: MagicMock, tmp_path: Path, caplog: "MagicMock"
+    mock_read_parquet: MagicMock,
+    mock_get_cache_dir: MagicMock,
+    tmp_path: Path,
+    caplog: "MagicMock",
 ) -> None:
     """Verify load_id_map handles read errors."""
     mock_get_cache_dir.return_value = tmp_path
@@ -167,7 +173,10 @@ def test_save_fields_get_cache_handles_empty_data(
 @patch("odoo_data_flow.lib.cache.get_cache_dir")
 @patch("json.dump")
 def test_save_fields_get_cache_handles_write_error(
-    mock_json_dump: MagicMock, mock_get_cache_dir: MagicMock, tmp_path: Path, caplog: "MagicMock"
+    mock_json_dump: MagicMock,
+    mock_get_cache_dir: MagicMock,
+    tmp_path: Path,
+    caplog: "MagicMock",
 ) -> None:
     """Verify save_fields_get_cache handles write errors."""
     mock_get_cache_dir.return_value = tmp_path
@@ -179,7 +188,10 @@ def test_save_fields_get_cache_handles_write_error(
 @patch("odoo_data_flow.lib.cache.get_cache_dir")
 @patch("json.load")
 def test_load_fields_get_cache_handles_read_error(
-    mock_json_load: MagicMock, mock_get_cache_dir: MagicMock, tmp_path: Path, caplog: "MagicMock"
+    mock_json_load: MagicMock,
+    mock_get_cache_dir: MagicMock,
+    tmp_path: Path,
+    caplog: "MagicMock",
 ) -> None:
     """Verify load_fields_get_cache handles read errors."""
     mock_get_cache_dir.return_value = tmp_path
@@ -304,4 +316,3 @@ def test_get_session_dir_handles_exception(
     session_dir = cache.get_session_dir("test_session")
     assert session_dir is None
     assert "Could not create or access session directory" in caplog.text
-

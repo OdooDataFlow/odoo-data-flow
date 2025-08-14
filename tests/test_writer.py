@@ -1,6 +1,7 @@
 """Test the high-level writer orchestrator."""
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, call, mock_open, patch
 
 import httpx
@@ -329,12 +330,12 @@ class TestRPCThreadWrite:
 @patch("odoo_data_flow.lib.writer._show_error_panel")
 @patch("builtins.open", new_callable=mock_open)
 def test_write_relational_failures_to_csv_os_error(
-    mock_open_file: MagicMock, mock_show_error: MagicMock
+    mock_open_file: MagicMock, mock_show_error: MagicMock, tmp_path: Path
 ) -> None:
     """Test that an OSError during file write is handled."""
     # Arrange
     mock_open_file.side_effect = OSError("Disk full")
-    failed_records = [
+    failed_records: list[dict[str, Any]] = [
         {
             "model": "res.partner",
             "field": "category_id",
@@ -343,10 +344,11 @@ def test_write_relational_failures_to_csv_os_error(
             "error_reason": "Not found",
         }
     ]
+    original_filename = tmp_path / "source.csv"
 
     # Act
     write_relational_failures_to_csv(
-        "res.partner", "category_id", "/tmp/source.csv", failed_records
+        "res.partner", "category_id", str(original_filename), failed_records
     )
 
     # Assert
@@ -377,7 +379,7 @@ def test_write_relational_failures_to_csv_success(tmp_path: Path) -> None:
 
     # Assert
     assert fail_filepath.exists()
-    with open(fail_filepath, "r") as f:
+    with open(fail_filepath) as f:
         content = f.read()
         assert "model,field,parent_external_id" in content
         assert "res.partner,category_id,p1,c1,Not found" in content
@@ -408,21 +410,24 @@ def test_write_relational_failures_to_csv_appends(tmp_path: Path) -> None:
     )
 
     # Assert
-    with open(fail_filepath, "r") as f:
+    with open(fail_filepath) as f:
         content = f.read()
         assert "Old error" in content
         assert "New error" in content
 
 
 @patch("builtins.open", new_callable=mock_open)
-def test_write_relational_failures_no_records(mock_open_file: MagicMock) -> None:
+def test_write_relational_failures_no_records(
+    mock_open_file: MagicMock, tmp_path: Path
+) -> None:
     """Test that the function does nothing if there are no failed records."""
     # Arrange
-    failed_records = []
+    failed_records: list[dict[str, Any]] = []
+    original_filename = tmp_path / "source.csv"
 
     # Act
     write_relational_failures_to_csv(
-        "res.partner", "category_id", "/tmp/source.csv", failed_records
+        "res.partner", "category_id", str(original_filename), failed_records
     )
 
     # Assert

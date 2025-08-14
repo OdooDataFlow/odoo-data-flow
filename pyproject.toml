@@ -208,5 +208,5 @@ baseline = 'pydoclint-baseline.txt'
 auto-generate-baseline = 'True'
 
 [tool.pytest.ini_options]
-addopts = "--doctest-modules src"
+addopts = "--doctest-modules src tests --ignore=tests/e2e"
 doctest_optionflags = "NORMALIZE_WHITESPACE ELLIPSIS IGNORE_EXCEPTION_DETAIL"
