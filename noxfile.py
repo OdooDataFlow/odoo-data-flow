@@ -201,6 +201,7 @@ def coverage(session: nox.Session) -> None:
         "rich",
         "polars",
         "click",
+        "odoo-client-lib @ git+https://github.com/odoo/odoo-client-lib.git@refs/pull/5/head",
     )
     session.install("-e", ".")
     session.log("Running pytest with coverage...")
