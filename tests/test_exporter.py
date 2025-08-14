@@ -20,7 +20,12 @@ def test_run_export_success(
 ) -> None:
     """Tests the main `run_export` function in a success scenario."""
     # 1. Setup
-    mock_export_data.return_value = (True, "session-123", 2, pl.DataFrame({"id": [1, 2]}))
+    mock_export_data.return_value = (
+        True,
+        "session-123",
+        2,
+        pl.DataFrame({"id": [1, 2]}),
+    )
 
     # 2. Action
     run_export(
@@ -194,7 +199,7 @@ def test_export_pre_casting_handles_string_booleans() -> None:
         ]
         cleaned_df = cleaned_df.with_columns(conversion_exprs)
 
-    casted_df = cleaned_df.cast(polars_schema, strict=False)
+    casted_df = cleaned_df.cast(polars_schema, strict=False)  # type: ignore[arg-type]
 
     # 3. Assertion: Verify the final DataFrame has the correct data and type.
     expected = pl.DataFrame(
@@ -270,7 +275,12 @@ def test_run_export_success_with_dataframe(
     mock_show_success_panel: MagicMock, mock_export_data: MagicMock
 ) -> None:
     """Tests the main `run_export` function in a success scenario with a dataframe."""
-    mock_export_data.return_value = (True, "session-123", 2, pl.DataFrame({"id": [1, 2]}))
+    mock_export_data.return_value = (
+        True,
+        "session-123",
+        2,
+        pl.DataFrame({"id": [1, 2]}),
+    )
     run_export(
         config="dummy.conf",
         model="res.partner",

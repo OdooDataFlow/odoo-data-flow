@@ -196,10 +196,21 @@ def bool_val(
 ) -> MapperFunc:
     """Returns a mapper that converts a field value to a boolean '1' or '0'.
 
-    - field: The source column to check.
-    - true_values: A list of strings that should be considered `True`.
-    - false_values: A list of strings that should be considered `False`.
-    - default: The default boolean value to return if no other condition is met.
+    The logic is as follows:
+    1. If `true_values` is provided, any value in that list is considered True.
+    2. If `false_values` is provided, any value in that list is considered False.
+    3. If the value is not in either list, the truthiness of the value itself
+       is used, unless `default` is set.
+    4. If no lists are provided, the truthiness of the value is used.
+
+    Args:
+        field: The source column to check.
+        true_values: A list of strings that should be considered `True`.
+        false_values: A list of strings that should be considered `False`.
+        default: The default boolean value to return if no other condition is met.
+
+    Returns:
+        A mapper function that returns "1" or "0".
     """
     true_vals = true_values or []
     false_vals = false_values or []

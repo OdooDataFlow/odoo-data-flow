@@ -164,8 +164,12 @@ class RPCThreadExport(RpcThread):
                 "splitting the batch and retrying."
             )
             mid_point = len(ids_to_export) // 2
-            results_a, ids_a = self._execute_batch(ids_to_export[:mid_point], f"{num}-a")
-            results_b, ids_b = self._execute_batch(ids_to_export[mid_point:], f"{num}-b")
+            results_a, ids_a = self._execute_batch(
+                ids_to_export[:mid_point], f"{num}-a"
+            )
+            results_b, ids_b = self._execute_batch(
+                ids_to_export[mid_point:], f"{num}-b"
+            )
             return results_a + results_b, ids_a + ids_b
         else:
             log.error(
@@ -204,7 +208,9 @@ class RPCThreadExport(RpcThread):
                 exported_data = self.model.export_data(
                     ids_to_export, self.header, context=self.context
                 ).get("datas", [])
-                return [dict(zip(self.header, row)) for row in exported_data], ids_to_export
+                return [
+                    dict(zip(self.header, row)) for row in exported_data
+                ], ids_to_export
 
             for field in self.header:
                 base_field = field.split("/")[0].replace(".id", "id")
@@ -258,8 +264,12 @@ class RPCThreadExport(RpcThread):
                     f"MemoryError. Splitting and retrying..."
                 )
                 mid_point = len(ids_to_export) // 2
-                results_a, ids_a = self._execute_batch(ids_to_export[:mid_point], f"{num}-a")
-                results_b, ids_b = self._execute_batch(ids_to_export[mid_point:], f"{num}-b")
+                results_a, ids_a = self._execute_batch(
+                    ids_to_export[:mid_point], f"{num}-a"
+                )
+                results_b, ids_b = self._execute_batch(
+                    ids_to_export[mid_point:], f"{num}-b"
+                )
                 return results_a + results_b, ids_a + ids_b
             else:
                 log.error(
@@ -477,9 +487,7 @@ def _process_export_batches(  # noqa: C901
                                 )
                             header_written = True
                         else:
-                            with open(
-                                output, "a", newline="", encoding=encoding
-                            ) as f:
+                            with open(output, "a", newline="", encoding=encoding) as f:
                                 final_batch_df.write_csv(
                                     f, separator=separator, include_header=False
                                 )
@@ -601,6 +609,59 @@ def _determine_export_strategy(
     return connection, model_obj, fields_info, force_read_method, is_hybrid
 
 
+def _resume_existing_session(
+    session_dir: Path, session_id: str
+) -> tuple[list[int], int]:
+    """Resumes an existing export session by loading completed IDs."""
+    log.info(f"Resuming export session: {session_id}")
+    all_ids_file = session_dir / "all_ids.json"
+    if not all_ids_file.exists():
+        log.error(
+            f"Session file 'all_ids.json' not found in {session_dir}. "
+            "Cannot resume. Please start a new export."
+        )
+        return [], 0
+
+    with all_ids_file.open("r") as f:
+        all_ids = set(json.load(f))
+
+    completed_ids_file = session_dir / "completed_ids.txt"
+    completed_ids: set[int] = set()
+    if completed_ids_file.exists():
+        with completed_ids_file.open("r") as f:
+            completed_ids = {int(line.strip()) for line in f if line.strip()}
+
+    ids_to_export = list(all_ids - completed_ids)
+    total_record_count = len(all_ids)
+
+    log.info(
+        f"{len(completed_ids)} of {total_record_count} records already "
+        f"exported. Fetching remaining {len(ids_to_export)} records."
+    )
+    return ids_to_export, total_record_count
+
+
+def _create_new_session(
+    model_obj: Any,
+    domain: list[Any],
+    context: Optional[dict[str, Any]],
+    session_id: str,
+    session_dir: Path,
+) -> tuple[list[int], int]:
+    """Creates a new export session and fetches initial record IDs."""
+    log.info(f"Starting new export session: {session_id}")
+    log.info(f"Searching for records to export in model '{model_obj.model_name}'...")
+    ids = model_obj.search(domain, context=context)
+    total_record_count = len(ids)
+
+    all_ids_file = session_dir / "all_ids.json"
+    with all_ids_file.open("w") as f:
+        json.dump(ids, f)
+    (session_dir / "completed_ids.txt").touch()
+
+    return ids, total_record_count
+
+
 def export_data(
     config_file: str,
     model: str,
@@ -617,26 +678,14 @@ def export_data(
     resume_session: Optional[str] = None,
 ) -> tuple[bool, Optional[str], int, Optional[pl.DataFrame]]:
     """Exports data from an Odoo model, with support for resumable sessions."""
-    # --- Session Initialization ---
-    is_resuming = bool(resume_session)
-    if is_resuming:
-        session_id: Optional[str] = resume_session
-    else:
-        # Generate a new session ID if one isn't provided.
-        session_id = cache.generate_session_id(model, domain, header)
-
-    session_dir = cache.get_session_dir(cast(str, session_id))
+    session_id = resume_session or cache.generate_session_id(model, domain, header)
+    session_dir = cache.get_session_dir(session_id)
     if not session_dir:
         return False, session_id, 0, None
 
-    all_ids_file = session_dir / "all_ids.json"
-    completed_ids_file = session_dir / "completed_ids.txt"
-
-    # --- Determine IDs to Export ---
     connection, model_obj, fields_info, force_read_method, is_hybrid = (
         _determine_export_strategy(config_file, model, header, technical_names)
     )
-
     if not connection or not model_obj or not fields_info:
         return False, session_id, 0, None
 
@@ -644,60 +693,25 @@ def export_data(
         log.error("Streaming mode requires an output file path. Aborting.")
         return False, session_id, 0, None
 
-    total_record_count = 0
-    ids_to_export: list[int] = []
-
+    is_resuming = bool(resume_session)
     if is_resuming:
-        log.info(f"Resuming export session: {session_id}")
-        if not all_ids_file.exists():
-            log.error(
-                f"Session file 'all_ids.json' not found in {session_dir}. "
-                "Cannot resume. Please start a new export."
-            )
-            return False, session_id, 0, None
-
-        with all_ids_file.open("r") as f:
-            all_ids = set(json.load(f))
-
-        completed_ids: set[int] = set()
-        if completed_ids_file.exists():
-            with completed_ids_file.open("r") as f:
-                completed_ids = {int(line.strip()) for line in f if line.strip()}
-
-        ids_to_export = list(all_ids - completed_ids)
-        total_record_count = len(all_ids)
-
-        log.info(
-            f"{len(completed_ids)} of {total_record_count} records already "
-            f"exported. Fetching remaining {len(ids_to_export)} records."
+        ids_to_export, total_record_count = _resume_existing_session(
+            session_dir, session_id
         )
-        if not ids_to_export:
-            log.info("All records have already been exported. Nothing to do.")
-            empty_df = pl.DataFrame(schema=header)
-            return True, session_id, total_record_count, empty_df
     else:
-        log.info(f"Starting new export session: {session_id}")
-        log.info(
-            f"Searching for records to export in model '{model}' with domain: \n{domain}"
+        ids_to_export, total_record_count = _create_new_session(
+            model_obj, domain, context, session_id, session_dir
         )
-        ids = model_obj.search(domain, context=context)
-        total_record_count = len(ids)
-        ids_to_export = ids
 
-        with all_ids_file.open("w") as f:
-            json.dump(ids, f)
-        completed_ids_file.touch()
-
-        if not ids:
-            log.warning("No records found for the given domain.")
-            if output and not Path(output).exists():
-                pl.DataFrame(schema=header).write_csv(output, separator=separator)
+    if not ids_to_export:
+        log.info("All records have already been exported. Nothing to do.")
+        if output and not Path(output).exists():
+            pl.DataFrame(schema=header).write_csv(output, separator=separator)
+        if not is_resuming:
             shutil.rmtree(session_dir)
-            return True, session_id, 0, pl.DataFrame(schema=header)
+        return True, session_id, total_record_count, pl.DataFrame(schema=header)
 
-    log.info(
-        f"Processing {len(ids_to_export)} records in batches of {batch_size}."
-    )
+    log.info(f"Processing {len(ids_to_export)} records in batches of {batch_size}.")
     id_batches = list(batch(ids_to_export, batch_size))
 
     rpc_thread = RPCThreadExport(
@@ -728,17 +742,10 @@ def export_data(
 
     # --- Finalization and Cleanup ---
     success = not rpc_thread.has_failures
-    if success and output:
-        # If the export was a fresh, successful run, clean up.
-        if not is_resuming:
-            log.info("Export complete, cleaning up session directory.")
-            shutil.rmtree(session_dir)
-        else:
-            # If a resumed job finished, we can also clean up.
-            log.info("Resumed export complete, cleaning up session directory.")
-            shutil.rmtree(session_dir)
-
-    elif not success:
+    if success:
+        log.info("Export complete, cleaning up session directory.")
+        shutil.rmtree(session_dir)
+    else:
         log.error(f"Export failed. Session data retained in: {session_dir}")
 
     return success, session_id, total_record_count, final_df

@@ -218,7 +218,9 @@ class TestRPCThreadWrite:
     def test_execute_batch_json_decode_error(self) -> None:
         """Tests graceful handling of a JSONDecodeError."""
         mock_model = MagicMock()
-        mock_model.write.side_effect = httpx.DecodingError("Expecting value", request=None)
+        mock_model.write.side_effect = httpx.DecodingError(
+            "Expecting value", request=None
+        )
         header = ["id", "active"]
         lines = [["101", "False"]]
         rpc_thread = RPCThreadWrite(1, mock_model, header)

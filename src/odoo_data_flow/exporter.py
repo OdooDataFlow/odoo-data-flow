@@ -88,9 +88,11 @@ def run_export(
 
     if success:
         base_message = (
-            f"Successfully streamed {record_count} records to [bold cyan]{output}[/bold cyan]."
+            f"Successfully streamed {record_count} records to "
+            f"[bold cyan]{output}[/bold cyan]."
             if streaming
-            else f"Successfully exported {record_count} records to [bold cyan]{output}[/bold cyan]."
+            else f"Successfully exported {record_count} records to "
+            f"[bold cyan]{output}[/bold cyan]."
         )
 
         # --- Record Count Validation ---
@@ -98,29 +100,33 @@ def run_export(
             try:
                 actual_count = len(pl.read_csv(output, separator=separator))
                 if actual_count == record_count:
-                    final_message = f"{base_message}\n[green]Record count verified.[/green]"
+                    final_message = (
+                        f"{base_message}\n[green]Record count verified.[/green]"
+                    )
                     _show_success_panel(final_message)
                 else:
                     warning_message = (
                         f"{base_message}\n\n"
-                        f"[bold yellow]Warning:[/bold yellow] Record count mismatch detected.\n"
+                        "[bold yellow]Warning:[/bold yellow] "
+                        "Record count mismatch detected.\n"
                         f" - Expected: {record_count} records\n"
                         f" - Found:    {actual_count} records in the output file."
                     )
                     _show_error_panel("Count Validation Warning", warning_message)
             except Exception as e:
                 log.warning(f"Could not validate record count in {output}: {e}")
-                _show_success_panel(base_message)  # Show original message if validation fails
+                _show_success_panel(
+                    base_message
+                )  # Show original message if validation fails
         else:
             _show_success_panel(base_message)
     else:
-        error_message = (
-            "The export process failed. Please check the logs for details."
-        )
+        error_message = "The export process failed. Please check the logs for details."
         if session_id:
             error_message += (
-                f"\n\nThis export was running under session ID: [bold]{session_id}[/bold]"
-                f"\nTo resume this job, add the following flag to your command:"
+                f"\n\nThis export was running under session ID: "
+                f"[bold]{session_id}[/bold]"
+                "\nTo resume this job, add the following flag to your command:"
                 f"\n[bold cyan]--resume-session {session_id}[/bold cyan]"
             )
         _show_error_panel(

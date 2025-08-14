@@ -135,10 +135,7 @@ def load_fields_get_cache(config_file: str, model: str) -> Optional[dict[str, An
         return None
 
 
-from typing import List
-
-
-def generate_session_id(model: str, domain: List[Any], fields: List[Any]) -> str:
+def generate_session_id(model: str, domain: list[Any], fields: list[Any]) -> str:
     """Generates a unique session ID for an export job.
 
     Args:

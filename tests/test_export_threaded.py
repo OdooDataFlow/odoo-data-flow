@@ -4,9 +4,9 @@ from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import httpx
 import polars as pl
 import pytest
-import httpx
 from polars.testing import assert_frame_equal
 
 from odoo_data_flow.export_threaded import (
@@ -147,7 +147,9 @@ class TestRPCThreadExport:
         # 1. Setup
         mock_model = MagicMock()
         mock_connection = MagicMock()
-        mock_model.read.side_effect = httpx.DecodingError("Expecting value", request=None)
+        mock_model.read.side_effect = httpx.DecodingError(
+            "Expecting value", request=None
+        )
         fields_info = {"id": {"type": "integer"}}
         thread = RPCThreadExport(
             1,
@@ -571,7 +573,16 @@ class TestExportData:
         mock_rpc_thread.futures = [mock_future]
 
         result = _process_export_batches(
-            mock_rpc_thread, 1, "res.partner", None, {}, ";", False, None, False, "utf-8"
+            mock_rpc_thread,
+            1,
+            "res.partner",
+            None,
+            {},
+            ";",
+            False,
+            None,
+            False,
+            "utf-8",
         )
         if result is not None:
             assert result.is_empty()
@@ -588,7 +599,16 @@ class TestExportData:
         mock_rpc_thread.futures = [mock_future]
 
         result = _process_export_batches(
-            mock_rpc_thread, 1, "res.partner", None, {}, ";", False, None, False, "utf-8"
+            mock_rpc_thread,
+            1,
+            "res.partner",
+            None,
+            {},
+            ";",
+            False,
+            None,
+            False,
+            "utf-8",
         )
         if result is not None:
             assert result.is_empty()
@@ -830,7 +850,10 @@ class TestExportData:
 
         # FIX: Mock the result that the processing loop will receive
         mock_future = MagicMock()
-        mock_future.result.return_value = ([{"name": "Test Record", "state": "done", "id": 1}], [1])
+        mock_future.result.return_value = (
+            [{"name": "Test Record", "state": "done", "id": 1}],
+            [1],
+        )
         mock_as_completed.return_value = [mock_future]
 
         # --- Act ---
