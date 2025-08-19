@@ -19,7 +19,11 @@ html_theme = "shibuya"
 # The name of an image file (relative to this directory) to place at the top
 # of the sidebar.
 #
-html_logo = "_static/icon.png"
+# html_logo = "_static/icon.png"
+html_logo = "odoo-data-flow_docs-header.png"  # place in docs/_static and set html_static_path = ["_static"]
+html_favicon = (
+    "odoo-data-flow_favicon.svg"  # or 64/128/512 depending on your preference
+)
 
 
 # The name of an image file (relative to this directory) to use as a favicon of
@@ -50,3 +54,5 @@ def setup(app: Sphinx) -> None:
     # The sphinx-mermaid extension is not compatible with the LaTeX builder,
     # so we remove it from the extensions list only when building for PDF.
     app.connect("builder-inited", on_builder_inited)
+    app.add_css_file("custom.css")
+    app.add_css_file("branding.css")

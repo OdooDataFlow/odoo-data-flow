@@ -1,0 +1,37 @@
+:root {
+    --color-brass: #b08d57; /* gradient start */
+    --color-brass-dark: #8b6a3a; /* gradient end */
+    --color-teal: #008080;
+    --color-teal-light: #20b2aa;
+
+    /* Derived */
+    --color-dataflow-gold: linear-gradient(
+        135deg,
+        var(--color-brass),
+        var(--color-brass-dark)
+    );
+    --color-dataflow-blue: linear-gradient(
+        135deg,
+        var(--color-teal),
+        var(--color-teal-light)
+    );
+}
+
+/* Logo sizing in header */
+.shibuya-logo img {
+    max-height: 40px;
+    width: auto;
+}
+
+/* Favicon ensures spacing */
+.shibuya-favicon {
+    margin-right: 8px;
+}
+
+/* Hero/banner if used in index.rst */
+.docs-hero {
+    width: 100%;
+    max-width: 960px;
+    margin: 0 auto 2rem auto;
+    display: block;
+}

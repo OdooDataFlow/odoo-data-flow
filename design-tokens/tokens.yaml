@@ -1,0 +1,42 @@
+odoo_data_flow:
+  colors:
+    primary:
+      plum: "#714B67"
+      teal: "#1B9AAA"
+      brass:
+        base: "#C5A46D"
+        light: "#E6C97B"
+        gradient: "linear-gradient(135deg, #C5A46D, #E6C97B)"
+      gray:
+        light: "#F8F6F4"
+        neutral: "#F4F2EE"
+        dark: "#333333"
+    text:
+      default: "#333333"
+      heading: "#714B67"
+      link: "#1B9AAA"
+      link_hover: "#C5A46D"
+
+  typography:
+    font_family:
+      primary: "'Nunito', 'Open Sans', sans-serif"
+      code: "'Fira Code', monospace"
+    sizes:
+      h1: "2.25rem"
+      h2: "1.75rem"
+      h3: "1.5rem"
+      body: "1rem"
+      small: "0.875rem"
+    weights:
+      regular: 400
+      medium: 500
+      bold: 700
+
+  shadows:
+    soft: "0 2px 6px rgba(0,0,0,0.1)"
+    medium: "0 4px 12px rgba(0,0,0,0.15)"
+
+  border_radius:
+    small: "6px"
+    medium: "12px"
+    large: "20px"

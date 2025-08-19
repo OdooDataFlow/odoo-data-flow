@@ -1,0 +1,52 @@
+/* Background & text */
+body {
+    background-color: #f8f6f4;
+    color: #333333;
+    font-family: "Nunito", "Open Sans", sans-serif;
+}
+
+/* Headings */
+h1,
+h2,
+h3,
+h4,
+h5 {
+    color: #714b67;
+    font-weight: 700;
+}
+
+/* Links */
+a {
+    color: #1b9aaa;
+}
+a:hover {
+    color: #c5a46d;
+}
+
+/* Sidebar */
+.sidebar,
+.toc {
+    background-color: #f4f2ee;
+}
+
+/* Code blocks */
+code,
+pre {
+    background-color: #eee;
+    border-radius: 6px;
+    font-size: 90%;
+}
+.highlight .k {
+    color: #1b9aaa;
+} /* keywords teal */
+.highlight .n {
+    color: #c5a46d;
+} /* names brass */
+
+/* Footer */
+footer {
+    background-color: #714b67;
+    color: #f8f6f4;
+    padding: 1em;
+    text-align: center;
+}

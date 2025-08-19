@@ -1,0 +1,10 @@
+{
+  "devDependencies": {
+    "style-dictionary": "^5.0.1"
+  },
+  "scripts": {
+    "tokens:build": "style-dictionary build",
+    "tokens:watch": "style-dictionary build --watch",
+    "tokens:clean": "rimraf build/"
+  }
+}
