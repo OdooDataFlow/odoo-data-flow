@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Odoo Data Flow Branding Preview</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              odoo: {
+                purple: "#714B67",
+                teal: "#008080",
+                brass: "#B08D57",
+              },
+              brassGradient: {
+                start: "#B08D57",
+                mid: "#FFD700",
+                end: "#DAA520",
+              },
+            },
+            fontFamily: {
+              sans: ['"Inter var"', "ui-sans-serif", "system-ui", "sans-serif"],
+              heading: [
+                '"Poppins"',
+                "ui-sans-serif",
+                "system-ui",
+                "sans-serif",
+              ],
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      .bg-brass-gradient {
+        background: linear-gradient(
+          90deg,
+          #b08d57 0%,
+          #ffd700 50%,
+          #daa520 100%
+        );
+      }
+    </style>
+  </head>
+  <body class="bg-gray-50 font-sans text-gray-900">
+    <header class="bg-brass-gradient p-6 text-white rounded-b-2xl shadow-lg">
+      <h1 class="font-heading text-4xl">Odoo Data Flow</h1>
+      <p class="text-lg">
+        The high-performance data synchronization and transformation platform
+        for Odoo.
+      </p>
+    </header>
+
+    <main class="p-6 prose max-w-none">
+      <h2>Brand Colors</h2>
+      <div class="flex gap-4">
+        <div class="w-24 h-24 bg-odoo-purple rounded shadow"></div>
+        <div class="w-24 h-24 bg-odoo-teal rounded shadow"></div>
+        <div class="w-24 h-24 bg-odoo-brass rounded shadow"></div>
+        <div class="w-24 h-24 bg-brass-gradient rounded shadow"></div>
+      </div>
+
+      <h2>Typography</h2>
+      <h3 class="font-heading">Heading Example (Poppins)</h3>
+      <p>
+        This is a paragraph using the default sans font stack (<em>Inter var</em
+        >). Tailwind’s typography plugin will also style this block when you use
+        `.prose` in docs.
+      </p>
+
+      <h2>Buttons</h2>
+      <div class="flex gap-4">
+        <button
+          class="px-4 py-2 rounded-xl bg-odoo-teal text-white shadow hover:bg-teal-700"
+        >
+          Primary
+        </button>
+        <button
+          class="px-4 py-2 rounded-xl bg-odoo-brass text-white shadow hover:bg-yellow-700"
+        >
+          Secondary
+        </button>
+      </div>
+    </main>
+  </body>
+</html>

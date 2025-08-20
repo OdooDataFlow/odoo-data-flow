@@ -1,56 +1,43 @@
+// tailwind.config.js
+import typography from "@tailwindcss/typography";
+
 /** @type {import('tailwindcss').Config} */
-module.exports = {
+export default {
   content: [
     "./docs/**/*.{html,js,md}",
-    "./odoo_modules/**/*.{xml,js,scss}",
-    "./src/**/*.{js,ts,jsx,tsx}",
+    "./src/**/*.{html,js,ts,vue,jsx,tsx}",
+    "./odoo/**/*.{xml,js}",
   ],
   theme: {
     extend: {
       colors: {
-        brass: tokens.color.brass.base.value,
-        brassDark: tokens.color.brass.dark.value,
-        teal: tokens.color.teal.base.value,
-        tealLight: tokens.color.teal.light.value,
-      },
-        gray: {
-          light: "#F8F6F4",
-          neutral: "#F4F2EE",
-          dark: "#333333",
+        odoo: {
+          purple: "#714B67",
+          teal: "#008080",
+          brass: "#B08D57",
+        },
+        brassGradient: {
+          start: "#B08D57",
+          mid: "#FFD700",
+          end: "#DAA520",
         },
       },
       fontFamily: {
-        body: tokens.font.body.value.split(","),
-        code: ["Fira Code", "monospace"],
+        sans: ['"Inter var"', "ui-sans-serif", "system-ui", "sans-serif"],
+        heading: ['"Poppins"', "ui-sans-serif", "system-ui", "sans-serif"],
       },
-      fontSize: {
-        h1: "2.25rem", // ~36px
-        h2: "1.75rem", // ~28px
-        h3: "1.5rem", // ~24px
-        body: "1rem", // ~16px
-        small: "0.875rem", // ~14px
-      },
-      fontWeight: {
-        regular: "400",
-        medium: "500",
-        bold: "700",
-      },
-      boxShadow: {
-        soft: "0 2px 6px rgba(0,0,0,0.1)",
-        medium: "0 4px 12px rgba(0,0,0,0.15)",
-      },
-      borderRadius: {
-        sm: "6px",
-        md: "12px",
-        lg: "20px",
-      },
-      gradientColorStops: {
-        brass: {
-          start: "#C5A46D",
-          end: "#E6C97B",
+      container: {
+        center: true,
+        padding: "1rem",
+        screens: {
+          sm: "640px",
+          md: "768px",
+          lg: "1024px",
+          xl: "1280px",
+          "2xl": "1536px",
         },
       },
     },
   },
-  plugins: [],
+  plugins: [typography],
 };
