@@ -190,7 +190,7 @@ def run_import(  # noqa: C901
             parent_column=import_plan["parent_column"],
             encoding=encoding,
         )
-        if sorted_temp_file:
+        if isinstance(sorted_temp_file, str):
             file_to_process = sorted_temp_file
             # Disable deferred fields for this strategy
             deferred_fields = []
@@ -230,7 +230,11 @@ def run_import(  # noqa: C901
             split_by_cols=groupby,
         )
     finally:
-        if sorted_temp_file and os.path.exists(sorted_temp_file):
+        if (
+            sorted_temp_file
+            and sorted_temp_file is not True
+            and os.path.exists(sorted_temp_file)
+        ):
             os.remove(sorted_temp_file)
 
     elapsed = time.time() - start_time

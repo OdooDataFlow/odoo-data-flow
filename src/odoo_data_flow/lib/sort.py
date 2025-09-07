@@ -1,7 +1,7 @@
 """This module provides sorting strategies for CSV data using Polars."""
 
 import tempfile
-from typing import Optional
+from typing import Optional, Union
 
 import polars as pl
 
@@ -10,7 +10,7 @@ from .internal.ui import _show_error_panel
 
 def sort_for_self_referencing(
     file_path: str, id_column: str, parent_column: str, encoding: str = "utf-8"
-) -> Optional[str]:
+) -> Optional[Union[str, bool]]:
     """Sorts a CSV file for self-referencing hierarchies.
 
     This function reads a CSV file and checks if it contains a self-referencing
@@ -21,6 +21,7 @@ def sort_for_self_referencing(
 
     The sorted data is written to a new temporary file, and the path to this
     file is returned. If no sorting is needed or possible, it returns None.
+    If there was an error reading the file, it returns False.
 
     Args:
         file_path (str): The path to the source CSV file.
@@ -29,16 +30,17 @@ def sort_for_self_referencing(
         encoding (str): The encoding of the CSV file.
 
     Returns:
-        Optional[str]: The path to the temporary sorted CSV file if sorting
-        was performed, otherwise None.
+        Optional[Union[str, bool]]: The path to the temporary sorted CSV file if sorting
+        was performed, None if no sorting is needed or possible, or False if
+        there was an error reading the file.
     """
     try:
         df = pl.read_csv(file_path, encoding=encoding)
-    except (pl.exceptions.ComputeError, FileNotFoundError) as e:
+    except (FileNotFoundError, pl.exceptions.PolarsError) as e:
         _show_error_panel(
             "File Read Error", f"Could not read the file {file_path}: {e}"
         )
-        return None
+        return False  # Return False to indicate an error occurred
 
     if id_column not in df.columns or parent_column not in df.columns:
         return None

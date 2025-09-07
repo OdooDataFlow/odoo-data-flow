@@ -112,18 +112,26 @@ def self_referencing_check(
     log.info("Running pre-flight check: Detecting self-referencing hierarchy...")
     # We assume 'id' and 'parent_id' as conventional names.
     # This could be made configurable later if needed.
-    if sort.sort_for_self_referencing(
+    result = sort.sort_for_self_referencing(
         filename, id_column="id", parent_column="parent_id"
-    ):
+    )
+    if result is False:
+        # This means there was an error in sort_for_self_referencing
+        # The error would have been displayed by the function itself
+        return False
+    elif result:
+        # This means sorting was performed and we have a file path
         log.info(
             "Detected self-referencing hierarchy. Planning one-pass sort strategy."
         )
         import_plan["strategy"] = "sort_and_one_pass_load"
         import_plan["id_column"] = "id"
         import_plan["parent_column"] = "parent_id"
+        return True
     else:
+        # result is None, meaning no hierarchy detected
         log.info("No self-referencing hierarchy detected.")
-    return True
+        return True
 
 
 def _get_installed_languages(config: Union[str, dict[str, Any]]) -> Optional[set[str]]:
