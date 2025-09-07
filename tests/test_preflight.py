@@ -398,6 +398,44 @@ class TestDeferralAndStrategyCheck:
             == "direct_relational_import"
         )
 
+    def test_write_tuple_strategy_when_missing_relation_info(
+        self, mock_polars_read_csv: MagicMock, mock_conf_lib: MagicMock
+    ) -> None:
+        """Verify 'write_tuple' is chosen when relation info is missing."""
+        mock_df_header = MagicMock()
+        mock_df_header.columns = ["id", "name", "category_id"]
+
+        # Setup a more robust mock for the chained Polars calls
+        mock_df_data = MagicMock()
+        (
+            mock_df_data.lazy.return_value.select.return_value.select.return_value.sum.return_value.collect.return_value.item.return_value
+        ) = 100
+        mock_polars_read_csv.side_effect = [mock_df_header, mock_df_data]
+
+        mock_model = mock_conf_lib.return_value.get_model.return_value
+        mock_model.fields_get.return_value = {
+            "id": {"type": "integer"},
+            "name": {"type": "char"},
+            "category_id": {
+                "type": "many2many",
+                "relation": "res.partner.category",
+                # Missing relation_table and relation_field
+            },
+        }
+        import_plan: dict[str, Any] = {}
+        result = preflight.deferral_and_strategy_check(
+            preflight_mode=PreflightMode.NORMAL,
+            model="res.partner",
+            filename="file.csv",
+            config="",
+            import_plan=import_plan,
+        )
+        assert result is True
+        assert "category_id" in import_plan["deferred_fields"]
+        assert import_plan["strategies"]["category_id"]["strategy"] == "write_tuple"
+        # Should not have relation_table or relation_field in strategy
+        assert "relation" in import_plan["strategies"]["category_id"]
+
     def test_write_tuple_strategy_for_small_volumes(
         self, mock_polars_read_csv: MagicMock, mock_conf_lib: MagicMock
     ) -> None:

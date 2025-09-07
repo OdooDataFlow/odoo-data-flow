@@ -319,19 +319,31 @@ def _plan_deferrals_and_strategies(
                     .collect()
                     .item()
                 )
-                if relation_count >= 500:
-                    strategies[clean_field_name] = {
-                        "strategy": "direct_relational_import",
-                        "relation_table": field_info["relation_table"],
-                        "relation_field": field_info["relation_field"],
-                        "relation": field_info["relation"],
-                    }
+                # Check if required keys exist for many2many fields
+                relation_table = field_info.get("relation_table")
+                relation_field = field_info.get("relation_field")
+                relation = field_info.get("relation")
+
+                if relation_table and relation_field:
+                    if relation_count >= 500:
+                        strategies[clean_field_name] = {
+                            "strategy": "direct_relational_import",
+                            "relation_table": relation_table,
+                            "relation_field": relation_field,
+                            "relation": relation,
+                        }
+                    else:
+                        strategies[clean_field_name] = {
+                            "strategy": "write_tuple",
+                            "relation_table": relation_table,
+                            "relation_field": relation_field,
+                            "relation": relation,
+                        }
                 else:
+                    # Fallback strategy when relation information is incomplete
                     strategies[clean_field_name] = {
                         "strategy": "write_tuple",
-                        "relation_table": field_info["relation_table"],
-                        "relation_field": field_info["relation_field"],
-                        "relation": field_info["relation"],
+                        "relation": relation,
                     }
             elif is_o2m:
                 deferrable_fields.append(clean_field_name)

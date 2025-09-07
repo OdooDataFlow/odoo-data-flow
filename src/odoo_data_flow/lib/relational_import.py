@@ -107,15 +107,30 @@ def run_direct_relational_import(
         description=f"Pass 2/2: Updating relations for [bold]{field}[/bold]",
     )
     log.info(f"Running 'Direct Relational Import' for field '{field}'...")
-    relational_table = strategy_details["relation_table"]
-    owning_model_fk = strategy_details["relation_field"]
-    related_model_fk = strategy_details["relation"]
+
+    # Check if required keys exist
+    relational_table = strategy_details.get("relation_table")
+    owning_model_fk = strategy_details.get("relation_field")
+    related_model_fk = strategy_details.get("relation")
+
+    # If we don't have the required information, we can't proceed with this strategy
+    if not relational_table or not owning_model_fk:
+        log.error(
+            f"Cannot run direct relational import for field '{field}': "
+            f"Missing relation_table or relation_field in strategy details."
+        )
+        return None
 
     # 1. Prepare the owning model's IDs
     owning_df = pl.DataFrame({"external_id": id_map.keys(), "db_id": id_map.values()})
 
     # 2. Prepare the related model's IDs using the resolver
     all_related_ext_ids = source_df.get_column(field).str.split(",").explode()
+    if related_model_fk is None:
+        log.error(
+            f"Cannot resolve related IDs: Missing relation in strategy details for field '{field}'."
+        )
+        return None
     related_model_df = _resolve_related_ids(
         config, related_model_fk, all_related_ext_ids
     )
@@ -170,15 +185,30 @@ def run_write_tuple_import(
         description=f"Pass 2/2: Updating relations for [bold]{field}[/bold]",
     )
     log.info(f"Running 'Write Tuple' for field '{field}'...")
-    relational_table = strategy_details["relation_table"]
-    owning_model_fk = strategy_details["relation_field"]
-    related_model_fk = strategy_details["relation"]
+
+    # Check if required keys exist
+    relational_table = strategy_details.get("relation_table")
+    owning_model_fk = strategy_details.get("relation_field")
+    related_model_fk = strategy_details.get("relation")
+
+    # If we don't have the required information, we can't proceed with this strategy
+    if not relational_table or not owning_model_fk:
+        log.error(
+            f"Cannot run write tuple import for field '{field}': "
+            f"Missing relation_table or relation_field in strategy details."
+        )
+        return False
 
     # 1. Prepare the owning model's IDs
     owning_df = pl.DataFrame({"external_id": id_map.keys(), "db_id": id_map.values()})
 
     # 2. Prepare the related model's IDs using the resolver
     all_related_ext_ids = source_df.get_column(field).str.split(",").explode()
+    if related_model_fk is None:
+        log.error(
+            f"Cannot resolve related IDs: Missing relation in strategy details for field '{field}'."
+        )
+        return False
     related_model_df = _resolve_related_ids(
         config, related_model_fk, all_related_ext_ids
     )
