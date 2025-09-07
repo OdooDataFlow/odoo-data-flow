@@ -23,6 +23,53 @@ from .internal.ui import _show_error_panel
 PREFLIGHT_CHECKS: list[Callable[..., bool]] = []
 
 
+def _handle_m2m_field(
+    field_name: str,
+    clean_field_name: str,
+    field_info: dict[str, Any],
+    df: pl.DataFrame,
+) -> tuple[bool, dict[str, Any]]:
+    """Handle many2many field processing and strategy selection."""
+    # Ensure the column is treated as string for splitting
+    relation_count = (
+        df.lazy()
+        .select(pl.col(field_name).cast(pl.Utf8).str.split(","))
+        .select(pl.col(field_name).list.len())
+        .sum()
+        .collect()
+        .item()
+    )
+    # Check if required keys exist for many2many fields
+    relation_table = field_info.get("relation_table")
+    relation_field = field_info.get("relation_field")
+    relation = field_info.get("relation")
+
+    strategy_details = {}
+    if relation_table and relation_field:
+        if relation_count >= 500:
+            strategy_details = {
+                "strategy": "direct_relational_import",
+                "relation_table": relation_table,
+                "relation_field": relation_field,
+                "relation": relation,
+            }
+        else:
+            strategy_details = {
+                "strategy": "write_tuple",
+                "relation_table": relation_table,
+                "relation_field": relation_field,
+                "relation": relation,
+            }
+    else:
+        # Fallback strategy when relation information is incomplete
+        strategy_details = {
+            "strategy": "write_tuple",
+            "relation": relation,
+        }
+
+    return True, strategy_details
+
+
 def register_check(func: Callable[..., bool]) -> Callable[..., bool]:
     """A decorator to register a new pre-flight check function."""
     PREFLIGHT_CHECKS.append(func)
@@ -310,41 +357,11 @@ def _plan_deferrals_and_strategies(
                 deferrable_fields.append(clean_field_name)
             elif is_m2m:
                 deferrable_fields.append(clean_field_name)
-                # Ensure the column is treated as string for splitting
-                relation_count = (
-                    df.lazy()
-                    .select(pl.col(field_name).cast(pl.Utf8).str.split(","))
-                    .select(pl.col(field_name).list.len())
-                    .sum()
-                    .collect()
-                    .item()
+                success, strategy_details = _handle_m2m_field(
+                    field_name, clean_field_name, field_info, df
                 )
-                # Check if required keys exist for many2many fields
-                relation_table = field_info.get("relation_table")
-                relation_field = field_info.get("relation_field")
-                relation = field_info.get("relation")
-
-                if relation_table and relation_field:
-                    if relation_count >= 500:
-                        strategies[clean_field_name] = {
-                            "strategy": "direct_relational_import",
-                            "relation_table": relation_table,
-                            "relation_field": relation_field,
-                            "relation": relation,
-                        }
-                    else:
-                        strategies[clean_field_name] = {
-                            "strategy": "write_tuple",
-                            "relation_table": relation_table,
-                            "relation_field": relation_field,
-                            "relation": relation,
-                        }
-                else:
-                    # Fallback strategy when relation information is incomplete
-                    strategies[clean_field_name] = {
-                        "strategy": "write_tuple",
-                        "relation": relation,
-                    }
+                if success:
+                    strategies[clean_field_name] = strategy_details
             elif is_o2m:
                 deferrable_fields.append(clean_field_name)
                 strategies[clean_field_name] = {"strategy": "write_o2m_tuple"}

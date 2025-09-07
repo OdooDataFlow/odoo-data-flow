@@ -128,7 +128,8 @@ def run_direct_relational_import(
     all_related_ext_ids = source_df.get_column(field).str.split(",").explode()
     if related_model_fk is None:
         log.error(
-            f"Cannot resolve related IDs: Missing relation in strategy details for field '{field}'."
+            f"Cannot resolve related IDs: Missing relation in strategy details "
+            f"for field '{field}'."
         )
         return None
     related_model_df = _resolve_related_ids(
@@ -206,7 +207,8 @@ def run_write_tuple_import(
     all_related_ext_ids = source_df.get_column(field).str.split(",").explode()
     if related_model_fk is None:
         log.error(
-            f"Cannot resolve related IDs: Missing relation in strategy details for field '{field}'."
+            f"Cannot resolve related IDs: Missing relation in strategy details "
+            f"for field '{field}'."
         )
         return False
     related_model_df = _resolve_related_ids(
