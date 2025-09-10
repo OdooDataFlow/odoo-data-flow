@@ -14,7 +14,7 @@ def sort_for_self_referencing(
     id_column: str,
     parent_column: str,
     encoding: str = "utf-8",
-    separator: str = ",",
+    separator: str = ";",
 ) -> Optional[Union[str, bool]]:
     """Sorts a CSV file for self-referencing hierarchies.
 
