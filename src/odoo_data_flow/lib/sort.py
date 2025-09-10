@@ -51,18 +51,13 @@ def sort_for_self_referencing(
             truncate_ragged_lines=True,
             infer_schema_length=0,  # Don't infer schema, treat everything as string
         )
-    except FileNotFoundError as e:
+    except (FileNotFoundError, pl.exceptions.NoDataError) as e:
         _show_error_panel(
             "File Read Error", f"Could not read the file {file_path}: {e}"
         )
         return False  # Return False to indicate an error occurred
-    except pl.exceptions.NoDataError as e:
-        _show_error_panel(
-            "File Read Error", f"Could not read the file {file_path}: {e}"
-        )
-        return False  # Return False to indicate an error occurred
-    except Exception as e:
-        # For other errors (like schema validation), we don't want to abort the import
+    except (pl.exceptions.ComputeError, pl.exceptions.ShapeError) as e:
+        # For schema/validation errors, we don't want to abort the import
         # These should be handled by the field validation preflight check
         log.warning(f"Could not fully parse file {file_path} for sorting: {e}")
         return None  # Return None to indicate no sorting needed/possible
