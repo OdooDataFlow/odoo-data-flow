@@ -5,11 +5,16 @@ from typing import Optional, Union
 
 import polars as pl
 
+from ..logging_config import log
 from .internal.ui import _show_error_panel
 
 
 def sort_for_self_referencing(
-    file_path: str, id_column: str, parent_column: str, encoding: str = "utf-8"
+    file_path: str,
+    id_column: str,
+    parent_column: str,
+    encoding: str = "utf-8",
+    separator: str = ",",
 ) -> Optional[Union[str, bool]]:
     """Sorts a CSV file for self-referencing hierarchies.
 
@@ -28,6 +33,7 @@ def sort_for_self_referencing(
         id_column (str): The name of the unique identifier column.
         parent_column (str): The name of the column containing the parent reference.
         encoding (str): The encoding of the CSV file.
+        separator (str): The field separator used in the CSV file.
 
     Returns:
         Optional[Union[str, bool]]: The path to the temporary sorted CSV file if sorting
@@ -35,12 +41,31 @@ def sort_for_self_referencing(
         there was an error reading the file.
     """
     try:
-        df = pl.read_csv(file_path, encoding=encoding)
-    except (FileNotFoundError, pl.exceptions.PolarsError) as e:
+        # For the sort function, we only care about being able to read the file
+        # well enough to detect self-referencing hierarchies. We don't need
+        # to parse all columns perfectly, so we use a very tolerant approach.
+        df = pl.read_csv(
+            file_path,
+            separator=separator,
+            encoding=encoding,
+            truncate_ragged_lines=True,
+            infer_schema_length=0,  # Don't infer schema, treat everything as string
+        )
+    except FileNotFoundError as e:
         _show_error_panel(
             "File Read Error", f"Could not read the file {file_path}: {e}"
         )
         return False  # Return False to indicate an error occurred
+    except pl.exceptions.NoDataError as e:
+        _show_error_panel(
+            "File Read Error", f"Could not read the file {file_path}: {e}"
+        )
+        return False  # Return False to indicate an error occurred
+    except Exception as e:
+        # For other errors (like schema validation), we don't want to abort the import
+        # These should be handled by the field validation preflight check
+        log.warning(f"Could not fully parse file {file_path} for sorting: {e}")
+        return None  # Return None to indicate no sorting needed/possible
 
     if id_column not in df.columns or parent_column not in df.columns:
         return None
@@ -58,9 +83,9 @@ def sort_for_self_referencing(
         pl.col(parent_column).is_null(), parent_column, descending=[True, False]
     )
 
-    # Write to a temporary file
+    # Write to a temporary file with the same separator as the original
     temp_file = tempfile.NamedTemporaryFile(
         mode="w+", delete=False, suffix=".csv", newline=""
     )
-    sorted_df.write_csv(temp_file.name)
+    sorted_df.write_csv(temp_file.name, separator=separator)
     return temp_file.name

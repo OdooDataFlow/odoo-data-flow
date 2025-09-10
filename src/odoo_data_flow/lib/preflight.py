@@ -113,7 +113,10 @@ def self_referencing_check(
     # We assume 'id' and 'parent_id' as conventional names.
     # This could be made configurable later if needed.
     result = sort.sort_for_self_referencing(
-        filename, id_column="id", parent_column="parent_id"
+        filename,
+        id_column="id",
+        parent_column="parent_id",
+        separator=kwargs.get("separator", ";"),
     )
     if result is False:
         # This means there was an error in sort_for_self_referencing

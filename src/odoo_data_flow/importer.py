@@ -189,6 +189,7 @@ def run_import(  # noqa: C901
             id_column=import_plan["id_column"],
             parent_column=import_plan["parent_column"],
             encoding=encoding,
+            separator=separator,
         )
         if isinstance(sorted_temp_file, str):
             file_to_process = sorted_temp_file

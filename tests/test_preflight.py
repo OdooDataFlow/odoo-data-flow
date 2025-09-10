@@ -63,7 +63,7 @@ class TestSelfReferencingCheck:
         assert import_plan["id_column"] == "id"
         assert import_plan["parent_column"] == "parent_id"
         mock_sort.assert_called_once_with(
-            "file.csv", id_column="id", parent_column="parent_id"
+            "file.csv", id_column="id", parent_column="parent_id", separator=";"
         )
 
     @patch("odoo_data_flow.lib.preflight.sort.sort_for_self_referencing")
