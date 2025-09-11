@@ -416,7 +416,29 @@ def _create_batch_individually(
                 error_summary = "Malformed CSV row detected"
             continue
         except Exception as create_error:
+            # Handle JSON-RPC exceptions that contain IndexErrors
+            error_str = str(create_error).lower()
+            
+            # Check if this is a JSON-RPC exception containing an IndexError/tuple index error
+            if "tuple index out of range" in error_str or "indexerror" in error_str:
+                error_message = f"Tuple unpacking error in row {i + 1}: {create_error}"
+                failed_line = [*list(line), error_message]
+                failed_lines.append(failed_line)
+                if "Fell back to create" in error_summary:
+                    error_summary = "Tuple unpacking error detected"
+                continue
+            
+            # Handle other specific error types
             error_message = str(create_error).replace("\n", " | ")
+            
+            # Handle "tuple index out of range" errors specifically
+            if "tuple index out of range" in error_message:
+                error_message = f"Tuple unpacking error in row {i + 1}: {error_message}"
+            
+            # Handle invalid field errors (the new issue we discovered)
+            elif "Invalid field" in error_message and "/id" in error_message:
+                error_message = f"Invalid external ID field detected in row {i + 1}: {error_message}"
+                
             failed_line = [*list(line), error_message]
             failed_lines.append(failed_line)
             if "Fell back to create" in error_summary:
