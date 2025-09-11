@@ -367,7 +367,7 @@ def _create_batch_individually(
             clean_vals = {
                 k: v
                 for k, v in vals.items()
-                if "/" not in k and k.split("/")[0] not in ignore_set
+                if k.split("/")[0] not in ignore_set  # Allow external ID fields through for conversion
             }
 
             # 3. CREATE
