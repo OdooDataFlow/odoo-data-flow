@@ -134,7 +134,7 @@ uv pip install -e .
 
 # 5. Run odoo-data-flow export
 # (Call your tool's CLI)
-./.venv/bin/python3 -m odoo_data_flow export --config conf/connection.conf --output testdata/res_partner.csv --model res.partner --fields id,name,email
+./.venv/bin/python3 -m odoo_data_flow export --connection-file conf/connection.conf --output testdata/res_partner.csv --model res.partner --fields id,name,email
 
 # Update connection.conf for import
 cat << EOF > conf/connection.conf
@@ -149,7 +149,7 @@ protocol = jsonrpc
 EOF
 
 # 6. Run odoo-data-flow import
-./.venv/bin/python3 -m odoo_data_flow import --config conf/connection.conf --file testdata/res_partner.csv
+./.venv/bin/python3 -m odoo_data_flow import --connection-file conf/connection.conf --file testdata/res_partner.csv
 
 # 7. Verify the data
 echo "--- Verifying the data... ---"
