@@ -371,7 +371,43 @@ def _create_batch_individually(
             }
 
             # 3. CREATE
-            new_record = model.create(clean_vals, context=context)
+            # Convert external ID references to actual database IDs before creating
+            converted_vals = {}
+            external_id_fields = []
+            for field_name, field_value in clean_vals.items():
+                # Handle external ID references (e.g., 'parent_id/id' -> 'parent_id')
+                if field_name.endswith('/id'):
+                    external_id_fields.append(field_name)
+                    base_field_name = field_name[:-3]  # Remove '/id' suffix
+                    # Handle empty external ID references
+                    if not field_value:
+                        # Empty external ID means no value for this field
+                        converted_vals[base_field_name] = False
+                        log.debug(f"Converted empty external ID {field_name} -> {base_field_name} (False)")
+                    else:
+                        # Convert external ID to database ID
+                        try:
+                            # Look up the database ID for this external ID
+                            record_ref = model.browse().env.ref(field_value, raise_if_not_found=False)
+                            if record_ref:
+                                converted_vals[base_field_name] = record_ref.id
+                                log.debug(f"Converted external ID {field_name} ({field_value}) -> {base_field_name} ({record_ref.id})")
+                            else:
+                                # If we can't find the external ID, set to False
+                                converted_vals[base_field_name] = False
+                                log.warning(f"Could not find record for external ID '{field_value}', setting {base_field_name} to False")
+                        except Exception as e:
+                            log.warning(f"Error looking up external ID '{field_value}' for field '{field_name}': {e}")
+                            # On error, set to False
+                            converted_vals[base_field_name] = False
+                else:
+                    # Regular field - pass through as-is
+                    converted_vals[field_name] = field_value
+                    
+            log.debug(f"External ID fields found: {external_id_fields}")
+            log.debug(f"Converted vals keys: {list(converted_vals.keys())}")
+                    
+            new_record = model.create(converted_vals, context=context)
             id_map[source_id] = new_record.id
         except IndexError as e:
             error_message = f"Malformed row detected (row {i + 1} in batch): {e}"
