@@ -866,7 +866,7 @@ class TestExportData:
         )
 
         # --- Assert ---
-        init_args, init_kwargs = mock_rpc_thread_class.call_args
+        _init_args, init_kwargs = mock_rpc_thread_class.call_args
         assert init_kwargs.get("technical_names") is True, "Read mode was not triggered"
 
         assert result_df is not None
@@ -916,7 +916,7 @@ class TestExportData:
         )
 
         # --- Assert ---
-        init_args, init_kwargs = mock_rpc_thread_class.call_args
+        _init_args, init_kwargs = mock_rpc_thread_class.call_args
         assert init_kwargs.get("technical_names") is True, "Read mode was not triggered"
 
         assert result_df is not None
