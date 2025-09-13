@@ -67,8 +67,8 @@ def _handle_m2m_field(
             f"in Odoo metadata. This may cause issues with relational import."
         )
         # Fallback strategy when relation information is incomplete
-        # Include whatever information we have, but don't set strategy to write_tuple
-        # since we don't have the required fields for it
+        # Fallback to 'write_tuple' strategy. The import process will later
+        # attempt to derive the missing relational information.
         strategy_details = {
             "strategy": "write_tuple",
             "relation_table": relation_table,
