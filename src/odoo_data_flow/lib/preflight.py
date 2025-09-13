@@ -335,6 +335,56 @@ def _validate_header(
             error_message += f"  - '{field}' is not a valid field on model '{model}'\n"
         _show_error_panel("Invalid Fields Found", error_message)
         return False
+
+    # Check for readonly fields that will be silently ignored
+    readonly_fields = []
+    for field in csv_header:
+        clean_field = field.split("/")[
+            0
+        ]  # Handle external ID fields like 'parent_id/id'
+        if clean_field in odoo_fields:
+            field_info = odoo_fields[clean_field]
+            is_readonly = field_info.get("readonly", False)
+            is_stored = field_info.get(
+                "store", True
+            )  # Default to True for stored fields
+
+            if is_readonly:
+                readonly_fields.append(
+                    {
+                        "field": field,
+                        "stored": is_stored,
+                        "type": field_info.get("type", "unknown"),
+                    }
+                )
+
+    # Warn about readonly fields, especially non-stored ones
+    if readonly_fields:
+        from .internal.ui import _show_warning_panel
+
+        warning_message = (
+            "The following readonly fields will be silently ignored during import:\n"
+        )
+        non_stored_count = 0
+        for field_info in readonly_fields:
+            storage_status = "non-stored" if not field_info["stored"] else "stored"
+            if not field_info["stored"]:
+                non_stored_count += 1
+            warning_message += (
+                f"  - '{field_info['field']}' "
+                f"({storage_status} readonly {field_info['type']})\n"
+            )
+
+        if non_stored_count > 0:
+            warning_message += (
+                f"\n⚠️  {non_stored_count} non-stored readonly "
+                f"fields will be completely ignored!\n"
+            )
+        warning_message += (
+            "\nValues for these fields will be silently discarded during import."
+        )
+        _show_warning_panel("ReadOnly Fields Detected", warning_message)
+
     return True
 
 
@@ -424,7 +474,7 @@ def deferral_and_strategy_check(
         return False
 
     if preflight_mode == PreflightMode.FAIL_MODE:
-        log.info("Pre-flight Check Successful in Fail-Mode.")
+        log.debug("Skipping deferral and strategy check in fail mode.")
         return True
 
     kwargs.pop("separator", None)

@@ -250,7 +250,7 @@ def run_import(  # noqa: C901
                 cache.save_id_map(config, model, id_map)
 
         # --- Pass 2: Relational Strategies ---
-        if import_plan.get("strategies"):
+        if import_plan.get("strategies") and not fail:
             source_df = pl.read_csv(
                 filename, separator=separator, truncate_ragged_lines=True
             )
