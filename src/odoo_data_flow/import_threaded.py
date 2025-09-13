@@ -330,7 +330,7 @@ class RPCThreadImport(RpcThread):
         )
 
 
-def _create_batch_individually(
+def _create_batch_individually(  # noqa: C901
     model: Any,
     batch_lines: list[list[Any]],
     batch_header: list[str],
@@ -367,11 +367,64 @@ def _create_batch_individually(
             clean_vals = {
                 k: v
                 for k, v in vals.items()
-                if "/" not in k and k.split("/")[0] not in ignore_set
+                if k.split("/")[0]
+                not in ignore_set  # Allow external ID fields through for conversion
             }
 
             # 3. CREATE
-            new_record = model.create(clean_vals, context=context)
+            # Convert external ID references to actual database IDs before creating
+            converted_vals = {}
+            external_id_fields = []
+            for field_name, field_value in clean_vals.items():
+                # Handle external ID references (e.g., 'parent_id/id' -> 'parent_id')
+                if field_name.endswith("/id"):
+                    external_id_fields.append(field_name)
+                    base_field_name = field_name[:-3]  # Remove '/id' suffix
+                    # Handle empty external ID references
+                    if not field_value:
+                        # Empty external ID means no value for this field
+                        converted_vals[base_field_name] = False
+                        log.debug(
+                            f"Converted empty external ID {field_name} -> "
+                            f"{base_field_name} (False)"
+                        )
+                    else:
+                        # Convert external ID to database ID
+                        try:
+                            # Look up the database ID for this external ID
+                            record_ref = model.browse().env.ref(
+                                field_value, raise_if_not_found=False
+                            )
+                            if record_ref:
+                                converted_vals[base_field_name] = record_ref.id
+                                log.debug(
+                                    f"Converted external ID {field_name} "
+                                    f"({field_value}) -> {base_field_name} "
+                                    f"({record_ref.id})"
+                                )
+                            else:
+                                # If we can't find the external ID, set to False
+                                converted_vals[base_field_name] = False
+                                log.warning(
+                                    f"Could not find record for external ID "
+                                    f"'{field_value}' setting {base_field_name}"
+                                    f" to False"
+                                )
+                        except Exception as e:
+                            log.warning(
+                                f"Error looking up external ID '{field_value}' "
+                                f"for field '{field_name}': {e}"
+                            )
+                            # On error, set to False
+                            converted_vals[base_field_name] = False
+                else:
+                    # Regular field - pass through as-is
+                    converted_vals[field_name] = field_value
+
+            log.debug(f"External ID fields found: {external_id_fields}")
+            log.debug(f"Converted vals keys: {list(converted_vals.keys())}")
+
+            new_record = model.create(converted_vals, context=context)
             id_map[source_id] = new_record.id
         except IndexError as e:
             error_message = f"Malformed row detected (row {i + 1} in batch): {e}"
@@ -380,7 +433,31 @@ def _create_batch_individually(
                 error_summary = "Malformed CSV row detected"
             continue
         except Exception as create_error:
+            # Handle JSON-RPC exceptions that contain IndexErrors
+            error_str = str(create_error).lower()
+
+            # Check if this is a JSON-RPC exception containing an
+            # IndexError/tuple index error
+            if "tuple index out of range" in error_str or "indexerror" in error_str:
+                error_message = f"Tuple unpacking error in row {i + 1}: {create_error}"
+                failed_line = [*list(line), error_message]
+                failed_lines.append(failed_line)
+                if "Fell back to create" in error_summary:
+                    error_summary = "Tuple unpacking error detected"
+                continue
+
+            # Handle other specific error types
             error_message = str(create_error).replace("\n", " | ")
+
+            # Handle "tuple index out of range" errors specifically
+            if "tuple index out of range" in error_message:
+                error_message = f"Tuple unpacking error in row {i + 1}: {error_message}"
+
+            # Handle invalid field errors (the new issue we discovered)
+            elif "Invalid field" in error_message and "/id" in error_message:
+                error_message = "Invalid external ID field detected in row "
+                f"{i + 1}: {error_message}"
+
             failed_line = [*list(line), error_message]
             failed_lines.append(failed_line)
             if "Fell back to create" in error_summary:
