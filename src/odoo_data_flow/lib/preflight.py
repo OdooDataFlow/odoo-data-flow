@@ -61,9 +61,18 @@ def _handle_m2m_field(
                 "relation": relation,
             }
     else:
+        # Log a warning when relation information is incomplete
+        log.warning(
+            f"Field '{clean_field_name}' is missing relation_table or relation_field "
+            f"in Odoo metadata. This may cause issues with relational import."
+        )
         # Fallback strategy when relation information is incomplete
+        # Include whatever information we have, but don't set strategy to write_tuple
+        # since we don't have the required fields for it
         strategy_details = {
             "strategy": "write_tuple",
+            "relation_table": relation_table,
+            "relation_field": relation_field,
             "relation": relation,
         }
 
