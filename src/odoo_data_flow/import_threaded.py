@@ -983,7 +983,7 @@ def import_data(
         tuple[bool, int]: True if the entire import process completed without any
         critical, process-halting errors, False otherwise.
     """
-    _context, _deferred, _ignore = (
+    context, deferred, ignore = (
         context or {"tracking_disable": True},
         deferred_fields or [],
         ignore or [],
@@ -1042,9 +1042,9 @@ def import_data(
                 header,
                 all_data,
                 unique_id_field,
-                _deferred,
-                _ignore,
-                _context,
+                deferred,
+                ignore,
+                context,
                 fail_writer,
                 fail_handle,
                 max_connection,
@@ -1063,7 +1063,7 @@ def import_data(
             pass_2_successful = True  # Assume success if no Pass 2 is needed.
             updates_made = 0
 
-            if _deferred:
+            if deferred:
                 pass_2_successful, updates_made = _orchestrate_pass_2(
                     progress,
                     model_obj,
@@ -1072,8 +1072,8 @@ def import_data(
                     all_data,
                     unique_id_field,
                     id_map,
-                    _deferred,
-                    _context,
+                    deferred,
+                    context,
                     fail_writer,
                     fail_handle,
                     max_connection,

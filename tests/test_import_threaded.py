@@ -501,7 +501,7 @@ class TestImportThreadedEdgeCases:
         source_file = tmp_path / "source.csv"
         source_file.write_text("name,age\nAlice,30")
         with pytest.raises(
-            ValueError, match="Source file must contain an 'id' column."
+            ValueError, match=r"Source file must contain an 'id' column."
         ):
             _read_data_file(str(source_file), ",", "utf-8", 0)
 
