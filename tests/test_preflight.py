@@ -42,6 +42,13 @@ def mock_cache() -> Generator[MagicMock, None, None]:
         yield mock_cache_module
 
 
+@pytest.fixture
+def mock_show_warning_panel() -> Generator[MagicMock, None, None]:
+    """Fixture to mock _show_warning_panel."""
+    with patch("odoo_data_flow.lib.internal.ui._show_warning_panel") as mock_panel:
+        yield mock_panel
+
+
 class TestSelfReferencingCheck:
     """Tests for the self_referencing_check."""
 
@@ -607,3 +614,94 @@ class TestGetOdooFields:
         mock_show_error_panel.assert_called_once()
         assert "Odoo Connection Error" in mock_show_error_panel.call_args[0][0]
         mock_cache.save_fields_get_cache.assert_not_called()
+
+
+class TestValidateHeader:
+    """Tests for the _validate_header function."""
+
+    def test_validate_header_passes_with_valid_fields(self) -> None:
+        """Verify _validate_header passes with all valid fields."""
+        csv_header = ["id", "name", "email"]
+        odoo_fields = {
+            "id": {"type": "integer"},
+            "name": {"type": "char"},
+            "email": {"type": "char"},
+        }
+
+        result = preflight._validate_header(csv_header, odoo_fields, "res.partner")
+        assert result is True
+
+    def test_validate_header_fails_with_invalid_fields(
+        self, mock_show_error_panel: MagicMock
+    ) -> None:
+        """Verify _validate_header fails and shows error for invalid fields."""
+        csv_header = ["id", "name", "invalid_field"]
+        odoo_fields = {
+            "id": {"type": "integer"},
+            "name": {"type": "char"},
+        }
+
+        result = preflight._validate_header(csv_header, odoo_fields, "res.partner")
+        assert result is False
+        mock_show_error_panel.assert_called_once()
+        call_args = mock_show_error_panel.call_args
+        assert call_args[0][0] == "Invalid Fields Found"
+        assert "invalid_field" in call_args[0][1]
+
+    def test_validate_header_passes_with_external_id_fields(self) -> None:
+        """Verify _validate_header passes with external ID fields."""
+        csv_header = ["id", "name", "parent_id/id", "category_id/id"]
+        odoo_fields = {
+            "id": {"type": "integer"},
+            "name": {"type": "char"},
+            "parent_id": {"type": "many2one", "relation": "res.partner"},
+            "category_id": {"type": "many2many", "relation": "res.partner.category"},
+        }
+
+        result = preflight._validate_header(csv_header, odoo_fields, "res.partner")
+        assert result is True
+
+    def test_validate_header_warns_about_readonly_fields(
+        self, mock_show_warning_panel: MagicMock
+    ) -> None:
+        """Verify _validate_header warns about readonly fields."""
+        csv_header = ["id", "name", "display_name"]
+        odoo_fields = {
+            "id": {"type": "integer", "readonly": True, "store": True},
+            "name": {"type": "char", "readonly": False, "store": True},
+            "display_name": {"type": "char", "readonly": True, "store": False},
+        }
+
+        result = preflight._validate_header(csv_header, odoo_fields, "res.partner")
+        assert result is True
+        mock_show_warning_panel.assert_called_once()
+        call_args = mock_show_warning_panel.call_args
+        assert call_args[0][0] == "ReadOnly Fields Detected"
+        assert "display_name" in call_args[0][1]
+        assert "non-stored" in call_args[0][1]
+
+    def test_validate_header_warns_about_multiple_readonly_fields(
+        self, mock_show_warning_panel: MagicMock
+    ) -> None:
+        """Verify _validate_header warns about multiple readonly fields."""
+        csv_header = ["id", "name", "display_name", "commercial_company_name"]
+        odoo_fields = {
+            "id": {"type": "integer", "readonly": True, "store": True},
+            "name": {"type": "char", "readonly": False, "store": True},
+            "display_name": {"type": "char", "readonly": True, "store": False},
+            "commercial_company_name": {
+                "type": "char",
+                "readonly": True,
+                "store": True,
+            },
+        }
+
+        result = preflight._validate_header(csv_header, odoo_fields, "res.partner")
+        assert result is True
+        mock_show_warning_panel.assert_called_once()
+        call_args = mock_show_warning_panel.call_args
+        assert call_args[0][0] == "ReadOnly Fields Detected"
+        assert "display_name" in call_args[0][1]
+        assert "commercial_company_name" in call_args[0][1]
+        assert "non-stored" in call_args[0][1]
+        assert "1 non-stored readonly" in call_args[0][1]
