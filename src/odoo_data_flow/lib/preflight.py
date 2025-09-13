@@ -17,7 +17,7 @@ from odoo_data_flow.enums import PreflightMode
 from ..logging_config import log
 from . import cache, conf_lib, sort
 from .actions import language_installer
-from .internal.ui import _show_error_panel
+from .internal.ui import _show_error_panel, _show_warning_panel
 
 # A registry to hold all pre-flight check functions
 PREFLIGHT_CHECKS: list[Callable[..., bool]] = []
@@ -360,8 +360,6 @@ def _validate_header(
 
     # Warn about readonly fields, especially non-stored ones
     if readonly_fields:
-        from .internal.ui import _show_warning_panel
-
         warning_message = (
             "The following readonly fields will be silently ignored during import:\n"
         )

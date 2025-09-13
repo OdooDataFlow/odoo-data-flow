@@ -45,7 +45,7 @@ def mock_cache() -> Generator[MagicMock, None, None]:
 @pytest.fixture
 def mock_show_warning_panel() -> Generator[MagicMock, None, None]:
     """Fixture to mock _show_warning_panel."""
-    with patch("odoo_data_flow.lib.internal.ui._show_warning_panel") as mock_panel:
+    with patch("odoo_data_flow.lib.preflight._show_warning_panel") as mock_panel:
         yield mock_panel
 
 
