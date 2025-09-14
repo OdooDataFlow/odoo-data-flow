@@ -335,7 +335,7 @@ def _convert_external_id_field(
     field_name: str,
     field_value: str,
     converted_vals: dict[str, Any],
-) -> list[str]:
+) -> str:
     """Convert an external ID field to a database ID.
 
     Args:
@@ -345,9 +345,8 @@ def _convert_external_id_field(
         converted_vals: Dictionary to store converted values
 
     Returns:
-        List of external ID field names that were processed
+        The external ID field name that was processed.
     """
-    external_id_fields = [field_name]
     base_field_name = field_name[:-3]  # Remove '/id' suffix
 
     # Handle empty external ID references
@@ -383,7 +382,7 @@ def _convert_external_id_field(
             # On error, set to False
             converted_vals[base_field_name] = False
 
-    return external_id_fields
+    return field_name
 
 
 def _process_external_id_fields(
@@ -408,7 +407,7 @@ def _process_external_id_fields(
             fields = _convert_external_id_field(
                 model, field_name, field_value, converted_vals
             )
-            external_id_fields.extend(fields)
+            external_id_fields.append(fields)
         else:
             # Regular field - pass through as-is
             converted_vals[field_name] = field_value
