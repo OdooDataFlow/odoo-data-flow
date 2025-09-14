@@ -44,7 +44,10 @@ class TestRunImport:
     @patch("odoo_data_flow.importer.import_threaded.import_data")
     @patch("odoo_data_flow.importer._run_preflight_checks")
     def test_run_import_success_path(
-        self, mock_preflight: MagicMock, mock_import_data: MagicMock, tmp_path: Path
+        self,
+        mock_preflight: MagicMock,
+        mock_import_data: MagicMock,
+        tmp_path: Path,
     ) -> None:
         """Test the successful execution path of run_import."""
         # Arrange
@@ -81,7 +84,9 @@ class TestRunImport:
     @patch("odoo_data_flow.importer._infer_model_from_filename")
     @patch("odoo_data_flow.importer._show_error_panel")
     def test_run_import_fails_if_model_not_found(
-        self, mock_show_error: MagicMock, mock_infer_model: MagicMock
+        self,
+        mock_show_error: MagicMock,
+        mock_infer_model: MagicMock,
     ) -> None:
         """Test that the import aborts if no model can be determined."""
         # Arrange
@@ -114,7 +119,9 @@ class TestRunImport:
 
     @patch("odoo_data_flow.importer.import_threaded.import_data")
     def test_import_data_simple_success(
-        self, mock_import_data: MagicMock, tmp_path: Path
+        self,
+        mock_import_data: MagicMock,
+        tmp_path: Path,
     ) -> None:
         """Tests a simple, successful import with no failures."""
         source_file = tmp_path / "source.csv"
@@ -144,7 +151,9 @@ class TestRunImport:
 
     @patch("odoo_data_flow.importer.import_threaded.import_data")
     def test_import_data_two_pass_success(
-        self, mock_import_data: MagicMock, tmp_path: Path
+        self,
+        mock_import_data: MagicMock,
+        tmp_path: Path,
     ) -> None:
         """Tests a successful two-pass import with deferred fields."""
         source_file = tmp_path / "source.csv"
@@ -176,7 +185,9 @@ class TestRunImport:
 @patch("odoo_data_flow.importer.import_threaded.import_data")
 @patch("odoo_data_flow.importer._run_preflight_checks", return_value=False)
 def test_run_import_preflight_fails(
-    mock_preflight: MagicMock, mock_import_data: MagicMock, tmp_path: Path
+    mock_preflight: MagicMock,
+    mock_import_data: MagicMock,
+    tmp_path: Path,
 ) -> None:
     """Test that the import aborts if preflight checks fail."""
     source_file = tmp_path / "source.csv"
@@ -206,7 +217,9 @@ def test_run_import_preflight_fails(
 @patch("odoo_data_flow.importer.import_threaded.import_data")
 @patch("odoo_data_flow.importer._run_preflight_checks", return_value=True)
 def test_run_import_fail_mode(
-    mock_preflight: MagicMock, mock_import_data: MagicMock, tmp_path: Path
+    mock_preflight: MagicMock,
+    mock_import_data: MagicMock,
+    tmp_path: Path,
 ) -> None:
     """Test the fail mode logic."""
     source_file = tmp_path / "source.csv"
@@ -320,3 +333,50 @@ def test_run_import_invalid_context(mock_show_error: MagicMock) -> None:
         groupby=None,
     )
     mock_show_error.assert_called_once()
+
+
+@patch("odoo_data_flow.importer.relational_import.run_direct_relational_import")
+@patch("odoo_data_flow.importer.import_threaded.import_data")
+@patch("odoo_data_flow.importer._run_preflight_checks")
+def test_run_import_fail_mode_with_strategies(
+    mock_preflight: MagicMock,
+    mock_import_data: MagicMock,
+    mock_relational_import: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Test that relational strategies are skipped in fail mode."""
+    source_file = tmp_path / "source.csv"
+    source_file.touch()
+    fail_file = tmp_path / "res_partner_fail.csv"
+    fail_file.write_text("id,name\n1,test")
+
+    def preflight_side_effect(*_args: Any, **kwargs: Any) -> bool:
+        kwargs["import_plan"]["strategies"] = {
+            "field": {"strategy": "direct_relational_import"}
+        }
+        return True
+
+    mock_preflight.side_effect = preflight_side_effect
+    mock_import_data.return_value = (True, {"total_records": 1, "id_map": {"1": 1}})
+
+    run_import(
+        config="dummy.conf",
+        filename=str(source_file),
+        model="res.partner",
+        fail=True,
+        deferred_fields=None,
+        unique_id_field=None,
+        no_preflight_checks=False,
+        headless=True,
+        worker=1,
+        batch_size=100,
+        skip=0,
+        separator=";",
+        ignore=None,
+        context={},
+        encoding="utf-8",
+        o2m=False,
+        groupby=None,
+    )
+    mock_import_data.assert_called_once()
+    mock_relational_import.assert_not_called()
