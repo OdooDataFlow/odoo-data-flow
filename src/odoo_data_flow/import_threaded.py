@@ -434,37 +434,25 @@ def _handle_create_error(
         Tuple of (error_message, failed_lines, error_summary)
     """
     failed_lines = []
+    error_str = str(create_error)
+    error_str_lower = error_str.lower()
 
-    # Handle JSON-RPC exceptions that contain IndexErrors
-    error_str = str(create_error).lower()
-
-    # Check if this is a JSON-RPC exception containing an IndexError/tuple index error
-    if "tuple index out of range" in error_str or "indexerror" in error_str:
+    if "tuple index out of range" in error_str_lower or "indexerror" in error_str_lower:
         error_message = f"Tuple unpacking error in row {i + 1}: {create_error}"
-        failed_line = [*list(line), error_message]
-        failed_lines.append(failed_line)
         if "Fell back to create" in error_summary:
             error_summary = "Tuple unpacking error detected"
-        return error_message, failed_lines, error_summary
+    else:
+        error_message = error_str.replace("\n", " | ")
+        if "invalid field" in error_str_lower and "/id" in error_str_lower:
+            error_message = (
+                f"Invalid external ID field detected in row {i + 1}: {error_message}"
+            )
 
-    # Handle other specific error types
-    error_message = str(create_error).replace("\n", " | ")
-
-    # Handle "tuple index out of range" errors specifically
-    if "tuple index out of range" in error_message:
-        error_message = f"Tuple unpacking error in row {i + 1}: {error_message}"
-
-    # Handle invalid field errors (the new issue we discovered)
-    elif "Invalid field" in error_message and "/id" in error_message:
-        error_message = (
-            f"Invalid external ID field detected in row {i + 1}: {error_message}"
-        )
+        if "Fell back to create" in error_summary:
+            error_summary = error_message
 
     failed_line = [*list(line), error_message]
     failed_lines.append(failed_line)
-    if "Fell back to create" in error_summary:
-        error_summary = error_message
-
     return error_message, failed_lines, error_summary
 
 
@@ -531,8 +519,6 @@ def _create_batch_individually(
                 i, create_error, line, error_summary
             )
             failed_lines.extend(new_failed_lines)
-            if "Fell back to create" in error_summary:
-                error_summary = error_message
     return {
         "id_map": id_map,
         "failed_lines": failed_lines,
