@@ -515,8 +515,6 @@ def _create_batch_individually(
                 i, create_error, line, error_summary
             )
             failed_lines.append(new_failed_line)
-            if "Fell back to create" in error_summary:
-                error_summary = error_message
     return {
         "id_map": id_map,
         "failed_lines": failed_lines,
