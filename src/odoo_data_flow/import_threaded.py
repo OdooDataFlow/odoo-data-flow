@@ -512,11 +512,29 @@ def _create_batch_individually(
             converted_vals, external_id_fields = _process_external_id_fields(
                 model, clean_vals
             )
+            
+            # Log converted values for debugging tuple index errors
+            log.debug(f"Converted vals for record {source_id}: {converted_vals}")
+            for field_name, field_value in converted_vals.items():
+                log.debug(f"  {field_name}: {repr(field_value)} (type: {type(field_value)})")
+            
+            # Validate converted values to prevent tuple index errors
+            validated_vals = {}
+            for field_name, field_value in converted_vals.items():
+                if field_value == "" and ("/id" in field_name or "partner_id" in field_name or "company_id" in field_name or "currency_id" in field_name):
+                    # Convert empty strings to False for related fields
+                    log.debug(f"Converting empty string '{field_value}' for field '{field_name}' to False")
+                    validated_vals[field_name] = False
+                elif field_value is None:
+                    # Skip None values entirely
+                    log.debug(f"Skipping None value for field '{field_name}'")
+                    continue
+                else:
+                    validated_vals[field_name] = field_value
+            
+            log.debug(f"Validated vals for record {source_id}: {validated_vals}")
 
-            log.debug(f"External ID fields found: {external_id_fields}")
-            log.debug(f"Converted vals keys: {list(converted_vals.keys())}")
-
-            new_record = model.create(converted_vals, context=context)
+            new_record = model.create(validated_vals, context=context)
             id_map[source_id] = new_record.id
         except IndexError as e:
             error_message = f"Malformed row detected (row {i + 1} in batch): {e}"
