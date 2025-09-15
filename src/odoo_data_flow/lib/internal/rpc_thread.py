@@ -29,7 +29,6 @@ class RpcThread:
         # Limit the actual number of connections to prevent pool exhaustion
         # This is especially important for Odoo which has connection pool limits
         effective_max_connections = min(max_connection, 4)  # Cap at 4 connections
-
         self.executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=effective_max_connections
         )
