@@ -440,15 +440,22 @@ def _handle_create_error(
         or "too many connections" in error_str_lower
         or "poolerror" in error_str_lower
     ):
-        error_message = f"Database connection pool exhaustion in row {i + 1}: {create_error}"
+        error_message = (
+            f"Database connection pool exhaustion in row {i + 1}: {create_error}"
+        )
         if "Fell back to create" in error_summary:
             error_summary = "Database connection pool exhaustion detected"
     # Handle specific database serialization errors
-    elif "could not serialize access" in error_str_lower or "concurrent update" in error_str_lower:
+    elif (
+        "could not serialize access" in error_str_lower
+        or "concurrent update" in error_str_lower
+    ):
         error_message = f"Database serialization error in row {i + 1}: {create_error}"
         if "Fell back to create" in error_summary:
             error_summary = "Database serialization conflict detected during create"
-    elif "tuple index out of range" in error_str_lower or "indexerror" in error_str_lower:
+    elif (
+        "tuple index out of range" in error_str_lower or "indexerror" in error_str_lower
+    ):
         error_message = f"Tuple unpacking error in row {i + 1}: {create_error}"
         if "Fell back to create" in error_summary:
             error_summary = "Tuple unpacking error detected"
@@ -512,18 +519,27 @@ def _create_batch_individually(
             converted_vals, external_id_fields = _process_external_id_fields(
                 model, clean_vals
             )
-            
+
             # Log converted values for debugging tuple index errors
             log.debug(f"Converted vals for record {source_id}: {converted_vals}")
             for field_name, field_value in converted_vals.items():
-                log.debug(f"  {field_name}: {repr(field_value)} (type: {type(field_value)})")
-            
+                log.debug(
+                    f"  {field_name}: {field_value!r} (type: {type(field_value)})"
+                )
+
             # Validate converted values to prevent tuple index errors
             validated_vals = {}
             for field_name, field_value in converted_vals.items():
-                if field_value == "" and ("/id" in field_name or "partner_id" in field_name or "company_id" in field_name or "currency_id" in field_name):
+                if field_value == "" and (
+                    "/id" in field_name
+                    or "partner_id" in field_name
+                    or "company_id" in field_name
+                    or "currency_id" in field_name
+                ):
                     # Convert empty strings to False for related fields
-                    log.debug(f"Converting empty string '{field_value}' for field '{field_name}' to False")
+                    log.debug(
+                        f"Converting empty string '{field_value}' for field '{field_name}' to False"
+                    )
                     validated_vals[field_name] = False
                 elif field_value is None:
                     # Skip None values entirely
@@ -531,16 +547,20 @@ def _create_batch_individually(
                     continue
                 elif isinstance(field_value, str) and field_value == "":
                     # Convert other empty strings to False as well
-                    log.debug(f"Converting empty string '{field_value}' for field '{field_name}' to False")
+                    log.debug(
+                        f"Converting empty string '{field_value}' for field '{field_name}' to False"
+                    )
                     validated_vals[field_name] = False
                 else:
                     validated_vals[field_name] = field_value
-            
+
             log.debug(f"Validated vals for record {source_id}: {validated_vals}")
-            
+
             # Final safety check - ensure we don't send completely empty dicts
             if not validated_vals:
-                raise ValueError("No valid fields to create record - all values were empty or None")
+                raise ValueError(
+                    "No valid fields to create record - all values were empty or None"
+                )
 
             new_record = model.create(validated_vals, context=context)
             id_map[source_id] = new_record.id
@@ -552,7 +572,7 @@ def _create_batch_individually(
             continue
         except Exception as create_error:
             error_str_lower = str(create_error).lower()
-            
+
             # Special handling for database connection pool exhaustion errors
             if (
                 "connection pool is full" in error_str_lower
@@ -566,9 +586,12 @@ def _create_batch_individually(
                 )
                 # Don't add to failed lines for retryable errors - let the record be processed in next batch
                 continue
-                
+
             # Special handling for database serialization errors in create operations
-            elif "could not serialize access" in error_str_lower or "concurrent update" in error_str_lower:
+            elif (
+                "could not serialize access" in error_str_lower
+                or "concurrent update" in error_str_lower
+            ):
                 # These are retryable errors - log and continue processing other records
                 log.warning(
                     f"Database serialization conflict detected during create for record {source_id}. "
@@ -576,7 +599,7 @@ def _create_batch_individually(
                 )
                 # Don't add to failed lines for retryable errors - let the record be processed in next batch
                 continue
-                
+
             error_message, new_failed_line, error_summary = _handle_create_error(
                 i, create_error, line, error_summary
             )
@@ -634,7 +657,7 @@ def _execute_load_batch(
     aggregated_id_map: dict[str, int] = {}
     aggregated_failed_lines: list[list[Any]] = []
     chunk_size = len(lines_to_process)
-    
+
     # Track retry attempts for serialization errors to prevent infinite retries
     serialization_retry_count = 0
     max_serialization_retries = 3  # Maximum number of retries for serialization errors
@@ -668,7 +691,11 @@ def _execute_load_batch(
                 if i < len(load_header):
                     field_name = load_header[i]
                     # Handle empty values for related fields and other special fields
-                    if value == "" and ("/id" in field_name or "company_id" in field_name or "currency_id" in field_name):
+                    if value == "" and (
+                        "/id" in field_name
+                        or "company_id" in field_name
+                        or "currency_id" in field_name
+                    ):
                         # Convert empty strings to False for related fields to prevent RPC errors
                         processed_line.append(False)
                     elif value == "":
@@ -679,7 +706,7 @@ def _execute_load_batch(
                 else:
                     processed_line.append(value)
             processed_load_lines.append(processed_line)
-        
+
         load_lines = processed_load_lines
 
         if not load_lines:
@@ -702,7 +729,7 @@ def _execute_load_batch(
             }
             aggregated_id_map.update(id_map)
             lines_to_process = lines_to_process[chunk_size:]
-            
+
             # Reset serialization retry counter on successful processing
             serialization_retry_count = 0
 
@@ -717,7 +744,7 @@ def _execute_load_batch(
                 or type(e).__name__ == "ReadTimeout"
             ):
                 log.debug(
-                    f"Ignoring client-side timeout to allow server processing to continue"
+                    "Ignoring client-side timeout to allow server processing to continue"
                 )
                 lines_to_process = lines_to_process[chunk_size:]
                 continue
@@ -730,8 +757,8 @@ def _execute_load_batch(
                 or "poolerror" in error_str.lower()
             ):
                 log.warning(
-                    f"Database connection pool exhaustion detected. "
-                    f"Reducing chunk size and retrying to减轻 server load."
+                    "Database connection pool exhaustion detected. "
+                    "Reducing chunk size and retrying to减轻 server load."
                 )
                 is_scalable_error = True
 
@@ -756,17 +783,23 @@ def _execute_load_batch(
                     f"[yellow]WARN:[/] Batch {batch_number} hit scalable error. "
                     f"Reducing chunk size to {chunk_size} and retrying."
                 )
-                if "could not serialize access" in error_str or "concurrent update" in error_str:
+                if (
+                    "could not serialize access" in error_str
+                    or "concurrent update" in error_str
+                ):
                     progress.console.print(
-                        f"[yellow]INFO:[/] Database serialization conflict detected. "
-                        f"This is often caused by concurrent processes updating the same records. "
-                        f"Retrying with smaller batch size."
+                        "[yellow]INFO:[/] Database serialization conflict detected. "
+                        "This is often caused by concurrent processes updating the same records. "
+                        "Retrying with smaller batch size."
                     )
-                    
+
                     # Add a small delay for serialization conflicts to give other processes time to complete
                     import time
-                    time.sleep(0.1 * serialization_retry_count)  # Exponential backoff: 0.1s, 0.2s, 0.3s
-                    
+
+                    time.sleep(
+                        0.1 * serialization_retry_count
+                    )  # Exponential backoff: 0.1s, 0.2s, 0.3s
+
                     # Track serialization retries to prevent infinite loops
                     serialization_retry_count += 1
                     if serialization_retry_count >= max_serialization_retries:
@@ -790,20 +823,26 @@ def _execute_load_batch(
                             ignore_list,
                         )
                         aggregated_id_map.update(fallback_result.get("id_map", {}))
-                        aggregated_failed_lines.extend(fallback_result.get("failed_lines", []))
+                        aggregated_failed_lines.extend(
+                            fallback_result.get("failed_lines", [])
+                        )
                         lines_to_process = lines_to_process[chunk_size:]
                         serialization_retry_count = 0  # Reset counter for next batch
                         continue
                 continue
 
             clean_error = str(e).strip().replace("\n", " ")
-            
+
             # SPECIAL CASE: Missing required related fields often indicate need for grouping
             # When we get "Missing required value for the field 'Account Holder' (partner_id)"
             # this suggests records should be grouped by partner_id to avoid constraint violations
-            if "missing required value" in clean_error.lower() and "account holder" in clean_error.lower():
+            if (
+                "missing required value" in clean_error.lower()
+                and "account holder" in clean_error.lower()
+            ):
                 # Parse the field name from the error message
                 import re
+
                 field_match = re.search(r"field '([^']+)'", clean_error)
                 if field_match:
                     missing_field = field_match.group(1)
@@ -812,12 +851,14 @@ def _execute_load_batch(
                         f"This often indicates records should be grouped by related fields."
                     )
                     # Suggest grouping if not already enabled
-                    if not hasattr(thread_state.get('config', {}), 'get') or not thread_state['config'].get('split_by_cols'):
+                    if not hasattr(
+                        thread_state.get("config", {}), "get"
+                    ) or not thread_state["config"].get("split_by_cols"):
                         progress.console.print(
                             f"[yellow]TIP:[/] Consider using --groupby '{missing_field}/id' to group "
                             f"records by this related field and avoid constraint violations."
                         )
-            
+
             progress.console.print(
                 f"[yellow]WARN:[/] Batch {batch_number} failed `load` "
                 f"('{clean_error}'). "

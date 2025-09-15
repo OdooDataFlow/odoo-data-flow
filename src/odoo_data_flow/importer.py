@@ -320,7 +320,9 @@ def run_import(  # noqa: C901
                             filename,
                         )
                         if not result:
-                            log.warning(f"Write tuple import failed for field '{field}'. Check logs for details.")
+                            log.warning(
+                                f"Write tuple import failed for field '{field}'. Check logs for details."
+                            )
                     elif strategy_info["strategy"] == "write_o2m_tuple":
                         result = relational_import.run_write_o2m_tuple_import(
                             config,
@@ -336,7 +338,9 @@ def run_import(  # noqa: C901
                             filename,
                         )
                         if not result:
-                            log.warning(f"Write O2M tuple import failed for field '{field}'. Check logs for details.")
+                            log.warning(
+                                f"Write O2M tuple import failed for field '{field}'. Check logs for details."
+                            )
                     progress.update(task_id, advance=1)
 
         log.info(

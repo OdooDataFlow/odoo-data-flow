@@ -196,7 +196,9 @@ def run_direct_relational_import(
 
     # Check if the field exists in the DataFrame
     if field not in source_df.columns:
-        log.error(f"Field '{field}' not found in source DataFrame. Available columns: {source_df.columns}")
+        log.error(
+            f"Field '{field}' not found in source DataFrame. Available columns: {source_df.columns}"
+        )
         return None
 
     # 2. Prepare the related model's IDs using the resolver
@@ -269,14 +271,18 @@ def _prepare_link_dataframe(
 
     # Check if the field exists in the DataFrame
     if field not in source_df.columns:
-        log.error(f"Field '{field}' not found in source DataFrame. Available columns: {source_df.columns}")
+        log.error(
+            f"Field '{field}' not found in source DataFrame. Available columns: {source_df.columns}"
+        )
         # Return an empty DataFrame with the expected schema
-        return pl.DataFrame(schema={
-            "external_id": pl.Utf8,
-            field: pl.Utf8,
-            owning_model_fk: pl.Int64,
-            f"{related_model_fk}/id": pl.Int64
-        })
+        return pl.DataFrame(
+            schema={
+                "external_id": pl.Utf8,
+                field: pl.Utf8,
+                owning_model_fk: pl.Int64,
+                f"{related_model_fk}/id": pl.Int64,
+            }
+        )
 
     # Create the link table DataFrame
     link_df = source_df.select(["id", field]).rename({"id": "external_id"})
@@ -343,7 +349,9 @@ def run_write_tuple_import(
 
     # Check if the field exists in the DataFrame
     if field not in source_df.columns:
-        log.error(f"Field '{field}' not found in source DataFrame. Available columns: {source_df.columns}")
+        log.error(
+            f"Field '{field}' not found in source DataFrame. Available columns: {source_df.columns}"
+        )
         return False
 
     # 2. Prepare the related model's IDs using the resolver
