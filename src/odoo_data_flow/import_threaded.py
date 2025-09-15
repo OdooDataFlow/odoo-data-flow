@@ -334,26 +334,23 @@ def _convert_external_id_field(
     model: Any,
     field_name: str,
     field_value: str,
-    converted_vals: dict[str, Any],
-) -> list[str]:
+) -> tuple[str, Any]:
     """Convert an external ID field to a database ID.
 
     Args:
         model: The Odoo model object
         field_name: The field name (e.g., 'parent_id/id')
         field_value: The external ID value
-        converted_vals: Dictionary to store converted values
 
     Returns:
-        List of external ID field names that were processed
+        Tuple of (base_field_name, converted_value)
     """
-    external_id_fields = [field_name]
     base_field_name = field_name[:-3]  # Remove '/id' suffix
 
     # Handle empty external ID references
     if not field_value:
         # Empty external ID means no value for this field
-        converted_vals[base_field_name] = False
+        converted_value = False
         log.debug(
             f"Converted empty external ID {field_name} -> {base_field_name} (False)"
         )
@@ -363,14 +360,14 @@ def _convert_external_id_field(
             # Look up the database ID for this external ID
             record_ref = model.browse().env.ref(field_value, raise_if_not_found=False)
             if record_ref:
-                converted_vals[base_field_name] = record_ref.id
+                converted_value = record_ref.id
                 log.debug(
                     f"Converted external ID {field_name} ({field_value}) -> "
                     f"{base_field_name} ({record_ref.id})"
                 )
             else:
                 # If we can't find the external ID, set to False
-                converted_vals[base_field_name] = False
+                converted_value = False
                 log.warning(
                     f"Could not find record for external ID '{field_value}', "
                     f"setting {base_field_name} to False"
@@ -381,9 +378,9 @@ def _convert_external_id_field(
                 f"'{field_name}': {e}"
             )
             # On error, set to False
-            converted_vals[base_field_name] = False
+            converted_value = False
 
-    return external_id_fields
+    return base_field_name, converted_value
 
 
 def _process_external_id_fields(
@@ -405,10 +402,13 @@ def _process_external_id_fields(
     for field_name, field_value in clean_vals.items():
         # Handle external ID references (e.g., 'parent_id/id' -> 'parent_id')
         if field_name.endswith("/id"):
-            fields = _convert_external_id_field(
-                model, field_name, field_value, converted_vals
+            # _convert_external_id_field is now a pure function that returns
+            # (base_field_name, converted_value) instead of modifying converted_vals as side effect
+            base_name, value = _convert_external_id_field(
+                model, field_name, field_value
             )
-            external_id_fields.extend(fields)
+            converted_vals[base_name] = value
+            external_id_fields.append(field_name)
         else:
             # Regular field - pass through as-is
             converted_vals[field_name] = field_value
