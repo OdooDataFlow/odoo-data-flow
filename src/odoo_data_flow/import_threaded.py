@@ -346,13 +346,14 @@ def _convert_external_id_field(
         Tuple of (base_field_name, converted_value)
     """
     base_field_name = field_name[:-3]  # Remove '/id' suffix
-    converted_value = False
 
     if not field_value:
         # Empty external ID means no value for this field
+        # Return None to indicate this field should be skipped entirely
         log.debug(
-            f"Converted empty external ID {field_name} -> {base_field_name} (False)"
+            f"Skipping empty external ID field {field_name} -> {base_field_name}"
         )
+        return base_field_name, None
     else:
         # Convert external ID to database ID
         try:
@@ -365,7 +366,8 @@ def _convert_external_id_field(
                     f"{base_field_name} ({record_ref.id})"
                 )
             else:
-                # If we can't find the external ID, value remains False
+                # If we can't find the external ID, set to False
+                converted_value = False
                 log.warning(
                     f"Could not find record for external ID '{field_value}', "
                     f"setting {base_field_name} to False"
@@ -375,7 +377,8 @@ def _convert_external_id_field(
                 f"Error looking up external ID '{field_value}' for field "
                 f"'{field_name}': {e}"
             )
-            # On error, value remains False
+            # On error, set to False
+            converted_value = False
 
     return base_field_name, converted_value
 
@@ -405,8 +408,14 @@ def _process_external_id_fields(
             base_name, value = _convert_external_id_field(
                 model, field_name, field_value
             )
-            converted_vals[base_name] = value
-            external_id_fields.append(field_name)
+            
+            # Only add the field if it has a valid value (skip None values)
+            if value is not None:
+                converted_vals[base_name] = value
+                external_id_fields.append(field_name)
+            else:
+                # Skip empty external ID fields entirely
+                log.debug(f"Skipping empty external ID field: {field_name}")
         else:
             # Regular field - pass through as-is
             converted_vals[field_name] = field_value
