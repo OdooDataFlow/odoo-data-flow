@@ -285,7 +285,7 @@ def run_import(  # noqa: C901
                             )
                             Path(import_details["file_csv"]).unlink()
                     elif strategy_info["strategy"] == "write_tuple":
-                        relational_import.run_write_tuple_import(
+                        result = relational_import.run_write_tuple_import(
                             config,
                             model,
                             field,
@@ -298,8 +298,13 @@ def run_import(  # noqa: C901
                             task_id,
                             filename,
                         )
+                        if not result:
+                            log.warning(
+                                f"Write tuple import failed for field '{field}'. "
+                                "Check logs for details."
+                            )
                     elif strategy_info["strategy"] == "write_o2m_tuple":
-                        relational_import.run_write_o2m_tuple_import(
+                        result = relational_import.run_write_o2m_tuple_import(
                             config,
                             model,
                             field,
@@ -312,6 +317,11 @@ def run_import(  # noqa: C901
                             task_id,
                             filename,
                         )
+                        if not result:
+                            log.warning(
+                                f"Write O2M tuple import failed for field '{field}'. "
+                                "Check logs for details."
+                            )
                     progress.update(task_id, advance=1)
 
         log.info(
