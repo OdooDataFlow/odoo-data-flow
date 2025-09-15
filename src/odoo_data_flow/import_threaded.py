@@ -346,14 +346,13 @@ def _convert_external_id_field(
         Tuple of (base_field_name, converted_value)
     """
     base_field_name = field_name[:-3]  # Remove '/id' suffix
+    converted_value = False
 
     if not field_value:
         # Empty external ID means no value for this field
-        # Return None to indicate this field should be skipped entirely
         log.debug(
-            f"Skipping empty external ID field {field_name} -> {base_field_name}"
+            f"Converted empty external ID {field_name} -> {base_field_name} (False)"
         )
-        return base_field_name, None
     else:
         # Convert external ID to database ID
         try:
@@ -366,8 +365,7 @@ def _convert_external_id_field(
                     f"{base_field_name} ({record_ref.id})"
                 )
             else:
-                # If we can't find the external ID, set to False
-                converted_value = False
+                # If we can't find the external ID, value remains False
                 log.warning(
                     f"Could not find record for external ID '{field_value}', "
                     f"setting {base_field_name} to False"
@@ -377,8 +375,7 @@ def _convert_external_id_field(
                 f"Error looking up external ID '{field_value}' for field "
                 f"'{field_name}': {e}"
             )
-            # On error, set to False
-            converted_value = False
+            # On error, value remains False
 
     return base_field_name, converted_value
 
@@ -408,14 +405,8 @@ def _process_external_id_fields(
             base_name, value = _convert_external_id_field(
                 model, field_name, field_value
             )
-            
-            # Only add the field if it has a valid value (skip None values)
-            if value is not None:
-                converted_vals[base_name] = value
-                external_id_fields.append(field_name)
-            else:
-                # Skip empty external ID fields entirely
-                log.debug(f"Skipping empty external ID field: {field_name}")
+            converted_vals[base_name] = value
+            external_id_fields.append(field_name)
         else:
             # Regular field - pass through as-is
             converted_vals[field_name] = field_value
@@ -640,6 +631,30 @@ def _execute_load_batch(
                 for row in current_chunk
                 if len(row) > max_index
             ]
+
+        # Preprocess load_lines to handle empty values that can cause tuple unpacking errors
+        # Convert empty strings to False for fields that expect boolean values
+        # This prevents "tuple index out of range" errors in Odoo's RPC layer
+        processed_load_lines = []
+        for line in load_lines:
+            processed_line = []
+            for i, value in enumerate(line):
+                if i < len(load_header):
+                    field_name = load_header[i]
+                    # Handle empty values for related fields and other special fields
+                    if value == "" and ("/id" in field_name or "company_id" in field_name or "currency_id" in field_name):
+                        # Convert empty strings to False for related fields to prevent RPC errors
+                        processed_line.append(False)
+                    elif value == "":
+                        # Convert other empty strings to False to prevent RPC errors
+                        processed_line.append(False)
+                    else:
+                        processed_line.append(value)
+                else:
+                    processed_line.append(value)
+            processed_load_lines.append(processed_line)
+        
+        load_lines = processed_load_lines
 
         if not load_lines:
             lines_to_process = lines_to_process[chunk_size:]
