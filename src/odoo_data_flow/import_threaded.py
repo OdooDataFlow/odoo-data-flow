@@ -434,7 +434,12 @@ def _handle_create_error(
     error_str = str(create_error)
     error_str_lower = error_str.lower()
 
-    if "tuple index out of range" in error_str_lower or "indexerror" in error_str_lower:
+    # Handle specific database serialization errors
+    if "could not serialize access" in error_str_lower or "concurrent update" in error_str_lower:
+        error_message = f"Database serialization error in row {i + 1}: {create_error}"
+        if "Fell back to create" in error_summary:
+            error_summary = "Database serialization conflict detected during create"
+    elif "tuple index out of range" in error_str_lower or "indexerror" in error_str_lower:
         error_message = f"Tuple unpacking error in row {i + 1}: {create_error}"
         if "Fell back to create" in error_summary:
             error_summary = "Tuple unpacking error detected"
@@ -511,6 +516,18 @@ def _create_batch_individually(
                 error_summary = "Malformed CSV row detected"
             continue
         except Exception as create_error:
+            error_str_lower = str(create_error).lower()
+            
+            # Special handling for database serialization errors in create operations
+            if "could not serialize access" in error_str_lower or "concurrent update" in error_str_lower:
+                # These are retryable errors - log and continue processing other records
+                log.warning(
+                    f"Database serialization conflict detected during create for record {source_id}. "
+                    f"This is often caused by concurrent processes. Continuing with other records."
+                )
+                # Don't add to failed lines for retryable errors - let the record be processed in next batch
+                continue
+                
             error_message, new_failed_line, error_summary = _handle_create_error(
                 i, create_error, line, error_summary
             )
