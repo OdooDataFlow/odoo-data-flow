@@ -88,6 +88,44 @@ def _resolve_related_ids(
         return None
 
 
+def _derive_missing_relation_info(
+    model: str,
+    field: str,
+    relational_table: Optional[str],
+    owning_model_fk: Optional[str],
+    related_model_fk: Optional[str],
+) -> tuple[Optional[str], Optional[str]]:
+    """Derive missing relation table and field names if possible.
+
+    Args:
+        model: The owning model name
+        field: The field name
+        relational_table: Current relation table name (may be None)
+        owning_model_fk: Current owning model foreign key field name (may be None)
+        related_model_fk: Related model name (needed for derivation)
+
+    Returns:
+        Tuple of (relational_table, owning_model_fk) with derived values
+        where missing, or original values if already present
+    """
+    # Try to derive missing information if possible
+    if (not relational_table or not owning_model_fk) and related_model_fk:
+        # Try to derive the relation table and field names
+        derived_table, derived_field = _derive_relation_info(
+            model, field, related_model_fk
+        )
+
+        # Only use derived values if we were missing them
+        if not relational_table:
+            log.info(f"Deriving relation_table for field '{field}': {derived_table}")
+            relational_table = derived_table
+        if not owning_model_fk:
+            log.info(f"Deriving relation_field for field '{field}': {derived_field}")
+            owning_model_fk = derived_field
+
+    return relational_table, owning_model_fk
+
+
 def _derive_relation_info(
     model: str, field: str, related_model_fk: str
 ) -> tuple[str, str]:
@@ -137,19 +175,9 @@ def run_direct_relational_import(
     related_model_fk = strategy_details.get("relation")
 
     # Try to derive missing information if possible
-    if (not relational_table or not owning_model_fk) and related_model_fk:
-        # Try to derive the relation table and field names
-        derived_table, derived_field = _derive_relation_info(
-            model, field, related_model_fk
-        )
-
-        # Only use derived values if we were missing them
-        if not relational_table:
-            log.info(f"Deriving relation_table for field '{field}': {derived_table}")
-            relational_table = derived_table
-        if not owning_model_fk:
-            log.info(f"Deriving relation_field for field '{field}': {derived_field}")
-            owning_model_fk = derived_field
+    relational_table, owning_model_fk = _derive_missing_relation_info(
+        model, field, relational_table, owning_model_fk, related_model_fk
+    )
 
     # If we don't have the required information, we can't proceed with this strategy
     if not relational_table or not owning_model_fk:
@@ -269,19 +297,9 @@ def run_write_tuple_import(
     related_model_fk = strategy_details.get("relation")
 
     # Try to derive missing information if possible
-    if (not relational_table or not owning_model_fk) and related_model_fk:
-        # Try to derive the relation table and field names
-        derived_table, derived_field = _derive_relation_info(
-            model, field, related_model_fk
-        )
-
-        # Only use derived values if we were missing them
-        if not relational_table:
-            log.info(f"Deriving relation_table for field '{field}': {derived_table}")
-            relational_table = derived_table
-        if not owning_model_fk:
-            log.info(f"Deriving relation_field for field '{field}': {derived_field}")
-            owning_model_fk = derived_field
+    relational_table, owning_model_fk = _derive_missing_relation_info(
+        model, field, relational_table, owning_model_fk, related_model_fk
+    )
 
     # If we still don't have the required information, we can't proceed
     # with this strategy
