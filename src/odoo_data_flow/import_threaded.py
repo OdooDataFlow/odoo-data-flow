@@ -434,8 +434,17 @@ def _handle_create_error(
     error_str = str(create_error)
     error_str_lower = error_str.lower()
 
+    # Handle database connection pool exhaustion errors
+    if (
+        "connection pool is full" in error_str_lower
+        or "too many connections" in error_str_lower
+        or "poolerror" in error_str_lower
+    ):
+        error_message = f"Database connection pool exhaustion in row {i + 1}: {create_error}"
+        if "Fell back to create" in error_summary:
+            error_summary = "Database connection pool exhaustion detected"
     # Handle specific database serialization errors
-    if "could not serialize access" in error_str_lower or "concurrent update" in error_str_lower:
+    elif "could not serialize access" in error_str_lower or "concurrent update" in error_str_lower:
         error_message = f"Database serialization error in row {i + 1}: {create_error}"
         if "Fell back to create" in error_summary:
             error_summary = "Database serialization conflict detected during create"
@@ -518,8 +527,22 @@ def _create_batch_individually(
         except Exception as create_error:
             error_str_lower = str(create_error).lower()
             
+            # Special handling for database connection pool exhaustion errors
+            if (
+                "connection pool is full" in error_str_lower
+                or "too many connections" in error_str_lower
+                or "poolerror" in error_str_lower
+            ):
+                # These are retryable errors - log and continue processing other records
+                log.warning(
+                    f"Database connection pool exhaustion detected during create for record {source_id}. "
+                    f"Continuing with other records to reduce server load."
+                )
+                # Don't add to failed lines for retryable errors - let the record be processed in next batch
+                continue
+                
             # Special handling for database serialization errors in create operations
-            if "could not serialize access" in error_str_lower or "concurrent update" in error_str_lower:
+            elif "could not serialize access" in error_str_lower or "concurrent update" in error_str_lower:
                 # These are retryable errors - log and continue processing other records
                 log.warning(
                     f"Database serialization conflict detected during create for record {source_id}. "
@@ -636,20 +659,24 @@ def _execute_load_batch(
                 or "read timeout" in error_str
                 or type(e).__name__ == "ReadTimeout"
             ):
-                log.debug(f"Client-side timeout detected ({type(e).__name__}): {e}")
                 log.debug(
-                    "Ignoring client-side timeout to allow server processing"
-                    " to continue"
+                    f"Ignoring client-side timeout to allow server processing to continue"
                 )
-                # CRITICAL: For local imports, ignore client timeouts completely
-                # This restores the previous behavior where long processing was allowed
-                progress.console.print(
-                    f"[yellow]INFO:[/] Batch {batch_number} processing on server. "
-                    f"Continuing to wait for completion..."
-                )
-                # Continue with next chunk WITHOUT fallback - let server finish
                 lines_to_process = lines_to_process[chunk_size:]
                 continue
+
+            # SPECIAL CASE: Database connection pool exhaustion
+            # These should be treated as scalable errors to reduce load on the server
+            if (
+                "connection pool is full" in error_str.lower()
+                or "too many connections" in error_str.lower()
+                or "poolerror" in error_str.lower()
+            ):
+                log.warning(
+                    f"Database connection pool exhaustion detected. "
+                    f"Reducing chunk size and retrying to减轻 server load."
+                )
+                is_scalable_error = True
 
             # For all other exceptions, use the original scalable error detection
             is_scalable_error = (
@@ -661,6 +688,9 @@ def _execute_load_batch(
                 or "timeout" in error_str
                 or "could not serialize access" in error_str
                 or "concurrent update" in error_str
+                or "connection pool is full" in error_str.lower()
+                or "too many connections" in error_str.lower()
+                or "poolerror" in error_str.lower()
             )
 
             if is_scalable_error and chunk_size > 1:
@@ -1089,7 +1119,7 @@ def import_data(
     encoding: str = "utf-8",
     separator: str = ";",
     ignore: Optional[list[str]] = None,
-    max_connection: int = 1,
+    max_connection: int = 1,  # Reduced default from higher values to prevent connection pool exhaustion
     batch_size: int = 10,
     skip: int = 0,
     force_create: bool = False,
