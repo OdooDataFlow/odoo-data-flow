@@ -1,7 +1,7 @@
 """RPC Threads.
 
 This module provides a robust, thread-safe mechanism for executing
-RPC calls to Odoo in parallel.
+RPC calls to Odoo in parallel with proper connection pool management.
 """
 
 import concurrent.futures
@@ -14,7 +14,7 @@ class RpcThread:
     """A wrapper around ThreadPoolExecutor to manage parallel RPC calls to Odoo.
 
     This class simplifies running multiple functions concurrently while limiting
-    the number of simultaneous connections to the server.
+    the number of simultaneous connections to the server and managing connection pools.
     """
 
     def __init__(self, max_connection: int) -> None:
@@ -26,10 +26,22 @@ class RpcThread:
         if not isinstance(max_connection, int) or max_connection < 1:
             raise ValueError("max_connection must be a positive integer.")
 
+        # Limit the actual number of connections to prevent pool exhaustion
+        # This is especially important for Odoo which has connection pool limits
+        effective_max_connections = min(max_connection, 4)  # Cap at 4 connections
+
         self.executor = concurrent.futures.ThreadPoolExecutor(
-            max_workers=max_connection
+            max_workers=effective_max_connections
         )
         self.futures: list[concurrent.futures.Future[Any]] = []
+        self.max_connection = max_connection
+        self.effective_max_connections = effective_max_connections
+
+        log.debug(
+            f"Initialized RPC thread pool with requested {max_connection} "
+            f"connections, effectively using {effective_max_connections} "
+            f"to prevent connection pool exhaustion"
+        )
 
     def spawn_thread(
         self,

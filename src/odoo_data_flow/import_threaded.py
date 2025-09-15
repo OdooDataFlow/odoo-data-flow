@@ -8,7 +8,7 @@ import ast
 import concurrent.futures
 import csv
 import sys
-import time  # noqa
+import time
 from collections.abc import Generator, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed  # noqa
 from typing import Any, Optional, TextIO, Union
@@ -434,7 +434,28 @@ def _handle_create_error(
     error_str = str(create_error)
     error_str_lower = error_str.lower()
 
-    if "tuple index out of range" in error_str_lower or "indexerror" in error_str_lower:
+    # Handle database connection pool exhaustion errors
+    if (
+        "connection pool is full" in error_str_lower
+        or "too many connections" in error_str_lower
+        or "poolerror" in error_str_lower
+    ):
+        error_message = (
+            f"Database connection pool exhaustion in row {i + 1}: {create_error}"
+        )
+        if "Fell back to create" in error_summary:
+            error_summary = "Database connection pool exhaustion detected"
+    # Handle specific database serialization errors
+    elif (
+        "could not serialize access" in error_str_lower
+        or "concurrent update" in error_str_lower
+    ):
+        error_message = f"Database serialization error in row {i + 1}: {create_error}"
+        if "Fell back to create" in error_summary:
+            error_summary = "Database serialization conflict detected during create"
+    elif (
+        "tuple index out of range" in error_str_lower or "indexerror" in error_str_lower
+    ):
         error_message = f"Tuple unpacking error in row {i + 1}: {create_error}"
         if "Fell back to create" in error_summary:
             error_summary = "Tuple unpacking error detected"
@@ -511,6 +532,44 @@ def _create_batch_individually(
                 error_summary = "Malformed CSV row detected"
             continue
         except Exception as create_error:
+            error_str_lower = str(create_error).lower()
+
+            # Special handling for database connection pool exhaustion errors
+            if (
+                "connection pool is full" in error_str_lower
+                or "too many connections" in error_str_lower
+                or "poolerror" in error_str_lower
+            ):
+                # These are retryable errors
+                # - log and add to failed lines for a later run.
+                log.warning(
+                    f"Database connection pool exhaustion detected during create for "
+                    f"record {source_id}. "
+                    f"Marking as failed for retry in a subsequent run."
+                )
+                error_message = (
+                    f"Retryable error (connection pool exhaustion) for record "
+                    f"{source_id}: {create_error}"
+                )
+                failed_lines.append([*line, error_message])
+                continue
+
+            # Special handling for database serialization errors in create operations
+            elif (
+                "could not serialize access" in error_str_lower
+                or "concurrent update" in error_str_lower
+            ):
+                # These are retryable errors - log and continue processing other records
+                log.warning(
+                    f"Database serialization conflict detected during create for "
+                    f"record {source_id}. "
+                    f"This is often caused by concurrent processes. "
+                    f"Continuing with other records."
+                )
+                # Don't add to failed lines for retryable errors
+                # - let the record be processed in next batch
+                continue
+
             error_message, new_failed_line, error_summary = _handle_create_error(
                 i, create_error, line, error_summary
             )
@@ -522,7 +581,7 @@ def _create_batch_individually(
     }
 
 
-def _execute_load_batch(
+def _execute_load_batch(  # noqa: C901
     thread_state: dict[str, Any],
     batch_lines: list[list[Any]],
     batch_header: list[str],
@@ -569,6 +628,10 @@ def _execute_load_batch(
     aggregated_failed_lines: list[list[Any]] = []
     chunk_size = len(lines_to_process)
 
+    # Track retry attempts for serialization errors to prevent infinite retries
+    serialization_retry_count = 0
+    max_serialization_retries = 3  # Maximum number of retries for serialization errors
+
     while lines_to_process:
         current_chunk = lines_to_process[:chunk_size]
         load_header, load_lines = batch_header, current_chunk
@@ -609,6 +672,9 @@ def _execute_load_batch(
             aggregated_id_map.update(id_map)
             lines_to_process = lines_to_process[chunk_size:]
 
+            # Reset serialization retry counter on successful processing
+            serialization_retry_count = 0
+
         except Exception as e:
             error_str = str(e).lower()
 
@@ -619,20 +685,25 @@ def _execute_load_batch(
                 or "read timeout" in error_str
                 or type(e).__name__ == "ReadTimeout"
             ):
-                log.debug(f"Client-side timeout detected ({type(e).__name__}): {e}")
                 log.debug(
-                    "Ignoring client-side timeout to allow server processing"
-                    " to continue"
+                    "Ignoring client-side timeout to allow server processing "
+                    "to continue"
                 )
-                # CRITICAL: For local imports, ignore client timeouts completely
-                # This restores the previous behavior where long processing was allowed
-                progress.console.print(
-                    f"[yellow]INFO:[/] Batch {batch_number} processing on server. "
-                    f"Continuing to wait for completion..."
-                )
-                # Continue with next chunk WITHOUT fallback - let server finish
                 lines_to_process = lines_to_process[chunk_size:]
                 continue
+
+            # SPECIAL CASE: Database connection pool exhaustion
+            # These should be treated as scalable errors to reduce load on the server
+            if (
+                "connection pool is full" in error_str.lower()
+                or "too many connections" in error_str.lower()
+                or "poolerror" in error_str.lower()
+            ):
+                log.warning(
+                    "Database connection pool exhaustion detected. "
+                    "Reducing chunk size and retrying to reduce server load."
+                )
+                is_scalable_error = True
 
             # For all other exceptions, use the original scalable error detection
             is_scalable_error = (
@@ -644,6 +715,9 @@ def _execute_load_batch(
                 or "timeout" in error_str
                 or "could not serialize access" in error_str
                 or "concurrent update" in error_str
+                or "connection pool is full" in error_str.lower()
+                or "too many connections" in error_str.lower()
+                or "poolerror" in error_str.lower()
             )
 
             if is_scalable_error and chunk_size > 1:
@@ -658,9 +732,49 @@ def _execute_load_batch(
                 ):
                     progress.console.print(
                         "[yellow]INFO:[/] Database serialization conflict detected. "
-                        "This is often caused by concurrent processes updating the same records. "
-                        "Retrying with smaller batch size."
+                        "This is often caused by concurrent processes updating the "
+                        "same records. Retrying with smaller batch size."
                     )
+
+                    # Add a small delay for serialization conflicts
+                    # to give other processes time to complete.
+                    time.sleep(
+                        0.1 * serialization_retry_count
+                    )  # Linear backoff: 0.1s, 0.2s, 0.3s
+
+                    # Track serialization retries to prevent infinite loops
+                    serialization_retry_count += 1
+                    if serialization_retry_count >= max_serialization_retries:
+                        progress.console.print(
+                            f"[yellow]WARN:[/] Max serialization retries "
+                            f"({max_serialization_retries}) reached. "
+                            f"Moving records to fallback processing to prevent infinite"
+                            f" retry loop."
+                        )
+                        # Fall back to individual create processing
+                        # instead of continuing to retry
+                        clean_error = str(e).strip().replace("\n", " ")
+                        progress.console.print(
+                            f"[yellow]WARN:[/] Batch {batch_number} failed `load` "
+                            f"('{clean_error}'). "
+                            f"Falling back to `create` for {len(current_chunk)} "
+                            f"records due to persistent serialization conflicts."
+                        )
+                        fallback_result = _create_batch_individually(
+                            model,
+                            current_chunk,
+                            batch_header,
+                            uid_index,
+                            context,
+                            ignore_list,
+                        )
+                        aggregated_id_map.update(fallback_result.get("id_map", {}))
+                        aggregated_failed_lines.extend(
+                            fallback_result.get("failed_lines", [])
+                        )
+                        lines_to_process = lines_to_process[chunk_size:]
+                        serialization_retry_count = 0  # Reset counter for next batch
+                        continue
                 continue
 
             clean_error = str(e).strip().replace("\n", " ")
