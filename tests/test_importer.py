@@ -470,15 +470,17 @@ def test_run_import_sort_strategy_already_sorted(
 
 
 @patch("odoo_data_flow.importer._show_error_panel")
-def test_run_import_invalid_json_type_context(
-    mock_show_error: MagicMock,
-) -> None:
+def test_run_import_invalid_json_type_context(mock_show_error: MagicMock) -> None:
     """Test that run_import handles context that is not a JSON dict."""
+    # Using Any type to bypass type checking for this specific test case
+    # This tests the runtime error handling for invalid context types
+    context: Any = '["not", "a", "dict"]'  # Valid JSON, but not a dict
+
     run_import(
         config="dummy.conf",
         filename="dummy.csv",
         model="res.partner",
-        context='["not", "a", "dict"]',  # Valid JSON, but not a dict
+        context=context,
         deferred_fields=None,
         unique_id_field=None,
         no_preflight_checks=True,
