@@ -346,11 +346,10 @@ def _convert_external_id_field(
         Tuple of (base_field_name, converted_value)
     """
     base_field_name = field_name[:-3]  # Remove '/id' suffix
+    converted_value = False
 
-    # Handle empty external ID references
     if not field_value:
         # Empty external ID means no value for this field
-        converted_value = False
         log.debug(
             f"Converted empty external ID {field_name} -> {base_field_name} (False)"
         )
@@ -358,7 +357,7 @@ def _convert_external_id_field(
         # Convert external ID to database ID
         try:
             # Look up the database ID for this external ID
-            record_ref = model.browse().env.ref(field_value, raise_if_not_found=False)
+            record_ref = model.env.ref(field_value, raise_if_not_found=False)
             if record_ref:
                 converted_value = record_ref.id
                 log.debug(
@@ -366,8 +365,7 @@ def _convert_external_id_field(
                     f"{base_field_name} ({record_ref.id})"
                 )
             else:
-                # If we can't find the external ID, set to False
-                converted_value = False
+                # If we can't find the external ID, value remains False
                 log.warning(
                     f"Could not find record for external ID '{field_value}', "
                     f"setting {base_field_name} to False"
@@ -377,8 +375,7 @@ def _convert_external_id_field(
                 f"Error looking up external ID '{field_value}' for field "
                 f"'{field_name}': {e}"
             )
-            # On error, set to False
-            converted_value = False
+            # On error, value remains False
 
     return base_field_name, converted_value
 
