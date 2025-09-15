@@ -421,7 +421,7 @@ def _handle_create_error(
     create_error: Exception,
     line: list[Any],
     error_summary: str,
-) -> tuple[str, list[list[Any]], str]:
+) -> tuple[str, list[Any], str]:
     """Handle errors during record creation.
 
     Args:
@@ -431,41 +431,27 @@ def _handle_create_error(
         error_summary: Current error summary
 
     Returns:
-        Tuple of (error_message, failed_lines, error_summary)
+        Tuple of (error_message, failed_line, error_summary)
     """
-    failed_lines = []
+    error_str = str(create_error)
+    error_str_lower = error_str.lower()
 
-    # Handle JSON-RPC exceptions that contain IndexErrors
-    error_str = str(create_error).lower()
-
-    # Check if this is a JSON-RPC exception containing an IndexError/tuple index error
-    if "tuple index out of range" in error_str or "indexerror" in error_str:
+    if "tuple index out of range" in error_str_lower or "indexerror" in error_str_lower:
         error_message = f"Tuple unpacking error in row {i + 1}: {create_error}"
-        failed_line = [*list(line), error_message]
-        failed_lines.append(failed_line)
         if "Fell back to create" in error_summary:
             error_summary = "Tuple unpacking error detected"
-        return error_message, failed_lines, error_summary
+    else:
+        error_message = error_str.replace("\n", " | ")
+        if "invalid field" in error_str_lower and "/id" in error_str_lower:
+            error_message = (
+                f"Invalid external ID field detected in row {i + 1}: {error_message}"
+            )
 
-    # Handle other specific error types
-    error_message = str(create_error).replace("\n", " | ")
+        if "Fell back to create" in error_summary:
+            error_summary = error_message
 
-    # Handle "tuple index out of range" errors specifically
-    if "tuple index out of range" in error_message:
-        error_message = f"Tuple unpacking error in row {i + 1}: {error_message}"
-
-    # Handle invalid field errors (the new issue we discovered)
-    elif "Invalid field" in error_message and "/id" in error_message:
-        error_message = (
-            f"Invalid external ID field detected in row {i + 1}: {error_message}"
-        )
-
-    failed_line = [*list(line), error_message]
-    failed_lines.append(failed_line)
-    if "Fell back to create" in error_summary:
-        error_summary = error_message
-
-    return error_message, failed_lines, error_summary
+    failed_line = [*line, error_message]
+    return error_message, failed_line, error_summary
 
 
 def _create_batch_individually(
@@ -522,15 +508,15 @@ def _create_batch_individually(
             id_map[source_id] = new_record.id
         except IndexError as e:
             error_message = f"Malformed row detected (row {i + 1} in batch): {e}"
-            failed_lines.append([*list(line), error_message])
+            failed_lines.append([*line, error_message])
             if "Fell back to create" in error_summary:
                 error_summary = "Malformed CSV row detected"
             continue
         except Exception as create_error:
-            error_message, new_failed_lines, error_summary = _handle_create_error(
+            error_message, new_failed_line, error_summary = _handle_create_error(
                 i, create_error, line, error_summary
             )
-            failed_lines.extend(new_failed_lines)
+            failed_lines.append(new_failed_line)
             if "Fell back to create" in error_summary:
                 error_summary = error_message
     return {
