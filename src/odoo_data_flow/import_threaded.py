@@ -400,7 +400,8 @@ def _process_external_id_fields(
         # Handle external ID references (e.g., 'parent_id/id' -> 'parent_id')
         if field_name.endswith("/id"):
             # _convert_external_id_field is now a pure function that returns
-            # (base_field_name, converted_value) instead of modifying converted_vals as side effect
+            # (base_field_name, converted_value) instead of modifying
+            # converted_vals as a side effect
             base_name, value = _convert_external_id_field(
                 model, field_name, field_value
             )
