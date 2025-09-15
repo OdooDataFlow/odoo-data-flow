@@ -797,6 +797,27 @@ def _execute_load_batch(
                 continue
 
             clean_error = str(e).strip().replace("\n", " ")
+            
+            # SPECIAL CASE: Missing required related fields often indicate need for grouping
+            # When we get "Missing required value for the field 'Account Holder' (partner_id)"
+            # this suggests records should be grouped by partner_id to avoid constraint violations
+            if "missing required value" in clean_error.lower() and "account holder" in clean_error.lower():
+                # Parse the field name from the error message
+                import re
+                field_match = re.search(r"field '([^']+)'", clean_error)
+                if field_match:
+                    missing_field = field_match.group(1)
+                    progress.console.print(
+                        f"[yellow]INFO:[/] Detected missing required field '{missing_field}'. "
+                        f"This often indicates records should be grouped by related fields."
+                    )
+                    # Suggest grouping if not already enabled
+                    if not hasattr(thread_state.get('config', {}), 'get') or not thread_state['config'].get('split_by_cols'):
+                        progress.console.print(
+                            f"[yellow]TIP:[/] Consider using --groupby '{missing_field}/id' to group "
+                            f"records by this related field and avoid constraint violations."
+                        )
+            
             progress.console.print(
                 f"[yellow]WARN:[/] Batch {batch_number} failed `load` "
                 f"('{clean_error}'). "
