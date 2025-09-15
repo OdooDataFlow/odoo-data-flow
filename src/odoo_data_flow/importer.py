@@ -113,9 +113,10 @@ def run_import(  # noqa: C901
     parsed_context: dict[str, Any]
     if isinstance(context, str):
         try:
-            parsed_context = json.loads(context)
-            if not isinstance(parsed_context, dict):
+            loaded_context = json.loads(context)
+            if not isinstance(loaded_context, dict):
                 raise TypeError
+            parsed_context = loaded_context
         except (json.JSONDecodeError, TypeError):
             _show_error_panel(
                 "Invalid Context",
