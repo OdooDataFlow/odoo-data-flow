@@ -608,6 +608,10 @@ def _execute_load_batch(
     aggregated_id_map: dict[str, int] = {}
     aggregated_failed_lines: list[list[Any]] = []
     chunk_size = len(lines_to_process)
+    
+    # Track retry attempts for serialization errors to prevent infinite retries
+    serialization_retry_count = 0
+    max_serialization_retries = 3  # Maximum number of retries for serialization errors
 
     while lines_to_process:
         current_chunk = lines_to_process[:chunk_size]
@@ -648,6 +652,9 @@ def _execute_load_batch(
             }
             aggregated_id_map.update(id_map)
             lines_to_process = lines_to_process[chunk_size:]
+            
+            # Reset serialization retry counter on successful processing
+            serialization_retry_count = 0
 
         except Exception as e:
             error_str = str(e).lower()
@@ -705,6 +712,38 @@ def _execute_load_batch(
                         f"This is often caused by concurrent processes updating the same records. "
                         f"Retrying with smaller batch size."
                     )
+                    
+                    # Add a small delay for serialization conflicts to give other processes time to complete
+                    import time
+                    time.sleep(0.1 * serialization_retry_count)  # Exponential backoff: 0.1s, 0.2s, 0.3s
+                    
+                    # Track serialization retries to prevent infinite loops
+                    serialization_retry_count += 1
+                    if serialization_retry_count >= max_serialization_retries:
+                        progress.console.print(
+                            f"[yellow]WARN:[/] Max serialization retries ({max_serialization_retries}) reached. "
+                            f"Moving records to fallback processing to prevent infinite retry loop."
+                        )
+                        # Fall back to individual create processing instead of continuing to retry
+                        clean_error = str(e).strip().replace("\n", " ")
+                        progress.console.print(
+                            f"[yellow]WARN:[/] Batch {batch_number} failed `load` "
+                            f"('{clean_error}'). "
+                            f"Falling back to `create` for {len(current_chunk)} records due to persistent serialization conflicts."
+                        )
+                        fallback_result = _create_batch_individually(
+                            model,
+                            current_chunk,
+                            batch_header,
+                            uid_index,
+                            context,
+                            ignore_list,
+                        )
+                        aggregated_id_map.update(fallback_result.get("id_map", {}))
+                        aggregated_failed_lines.extend(fallback_result.get("failed_lines", []))
+                        lines_to_process = lines_to_process[chunk_size:]
+                        serialization_retry_count = 0  # Reset counter for next batch
+                        continue
                 continue
 
             clean_error = str(e).strip().replace("\n", " ")
