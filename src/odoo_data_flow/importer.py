@@ -158,9 +158,30 @@ def run_import(  # noqa: C901
         file_to_process = str(fail_path)
         if ignore is None:
             ignore = []
-        if "_ERROR_REASON" not in ignore:
-            log.info("Ignoring the internal '_ERROR_REASON' column for re-import.")
-            ignore.append("_ERROR_REASON")
+        if "ERROR_REASON" not in ignore:
+            log.info("Ignoring the internal 'ERROR_REASON' column for re-import.")
+            ignore.append("ERROR_REASON")
+
+    # --- Parameter Validation and Preprocessing ---
+    # Handle groupby parameter - convert string to list if needed
+    if isinstance(groupby, str):
+        # Split comma-separated groupby values into a list
+        groupby = [col.strip() for col in groupby.split(",") if col.strip()]
+        log.debug(f"Converted groupby string to list: {groupby}")
+    elif groupby is not None and not isinstance(groupby, list):
+        # If groupby is neither string nor list, convert to list
+        groupby = [str(groupby)]
+        log.debug(f"Converted groupby to list: {groupby}")
+
+    # Handle ignore parameter - convert string to list if needed
+    if isinstance(ignore, str):
+        # Split comma-separated ignore values into a list
+        ignore = [col.strip() for col in ignore.split(",") if col.strip()]
+        log.debug(f"Converted ignore string to list: {ignore}")
+    elif ignore is not None and not isinstance(ignore, list):
+        # If ignore is neither string nor list, convert to list
+        ignore = [str(ignore)]
+        log.debug(f"Converted ignore to list: {ignore}")
 
     import_plan: dict[str, Any] = {}
     if not no_preflight_checks:
