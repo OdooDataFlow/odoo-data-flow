@@ -642,6 +642,8 @@ def _execute_load_batch(
                 or "gateway" in error_str
                 or "proxy" in error_str
                 or "timeout" in error_str
+                or "could not serialize access" in error_str
+                or "concurrent update" in error_str
             )
 
             if is_scalable_error and chunk_size > 1:
@@ -650,6 +652,15 @@ def _execute_load_batch(
                     f"[yellow]WARN:[/] Batch {batch_number} hit scalable error. "
                     f"Reducing chunk size to {chunk_size} and retrying."
                 )
+                if (
+                    "could not serialize access" in error_str
+                    or "concurrent update" in error_str
+                ):
+                    progress.console.print(
+                        "[yellow]INFO:[/] Database serialization conflict detected. "
+                        "This is often caused by concurrent processes updating the same records. "
+                        "Retrying with smaller batch size."
+                    )
                 continue
 
             clean_error = str(e).strip().replace("\n", " ")
