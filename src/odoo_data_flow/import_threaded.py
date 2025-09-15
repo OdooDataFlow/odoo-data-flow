@@ -529,10 +529,18 @@ def _create_batch_individually(
                     # Skip None values entirely
                     log.debug(f"Skipping None value for field '{field_name}'")
                     continue
+                elif isinstance(field_value, str) and field_value == "":
+                    # Convert other empty strings to False as well
+                    log.debug(f"Converting empty string '{field_value}' for field '{field_name}' to False")
+                    validated_vals[field_name] = False
                 else:
                     validated_vals[field_name] = field_value
             
             log.debug(f"Validated vals for record {source_id}: {validated_vals}")
+            
+            # Final safety check - ensure we don't send completely empty dicts
+            if not validated_vals:
+                raise ValueError("No valid fields to create record - all values were empty or None")
 
             new_record = model.create(validated_vals, context=context)
             id_map[source_id] = new_record.id
