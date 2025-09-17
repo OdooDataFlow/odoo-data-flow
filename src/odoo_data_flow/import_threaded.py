@@ -212,7 +212,15 @@ def _recursive_create_batches(  # noqa: C901
     batch_prefix: str = "",
     level: int = 0,
 ) -> Generator[tuple[Any, list[list[Any]]], None, None]:
-    """Recursively creates batches of data, handling grouping and o2m."""
+    """Recursively creates batches of data, handling grouping and o2m.
+
+    Note: This function no longer automatically groups by related field values
+    to prevent creating too many small batches. Instead, all records are
+    processed together and the server handles empty relational fields.
+    """
+    # Remove automatic grouping by related field values to prevent too many batches
+    # Process all records together regardless of related field values
+
     if not group_cols:
         # Base case: No more grouping, handle o2m or simple batching
         current_batch: list[list[Any]] = []
@@ -238,6 +246,8 @@ def _recursive_create_batches(  # noqa: C901
             yield (current_batch[0][id_index], current_batch)
         return
 
+    # For explicit grouping (user-specified --groupby), still do the grouping
+    # But don't automatically group by related fields
     current_group_col, remaining_group_cols = group_cols[0], group_cols[1:]
     try:
         split_index = header.index(current_group_col)
