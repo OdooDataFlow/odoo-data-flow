@@ -661,3 +661,38 @@ class TestRecursiveBatching:
             mock_log.error.assert_called_once_with(
                 "Grouping column 'non_existent' not found. Cannot use --groupby."
             )
+
+    def test_recursive_batching_with_special_chars_in_col_name(self) -> None:
+        """Test batching with special characters in column names."""
+        from odoo_data_flow.import_threaded import _recursive_create_batches
+
+        header = ["id", "name", "partner_id/id"]
+        data = [
+            ["1", "A", "p1"],
+            ["2", "B", "p1"],
+            ["3", "C", "p2"],
+        ]
+        batches = list(
+            _recursive_create_batches(data, ["partner_id/id"], header, 10, False)
+        )
+        assert len(batches) == 2
+        assert batches[0][1][0][2] == "p1"
+        assert batches[1][1][0][2] == "p2"
+
+    def test_recursive_batching_multiple_cols_with_special_chars(self) -> None:
+        """Test batching with multiple columns, one with special characters."""
+        from odoo_data_flow.import_threaded import _recursive_create_batches
+
+        header = ["id", "name", "partner_id/id", "company_id"]
+        data = [
+            ["1", "A", "p1", "c1"],
+            ["2", "B", "p1", "c2"],
+            ["3", "C", "p2", "c1"],
+            ["4", "D", "p1", "c1"],
+        ]
+        batches = list(
+            _recursive_create_batches(
+                data, ["partner_id/id", "company_id"], header, 10, False
+            )
+        )
+        assert len(batches) == 3

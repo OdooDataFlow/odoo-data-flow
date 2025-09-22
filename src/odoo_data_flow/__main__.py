@@ -311,6 +311,11 @@ def import_cmd(connection_file: str, **kwargs: Any) -> None:
     except (ValueError, SyntaxError) as e:
         log.error(f"Invalid --context dictionary provided: {e}")
         return
+
+    groupby = kwargs.get("groupby")
+    if groupby is not None:
+        kwargs["groupby"] = [col.strip() for col in groupby.split(",") if col.strip()]
+
     run_import(**kwargs)
 
 
