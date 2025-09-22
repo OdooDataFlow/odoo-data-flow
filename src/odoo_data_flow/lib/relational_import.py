@@ -196,11 +196,17 @@ def run_direct_relational_import(
 
     # Check if the field exists in the DataFrame
     if field not in source_df.columns:
-        log.error(
-            f"Field '{field}' not found in source DataFrame. "
-            f"Available columns: {source_df.columns}"
-        )
-        return None
+        # Check if the field with /id suffix exists (common for relation fields)
+        field_with_id = f"{field}/id"
+        if field_with_id in source_df.columns:
+            log.debug(f"Using field '{field_with_id}' instead of '{field}'")
+            field = field_with_id
+        else:
+            log.error(
+                f"Field '{field}' not found in source DataFrame. "
+                f"Available columns: {source_df.columns}"
+            )
+            return None
 
     # 2. Prepare the related model's IDs using the resolver
     all_related_ext_ids = source_df.get_column(field).str.split(",").explode()
@@ -351,11 +357,17 @@ def run_write_tuple_import(
 
     # Check if the field exists in the DataFrame
     if field not in source_df.columns:
-        log.error(
-            f"Field '{field}' not found in source DataFrame. "
-            f"Available columns: {source_df.columns}"
-        )
-        return False
+        # Check if the field with /id suffix exists (common for relation fields)
+        field_with_id = f"{field}/id"
+        if field_with_id in source_df.columns:
+            log.debug(f"Using field '{field_with_id}' instead of '{field}'")
+            field = field_with_id
+        else:
+            log.error(
+                f"Field '{field}' not found in source DataFrame. "
+                f"Available columns: {source_df.columns}"
+            )
+            return False
 
     # 2. Prepare the related model's IDs using the resolver
     all_related_ext_ids = source_df.get_column(field).str.split(",").explode()
@@ -527,8 +539,30 @@ def run_write_o2m_tuple_import(
     successful_updates = 0
     failed_records_to_report = []
 
+    # Debug: Print available columns and the field we're looking for
+    log.debug(f"Available columns in source_df: {source_df.columns}")
+    log.debug(f"Looking for field: {field}")
+
+    # Check if the field exists in the DataFrame
+    if field not in source_df.columns:
+        # Check if the field with /id suffix exists (common for relation fields)
+        field_with_id = f"{field}/id"
+        if field_with_id in source_df.columns:
+            log.debug(f"Using field '{field_with_id}' instead of '{field}'")
+            field = field_with_id
+        else:
+            log.error(
+                f"Field '{field}' not found in source DataFrame. "
+                f"Available columns: {source_df.columns}"
+            )
+            return False
+
     # Filter for rows that actually have data in the o2m field
-    o2m_df = source_df.filter(pl.col(field).is_not_null())
+    # For /id fields, we also need to check for empty strings
+    if field.endswith("/id"):
+        o2m_df = source_df.filter(pl.col(field).is_not_null() & (pl.col(field) != ""))
+    else:
+        o2m_df = source_df.filter(pl.col(field).is_not_null())
 
     for record in o2m_df.iter_rows(named=True):
         parent_external_id = record["id"]
