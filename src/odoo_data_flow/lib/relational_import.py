@@ -188,7 +188,13 @@ def run_direct_relational_import(
         return None
 
     # 1. Prepare the owning model's IDs
-    owning_df = pl.DataFrame({"external_id": id_map.keys(), "db_id": id_map.values()})
+    owning_df = pl.DataFrame({
+        "external_id": list(id_map.keys()), 
+        "db_id": list(id_map.values())
+    }, schema={
+        "external_id": pl.Utf8,
+        "db_id": pl.Int64
+    })
 
     # Debug: Print available columns and the field we're looking for
     log.debug(f"Available columns in source_df: {source_df.columns}")
@@ -349,7 +355,13 @@ def run_write_tuple_import(
         return False
 
     # 1. Prepare the owning model's IDs
-    owning_df = pl.DataFrame({"external_id": id_map.keys(), "db_id": id_map.values()})
+    owning_df = pl.DataFrame({
+        "external_id": list(id_map.keys()), 
+        "db_id": list(id_map.values())
+    }, schema={
+        "external_id": pl.Utf8,
+        "db_id": pl.Int64
+    })
 
     # Debug: Print available columns and the field we're looking for
     log.debug(f"Available columns in source_df: {source_df.columns}")
