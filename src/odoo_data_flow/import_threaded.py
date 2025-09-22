@@ -533,6 +533,24 @@ def _create_batch_individually(
             continue
         except Exception as create_error:
             error_str_lower = str(create_error).lower()
+            
+            # Special handling for Odoo server internal errors
+            if (
+                "tuple index out of range" in error_str_lower 
+                and "odoo server error" in error_str_lower
+            ):
+                log.warning(
+                    f"Odoo server internal error detected during create for "
+                    f"record {source_id}. This is likely a bug in the Odoo server. "
+                    f"Skipping record and continuing with other records."
+                )
+                error_message = (
+                    f"Odoo server internal error (tuple index out of range) for record "
+                    f"{source_id}: This is likely a bug in the Odoo server. "
+                    f"See server logs for details."
+                )
+                failed_lines.append([*line, error_message])
+                continue
 
             # Special handling for database connection pool exhaustion errors
             if (
