@@ -5,6 +5,7 @@ RPC calls to Odoo in parallel with proper connection pool management.
 """
 
 import concurrent.futures
+import time
 from typing import Any, Callable, Optional
 
 from ...logging_config import log
@@ -28,7 +29,7 @@ class RpcThread:
 
         # Limit the actual number of connections to prevent pool exhaustion
         # This is especially important for Odoo which has connection pool limits
-        effective_max_connections = min(max_connection, 4)  # Cap at 4 connections
+        effective_max_connections = min(max_connection, 2)  # Cap at 2 connections
 
         self.executor = concurrent.futures.ThreadPoolExecutor(
             max_workers=effective_max_connections
@@ -61,6 +62,8 @@ class RpcThread:
 
         future = self.executor.submit(fun, *args, **kwargs)
         self.futures.append(future)
+        # Add a small delay to prevent overwhelming the server with requests
+        time.sleep(0.01)
         return future
 
     def wait(self) -> None:

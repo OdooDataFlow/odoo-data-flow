@@ -759,6 +759,20 @@ def _execute_load_batch(  # noqa: C901
                     time.sleep(
                         0.1 * serialization_retry_count
                     )  # Linear backoff: 0.1s, 0.2s, 0.3s
+                elif (
+                    "connection pool is full" in error_str.lower()
+                    or "too many connections" in error_str.lower()
+                    or "poolerror" in error_str.lower()
+                ):
+                    progress.console.print(
+                        "[yellow]INFO:[/] Database connection pool exhaustion detected. "
+                        "This is often caused by too many concurrent connections. "
+                        "Retrying with smaller batch size and adding delay."
+                    )
+
+                    # Add a delay for connection pool exhaustion
+                    # to give the server time to release connections.
+                    time.sleep(1.0)  # 1 second delay
 
                     # Track serialization retries to prevent infinite loops
                     serialization_retry_count += 1
