@@ -322,6 +322,12 @@ def run_import(  # noqa: C901
                                 f"Write O2M tuple import failed for field '{field}'. "
                                 "Check logs for details."
                             )
+                    
+                    # Add a small delay between relational import operations
+                    # to give the server time to release database connections
+                    import time
+                    time.sleep(0.5)
+                    
                     progress.update(task_id, advance=1)
 
         log.info(
