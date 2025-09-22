@@ -231,6 +231,8 @@ def run_direct_relational_import(
 
     # 3. Create the link table DataFrame
     link_df = source_df.select(["id", field]).rename({"id": "external_id"})
+    # Ensure external_id is treated as string to match the owning_df schema
+    link_df = link_df.with_columns(pl.col("external_id").cast(pl.Utf8))
     link_df = link_df.with_columns(pl.col(field).str.split(",")).explode(field)
 
     # Join to get DB IDs for the owning model
@@ -300,6 +302,8 @@ def _prepare_link_dataframe(
 
     # Create the link table DataFrame
     link_df = source_df.select(["id", field]).rename({"id": "external_id"})
+    # Ensure external_id is treated as string to match the owning_df schema
+    link_df = link_df.with_columns(pl.col("external_id").cast(pl.Utf8))
     link_df = link_df.with_columns(pl.col(field).str.split(",")).explode(field)
 
     # Join to get DB IDs for the owning model
