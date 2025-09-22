@@ -2,6 +2,7 @@
 
 import json
 import tempfile
+import time
 from typing import Any, Optional, Union
 
 import polars as pl
@@ -556,7 +557,6 @@ def run_write_o2m_tuple_import(
     log.info(f"Running 'Write O2M Tuple' for field '{field}'...")
     
     # Add a small delay to reduce server load and prevent connection pool exhaustion
-    import time
     time.sleep(0.1)
 
     if isinstance(config, dict):
