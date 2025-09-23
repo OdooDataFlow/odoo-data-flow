@@ -275,74 +275,74 @@ def run_import(  # noqa: C901
             )
             for field, strategy_info in import_plan["strategies"].items():
                 log.info(f"*** PROCESSING FIELD '{field}' WITH STRATEGY '{strategy_info['strategy']}' ***")
-                    if strategy_info["strategy"] == "direct_relational_import":
-                        log.info(f"*** CALLING run_direct_relational_import for field '{field}' ***")
-                        import_details = relational_import.run_direct_relational_import(
-                            config,
-                            model,
-                            field,
-                            strategy_info,
-                            source_df,
-                            id_map,
-                            max_conn,
-                            batch_size_run,
-                            progress,
-                            task_id,
-                            filename,
+                if strategy_info["strategy"] == "direct_relational_import":
+                    log.info(f"*** CALLING run_direct_relational_import for field '{field}' ***")
+                    import_details = relational_import.run_direct_relational_import(
+                        config,
+                        model,
+                        field,
+                        strategy_info,
+                        source_df,
+                        id_map,
+                        max_conn,
+                        batch_size_run,
+                        progress,
+                        task_id,
+                        filename,
+                    )
+                    if import_details:
+                        log.info(f"*** DIRECT RELATIONAL IMPORT RETURNED DETAILS FOR FIELD '{field}' ***")
+                        import_threaded.import_data(
+                            config=config,
+                            model=import_details["model"],
+                            unique_id_field=import_details["unique_id_field"],
+                            file_csv=import_details["file_csv"],
+                            max_connection=max_conn,
+                            batch_size=batch_size_run,
                         )
-                        if import_details:
-                            log.info(f"*** DIRECT RELATIONAL IMPORT RETURNED DETAILS FOR FIELD '{field}' ***")
-                            import_threaded.import_data(
-                                config=config,
-                                model=import_details["model"],
-                                unique_id_field=import_details["unique_id_field"],
-                                file_csv=import_details["file_csv"],
-                                max_connection=max_conn,
-                                batch_size=batch_size_run,
-                            )
-                            Path(import_details["file_csv"]).unlink()
-                        else:
-                            log.info(f"*** DIRECT RELATIONAL IMPORT RETURNED NONE FOR FIELD '{field}' ***")
-                    elif strategy_info["strategy"] == "write_tuple":
-                        log.info(f"*** CALLING run_write_tuple_import FOR FIELD '{field}' ***")
-                        result = relational_import.run_write_tuple_import(
-                            config,
-                            model,
-                            field,
-                            strategy_info,
-                            source_df,
-                            id_map,
-                            max_conn,
-                            batch_size_run,
-                            progress,
-                            task_id,
-                            filename,
+                        Path(import_details["file_csv"]).unlink()
+                    else:
+                        log.info(f"*** DIRECT RELATIONAL IMPORT RETURNED NONE FOR FIELD '{field}' ***")
+                elif strategy_info["strategy"] == "write_tuple":
+                    log.info(f"*** CALLING run_write_tuple_import FOR FIELD '{field}' ***")
+                    result = relational_import.run_write_tuple_import(
+                        config,
+                        model,
+                        field,
+                        strategy_info,
+                        source_df,
+                        id_map,
+                        max_conn,
+                        batch_size_run,
+                        progress,
+                        task_id,
+                        filename,
+                    )
+                    if not result:
+                        log.warning(
+                            f"Write tuple import failed for field '{field}'. "
+                            "Check logs for details."
                         )
-                        if not result:
-                            log.warning(
-                                f"Write tuple import failed for field '{field}'. "
-                                "Check logs for details."
-                            )
-                    elif strategy_info["strategy"] == "write_o2m_tuple":
-                        log.info(f"*** CALLING run_write_o2m_tuple_import FOR FIELD '{field}' ***")
-                        result = relational_import.run_write_o2m_tuple_import(
-                            config,
-                            model,
-                            field,
-                            strategy_info,
-                            source_df,
-                            id_map,
-                            max_conn,
-                            batch_size_run,
-                            progress,
-                            task_id,
-                            filename,
+                elif strategy_info["strategy"] == "write_o2m_tuple":
+                    log.info(f"*** CALLING run_write_o2m_tuple_import FOR FIELD '{field}' ***")
+                    result = relational_import.run_write_o2m_tuple_import(
+                        config,
+                        model,
+                        field,
+                        strategy_info,
+                        source_df,
+                        id_map,
+                        max_conn,
+                        batch_size_run,
+                        progress,
+                        task_id,
+                        filename,
+                    )
+                    if not result:
+                        log.warning(
+                            f"Write O2M tuple import failed for field '{field}'. "
+                            "Check logs for details."
                         )
-                        if not result:
-                            log.warning(
-                                f"Write O2M tuple import failed for field '{field}'. "
-                                "Check logs for details."
-                            )
                     
                     # Add a small delay between relational import operations
                     # to give the server time to release database connections
