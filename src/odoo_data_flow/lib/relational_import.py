@@ -42,48 +42,60 @@ def _resolve_related_ids(
 
     # Split full XML-ID 'module.identifier' into components
     split_ids = [(i.split(".", 1)[0], i.split(".", 1)[1]) for i in id_list if "." in i]
-    invalid_ids = [i for i in id_list if "." not in i]
+    # Separate numeric database IDs from other invalid IDs
+    db_ids = [int(i) for i in id_list if isinstance(i, str) and i.isdigit()]
+    invalid_ids = [i for i in id_list if not (isinstance(i, str) and ("." in i or i.isdigit()))]
+    
     if invalid_ids:
         log.warning(
             f"Skipping {len(invalid_ids)} invalid external_ids for model "
-            f"'{related_model}' (must be in 'module.identifier' format)."
+            f"'{related_model}' (must be numeric database IDs or "
+            f"'module.identifier' format XML IDs)."
         )
-        if not split_ids:
+        if not split_ids and not db_ids:
             return None
-    domain = [
-        "&",
-        ("module", "=", split_ids[0][0]),
-        ("name", "=", split_ids[0][1]),
-    ]
-    for module, name in split_ids[1:]:
-        domain.insert(0, "|")
-        domain.append("&")
-        domain.append(("module", "=", module))
-        domain.append(("name", "=", name))
+        domain = [
+            "&",
+            ("module", "=", split_ids[0][0]),
+            ("name", "=", split_ids[0][1]),
+        ]
+        for module, name in split_ids[1:]:
+            domain.insert(0, "|")
+            domain.append("&")
+            domain.append(("module", "=", module))
+            domain.append(("name", "=", name))
 
-    try:
-        data_model = connection.get_model("ir.model.data")
-        resolved_data = data_model.search_read(domain, ["module", "name", "res_id"])
-        if not resolved_data:
-            log.error(
-                f"XML-ID resolution failed for all IDs in model '{related_model}'."
-            )
-            return None
+        try:
+            data_model = connection.get_model("ir.model.data")
+            resolved_data = data_model.search_read(domain, ["module", "name", "res_id"])
+            if not resolved_data:
+                log.error(
+                    f"XML-ID resolution failed for all IDs in model '{related_model}'."
+                )
+                if not db_ids:
+                    return None
+            else:
+                xml_resolved_map = {
+                    f"{rec['module']}.{rec['name']}": rec["res_id"] for rec in resolved_data
+                }
+                resolved_map.update(xml_resolved_map)
+                log.info(
+                    f"Successfully resolved {len(xml_resolved_map)} XML IDs for model '{related_model}'."
+                )
+        except Exception as e:
+            log.error(f"An error occurred during XML-ID resolution: {e}")
+            if not db_ids:
+                return None
 
-        resolved_map = {
-            f"{rec['module']}.{rec['name']}": rec["res_id"] for rec in resolved_data
-        }
-
+    if resolved_map:
         log.info(
-            f"Successfully resolved {len(resolved_map)} out of {len(id_list)} "
-            f"external IDs for model '{related_model}'."
+            f"Successfully resolved {len(resolved_map)} IDs for model '{related_model}' "
+            f"({len(db_ids)} database IDs, {len([k for k in resolved_map.keys() if '.' in k])} XML IDs)."
         )
         return pl.DataFrame(
-            {"external_id": resolved_map.keys(), "db_id": resolved_map.values()}
+            {"external_id": list(resolved_map.keys()), "db_id": list(resolved_map.values())}
         )
-    except Exception as e:
-        log.error(f"An error occurred during bulk XML-ID resolution: {e}")
-        return None
+    return None
 
 
 def _derive_missing_relation_info(
