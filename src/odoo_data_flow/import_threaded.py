@@ -673,6 +673,12 @@ def _execute_load_batch(  # noqa: C901
             lines_to_process = lines_to_process[chunk_size:]
             continue
 
+        # DEBUG: Log what we're sending to Odoo
+        log.debug(f"Sending to Odoo - load_header: {load_header}")
+        if load_lines:
+            log.debug(f"Sending to Odoo - first load_line: {load_lines[0]}")
+            log.debug(f"Sending to Odoo - load_lines count: {len(load_lines)}")
+        
         try:
             log.debug(f"Attempting `load` for chunk of batch {batch_number}...")
             res = model.load(load_header, load_lines, context=context)
