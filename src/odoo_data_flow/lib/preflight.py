@@ -415,11 +415,18 @@ def _plan_deferrals_and_strategies(
             field_info = odoo_fields[clean_field_name]
             field_type = field_info.get("type")
 
-            is_m2o_self = (
-                field_type == "many2one" and field_info.get("relation") == model
-            )
-            is_m2m = field_type == "many2many"
-            is_o2m = field_type == "one2many"
+            # Special handling for fields with /id suffix
+            # These should be treated as many2many fields containing external IDs
+            if field_name.endswith("/id"):
+                is_m2o_self = False
+                is_m2m = True  # Treat /id fields as many2many
+                is_o2m = False
+            else:
+                is_m2o_self = (
+                    field_type == "many2one" and field_info.get("relation") == model
+                )
+                is_m2m = field_type == "many2many"
+                is_o2m = field_type == "one2many"
 
             if is_m2o_self:
                 deferrable_fields.append(clean_field_name)
