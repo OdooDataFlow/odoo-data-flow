@@ -36,10 +36,7 @@ def _resolve_related_ids(
         connection = conf_lib.get_connection_from_dict(config)
     else:
         connection = conf_lib.get_connection_from_config(config_file=config)
-    if not connection.is_connected():
-        log.error("Cannot perform XML-ID lookup: Odoo connection failed.")
-        return None
-
+    
     id_list = external_ids.drop_nulls().unique().to_list()
     log.info(f"Resolving {len(id_list)} unique external IDs for '{related_model}'...")
 
