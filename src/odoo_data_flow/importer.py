@@ -265,9 +265,29 @@ def run_import(  # noqa: C901
         log.info(f"*** PASS 2: STARTING RELATIONAL IMPORT PROCESS ***")
         log.info(f"*** DETECTED STRATEGIES: {import_plan.get('strategies', {})} ***")
         log.info(f"*** STRATEGIES COUNT: {len(import_plan.get('strategies', {}))} ***")
-        source_df = pl.read_csv(
-            filename, separator=separator, truncate_ragged_lines=True
-        )
+        # Read the CSV file with explicit schema for /id suffixed columns
+        # Override automatic type inference to ensure all /id suffixed columns are strings
+        df = pl.read_csv(filename, separator=separator, truncate_ragged_lines=True)
+        
+        # Identify columns that end with /id suffix
+        id_columns = [col for col in df.columns if col.endswith("/id")]
+        
+        # If we have /id suffixed columns, re-read with explicit schema
+        if id_columns:
+            log.debug(f"Found /id suffixed columns: {id_columns}")
+            # Create schema override to force /id columns to be strings
+            schema_overrides = {col: pl.Utf8 for col in id_columns}
+            log.debug(f"Schema overrides for /id columns: {schema_overrides}")
+            # Re-read with explicit schema
+            source_df = pl.read_csv(
+                filename, 
+                separator=separator, 
+                truncate_ragged_lines=True,
+                schema_overrides=schema_overrides
+            )
+            log.debug(f"Re-read DataFrame with schema overrides. /id column types: {[f'{col}: {source_df[col].dtype}' for col in id_columns]}")
+        else:
+            source_df = df
         with Progress() as progress:
             task_id = progress.add_task(
                 "Pass 2/2: Updating relations",
