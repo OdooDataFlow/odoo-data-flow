@@ -408,6 +408,60 @@ def _clean_and_transform_batch(
     return casted_df.select(list(polars_schema.keys()))
 
 
+def _enrich_main_df_with_xml_ids(
+    df: pl.DataFrame, connection: Any, model_name: str
+) -> pl.DataFrame:
+    """Enriches a DataFrame with XML IDs for the main records.
+
+    This function takes a DataFrame containing a '.id' column with numeric
+    database IDs, fetches their corresponding external XML IDs from Odoo,
+    and uses them to populate the 'id' column, preserving the '.id' column.
+
+    Args:
+        df: The Polars DataFrame to enrich. Must contain an '.id' column.
+        connection: The active Odoo connection object.
+        model_name: The name of the Odoo model being exported.
+
+    Returns:
+        The enriched DataFrame with the 'id' column populated with XML IDs
+        and the '.id' column preserved.
+    """
+    if ".id" not in df.columns:
+        log.warning("'.id' column not found, cannot perform main XML ID enrichment.")
+        return df
+
+    db_ids = df.get_column(".id").unique().drop_nulls().to_list()
+    if not db_ids:
+        log.debug("No database IDs found to enrich; ensuring 'id' is empty.")
+        # Overwrite 'id' with nulls, keep '.id'
+        return df.with_columns(pl.lit(None, dtype=pl.String).alias("id"))
+
+    log.info(f"Fetching XML IDs for {len(db_ids)} main records...")
+    ir_model_data = connection.get_model("ir.model.data")
+    xml_id_data = ir_model_data.search_read(
+        [("model", "=", model_name), ("res_id", "in", db_ids)],
+        ["res_id", "module", "name"],
+        context={"active_test": False},
+    )
+
+    if not xml_id_data:
+        log.warning(f"No XML IDs found for the exported {model_name} records.")
+        return df.with_columns(pl.lit(None, dtype=pl.String).alias("id"))
+
+    df_xml_ids = (
+        pl.from_dicts(xml_id_data)
+        .with_columns(
+            pl.format("{}.{}", pl.col("module"), pl.col("name")).alias("xml_id")
+        )
+        .select(pl.col("res_id").cast(pl.Int64), "xml_id")
+        .unique(subset=["res_id"], keep="first")
+    )
+
+    # Join to get the xml_id, overwrite 'id', and drop temporary columns.
+    df_enriched = df.join(df_xml_ids, left_on=".id", right_on="res_id", how="left")
+    return df_enriched.with_columns(pl.col("xml_id").alias("id")).drop("xml_id")
+
+
 def _process_export_batches(  # noqa: C901
     rpc_thread: "RPCThreadExport",
     total_ids: int,
@@ -419,6 +473,7 @@ def _process_export_batches(  # noqa: C901
     session_dir: Optional[Path],
     is_resuming: bool,
     encoding: str,
+    enrich_main_xml_id: bool = False,
 ) -> Optional[pl.DataFrame]:
     """Processes exported batches.
 
@@ -474,6 +529,11 @@ def _process_export_batches(  # noqa: C901
                         df, field_types, polars_schema
                     )
 
+                    if enrich_main_xml_id:
+                        final_batch_df = _enrich_main_df_with_xml_ids(
+                            final_batch_df, rpc_thread.connection, model_name
+                        )
+
                     if output and streaming:
                         if not header_written:
                             if is_resuming:
@@ -521,6 +581,11 @@ def _process_export_batches(  # noqa: C901
         return None
     if not all_cleaned_dfs:
         log.warning("No data was returned from the export.")
+        # Adjust schema for empty DataFrame if enrichment was active
+        if enrich_main_xml_id:
+            # The .id column is correctly typed as Int64. The id column, which
+            # would also be Int64, needs its type changed to String for the header.
+            polars_schema["id"] = pl.String()
         empty_df = pl.DataFrame(schema=polars_schema)
         if output:
             if is_resuming:
@@ -557,6 +622,7 @@ def _determine_export_strategy(
     Optional[dict[str, dict[str, Any]]],
     bool,
     bool,
+    bool,
 ]:
     """Perform pre-flight checks and determine the best export strategy."""
     preliminary_read_mode = technical_names or any(
@@ -567,7 +633,7 @@ def _determine_export_strategy(
     )
 
     if not model_obj or not fields_info:
-        return None, None, None, False, False
+        return None, None, None, False, False, False
 
     has_read_specifiers = any(f.endswith("/.id") or f == ".id" for f in header)
     has_xml_id_specifiers = any(f.endswith("/id") for f in header)
@@ -586,7 +652,7 @@ def _determine_export_strategy(
             f"(e.g., {invalid_fields}) is not supported in hybrid mode. "
             "Only 'field/id' is allowed for enrichment."
         )
-        return None, None, None, False, False
+        return None, None, None, False, False, False
 
     technical_types = {"selection", "binary"}
     has_technical_fields = any(
@@ -597,7 +663,15 @@ def _determine_export_strategy(
         technical_names or has_read_specifiers or is_hybrid or has_technical_fields
     )
 
-    if is_hybrid:
+    # --- New logic for main record XML ID enrichment ---
+    enrich_main_xml_id = ".id" in header and "id" in header and force_read_method
+
+    if enrich_main_xml_id:
+        log.info(
+            "Main record XML ID enrichment activated. "
+            "'.id' will be used to fetch and populate 'id'."
+        )
+    elif is_hybrid:
         log.info("Hybrid export mode activated. Using 'read' with XML ID enrichment.")
     elif has_technical_fields:
         log.info("Read method auto-enabled for 'selection' or 'binary' fields.")
@@ -613,9 +687,16 @@ def _determine_export_strategy(
                 f"Mixing export-style specifiers {invalid_fields} "
                 f"is not supported in pure 'read' mode."
             )
-            return None, None, None, False, False
+            return None, None, None, False, False, False
 
-    return connection, model_obj, fields_info, force_read_method, is_hybrid
+    return (
+        connection,
+        model_obj,
+        fields_info,
+        force_read_method,
+        is_hybrid,
+        enrich_main_xml_id,
+    )
 
 
 def _resume_existing_session(
@@ -692,9 +773,14 @@ def export_data(
     if not session_dir:
         return False, session_id, 0, None
 
-    connection, model_obj, fields_info, force_read_method, is_hybrid = (
-        _determine_export_strategy(config, model, header, technical_names)
-    )
+    (
+        connection,
+        model_obj,
+        fields_info,
+        force_read_method,
+        is_hybrid,
+        enrich_main_xml_id,
+    ) = _determine_export_strategy(config, model, header, technical_names)
     if not connection or not model_obj or not fields_info:
         return False, session_id, 0, None
 
@@ -747,6 +833,7 @@ def export_data(
         session_dir=session_dir,
         is_resuming=is_resuming,
         encoding=encoding,
+        enrich_main_xml_id=enrich_main_xml_id,
     )
 
     # --- Finalization and Cleanup ---

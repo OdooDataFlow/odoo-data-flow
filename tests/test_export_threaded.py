@@ -548,6 +548,7 @@ class TestExportData:
             {"name": {"type": "char"}},
             False,
             False,
+            False,
         )
 
         success, _, _, result_df = export_data(
@@ -734,50 +735,6 @@ class TestExportData:
             {".id": [10], "parent_id/id": ["base.cat_parent"]},
             schema={".id": pl.Int64, "parent_id/id": pl.String},
         )
-        assert_frame_equal(result_df, expected_df)
-
-    def test_export_id_and_dot_id_in_read_mode(self, mock_conf_lib: MagicMock) -> None:
-        """Test the read mode.
-
-        Tests that in read() mode, both 'id' and '.id' correctly resolve
-        to the integer database ID.
-        """
-        # --- Arrange ---
-        header = [".id", "id", "name"]
-        mock_model = mock_conf_lib.return_value.get_model.return_value
-        mock_model.search.return_value = [101, 102]
-        mock_model.read.return_value = [
-            {"id": 101, "name": "Record 101"},
-            {"id": 102, "name": "Record 102"},
-        ]
-        mock_model.fields_get.return_value = {
-            "id": {"type": "integer"},
-            "name": {"type": "char"},
-        }
-
-        # --- Act ---
-        _, _, _, result_df = export_data(
-            config="dummy.conf",
-            model="res.partner",
-            domain=[],
-            header=header,
-            output=None,
-            technical_names=True,
-        )
-
-        # --- Assert ---
-        assert result_df is not None
-
-        # *** FIX ***: Use the 'schema' argument to define dtypes on creation.
-        expected_df = pl.DataFrame(
-            {
-                ".id": [101, 102],
-                "id": [101, 102],
-                "name": ["Record 101", "Record 102"],
-            },
-            schema={".id": pl.Int64, "id": pl.Int64, "name": pl.String},
-        )
-
         assert_frame_equal(result_df, expected_df)
 
     def test_export_id_in_export_data_mode(self, mock_conf_lib: MagicMock) -> None:
@@ -983,3 +940,69 @@ class TestExportData:
         )
         final_df = final_df.sort("id")
         assert_frame_equal(final_df, expected_df)
+
+    def test_export_main_record_xml_id_enrichment(
+        self, mock_conf_lib: MagicMock
+    ) -> None:
+        """Test main record xml id.
+
+        Tests that when '.id' and 'id' are requested, the 'id' column is
+        enriched with the main record's XML ID.
+        """
+        # --- Arrange ---
+        header = [".id", "id", "name"]
+        mock_model = mock_conf_lib.return_value.get_model.return_value
+        mock_model.search.return_value = [1, 2]
+
+        # 1. Mock the primary read() call which returns numeric IDs
+        mock_model.read.return_value = [
+            {"id": 1, "name": "Partner A"},
+            {"id": 2, "name": "Partner B"},
+        ]
+
+        # 2. Mock the metadata call
+        mock_model.fields_get.return_value = {
+            "id": {"type": "integer"},
+            ".id": {"type": "integer"},
+            "name": {"type": "char"},
+        }
+
+        # 3. Mock the secondary XML ID lookup on 'ir.model.data'
+        # Note: Partner B (id=2) does not have an XML ID to test the null case.
+        mock_ir_model_data = MagicMock()
+        mock_ir_model_data.search_read.return_value = [
+            {"res_id": 1, "module": "base", "name": "partner_a_xmlid"}
+        ]
+
+        # Make get_model return the main model first, then the ir.model.data mock
+        # This needs to be reset for each test that uses it this way.
+        mock_conf_lib.return_value.get_model.side_effect = [
+            mock_model,
+            mock_ir_model_data,
+        ]
+
+        # --- Act ---
+        success, _, _, result_df = export_data(
+            config="dummy.conf",
+            model="res.partner",
+            domain=[],
+            header=header,
+            output=None,
+        )
+
+        # --- Assert ---
+        assert success is True
+        assert result_df is not None
+
+        # The '.id' column should be preserved, and 'id' should be the XML ID
+        expected_df = pl.DataFrame(
+            {
+                ".id": [1, 2],
+                "id": ["base.partner_a_xmlid", None],
+                "name": ["Partner A", "Partner B"],
+            },
+            schema={".id": pl.Int64, "id": pl.String, "name": pl.String},
+        )
+
+        # Sort by name to ensure consistent order for comparison
+        assert_frame_equal(result_df.sort("name"), expected_df.sort("name"))
