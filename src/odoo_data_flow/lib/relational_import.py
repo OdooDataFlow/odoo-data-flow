@@ -198,10 +198,6 @@ def run_direct_relational_import(
         "db_id": pl.Int64
     })
 
-    # Debug: Print available columns and the field we're looking for
-    log.debug(f"Available columns in source_df: {source_df.columns}")
-    log.debug(f"Looking for field: {field}")
-
     # Check if the field exists in the DataFrame
     if field not in source_df.columns:
         # Check if the field with /id suffix exists (common for relation fields)
@@ -216,8 +212,20 @@ def run_direct_relational_import(
             )
             return None
 
+    # Debug: Print available columns and the field we're looking for
+    log.debug(f"Available columns in source_df: {source_df.columns}")
+    log.debug(f"Looking for field: {field}")
+    log.debug(f"Field '{field}' in source_df.columns: {field in source_df.columns}")
+    
+    # Check if the field exists in the DataFrame (redundant check for debugging)
+    if field not in source_df.columns:
+        log.error(f"Field '{field}' still not found in source DataFrame after resolution")
+        return None
+
     # 2. Prepare the related model's IDs using the resolver
     all_related_ext_ids = source_df.get_column(field).str.split(",").explode()
+    log.debug(f"Total related external IDs before filtering: {len(all_related_ext_ids)}")
+    log.debug(f"Sample related external IDs: {all_related_ext_ids.head(5).to_list()}")
     if related_model_fk is None:
         log.error(
             f"Cannot resolve related IDs: Missing relation in strategy details "
@@ -373,10 +381,6 @@ def run_write_tuple_import(
         "db_id": pl.Int64
     })
 
-    # Debug: Print available columns and the field we're looking for
-    log.debug(f"Available columns in source_df: {source_df.columns}")
-    log.debug(f"Looking for field: {field}")
-
     # Check if the field exists in the DataFrame
     if field not in source_df.columns:
         # Check if the field with /id suffix exists (common for relation fields)
@@ -391,8 +395,20 @@ def run_write_tuple_import(
             )
             return False
 
+    # Debug: Print available columns and the field we're looking for
+    log.debug(f"Available columns in source_df: {source_df.columns}")
+    log.debug(f"Looking for field: {field}")
+    log.debug(f"Field '{field}' in source_df.columns: {field in source_df.columns}")
+    
+    # Check if the field exists in the DataFrame (redundant check for debugging)
+    if field not in source_df.columns:
+        log.error(f"Field '{field}' still not found in source DataFrame after resolution")
+        return False
+
     # 2. Prepare the related model's IDs using the resolver
     all_related_ext_ids = source_df.get_column(field).str.split(",").explode()
+    log.debug(f"Total related external IDs before filtering: {len(all_related_ext_ids)}")
+    log.debug(f"Sample related external IDs: {all_related_ext_ids.head(5).to_list()}")
     if related_model_fk is None:
         log.error(
             f"Cannot resolve related IDs: Missing relation in strategy details "
@@ -564,10 +580,6 @@ def run_write_o2m_tuple_import(
     successful_updates = 0
     failed_records_to_report = []
 
-    # Debug: Print available columns and the field we're looking for
-    log.debug(f"Available columns in source_df: {source_df.columns}")
-    log.debug(f"Looking for field: {field}")
-
     # Check if the field exists in the DataFrame
     if field not in source_df.columns:
         # Check if the field with /id suffix exists (common for relation fields)
@@ -582,12 +594,28 @@ def run_write_o2m_tuple_import(
             )
             return False
 
+    # Debug: Print available columns and the field we're looking for
+    log.debug(f"Available columns in source_df: {source_df.columns}")
+    log.debug(f"Looking for field: {field}")
+    log.debug(f"Field '{field}' in source_df.columns: {field in source_df.columns}")
+    
+    # Check if the field exists in the DataFrame (redundant check for debugging)
+    if field not in source_df.columns:
+        log.error(f"Field '{field}' still not found in source DataFrame after resolution")
+        return False
+
     # Filter for rows that actually have data in the o2m field
     # For /id fields, we also need to check for empty strings
     if field.endswith("/id"):
+        log.debug(f"Filtering /id field '{field}' for non-null and non-empty values")
         o2m_df = source_df.filter(pl.col(field).is_not_null() & (pl.col(field) != ""))
+        log.debug(f"Filtered DataFrame shape for '{field}': {o2m_df.shape}")
+        log.debug(f"Sample data from filtered DataFrame: {o2m_df.head(3) if o2m_df.height > 0 else 'Empty'}")
     else:
+        log.debug(f"Filtering field '{field}' for non-null values")
         o2m_df = source_df.filter(pl.col(field).is_not_null())
+        log.debug(f"Filtered DataFrame shape for '{field}': {o2m_df.shape}")
+        log.debug(f"Sample data from filtered DataFrame: {o2m_df.head(3) if o2m_df.height > 0 else 'Empty'}")
 
     for record in o2m_df.iter_rows(named=True):
         parent_external_id = record["id"]
