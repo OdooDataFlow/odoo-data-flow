@@ -249,18 +249,32 @@ def run_import(  # noqa: C901
             if isinstance(config, str):
                 cache.save_id_map(config, model, id_map)
 
-        # --- Pass 2: Relational Strategies ---
-        if import_plan.get("strategies") and not fail:
-            source_df = pl.read_csv(
-                filename, separator=separator, truncate_ragged_lines=True
+        # --- Main Import Process ---
+    log.info(f"*** STARTING MAIN IMPORT PROCESS ***")
+    log.info(f"*** MODEL: {model} ***")
+    log.info(f"*** FILENAME: {filename} ***")
+    log.info(f"*** IMPORT PLAN KEYS: {list(import_plan.keys())} ***")
+    if "strategies" in import_plan:
+        log.info(f"*** IMPORT PLAN STRATEGIES: {import_plan['strategies']} ***")
+        log.info(f"*** IMPORT PLAN STRATEGIES COUNT: {len(import_plan['strategies'])} ***")
+    else:
+        log.info("*** NO STRATEGIES FOUND IN IMPORT PLAN ***")
+    
+    # --- Pass 1: Standard Fields ---
+    if not fail:
+        log.info(f"*** PASS 2: STARTING RELATIONAL IMPORT PROCESS ***")
+        log.info(f"*** DETECTED STRATEGIES: {import_plan.get('strategies', {})} ***")
+        log.info(f"*** STRATEGIES COUNT: {len(import_plan.get('strategies', {}))} ***")
+        source_df = pl.read_csv(
+            filename, separator=separator, truncate_ragged_lines=True
+        )
+        with Progress() as progress:
+            task_id = progress.add_task(
+                "Pass 2/2: Updating relations",
+                total=len(import_plan["strategies"]),
             )
-            with Progress() as progress:
-                task_id = progress.add_task(
-                    "Pass 2/2: Relational fields",
-                    total=len(import_plan["strategies"]),
-                )
-                for field, strategy_info in import_plan["strategies"].items():
-                    log.info(f"*** PROCESSING FIELD '{field}' WITH STRATEGY '{strategy_info['strategy']}' ***")
+            for field, strategy_info in import_plan["strategies"].items():
+                log.info(f"*** PROCESSING FIELD '{field}' WITH STRATEGY '{strategy_info['strategy']}' ***")
                     if strategy_info["strategy"] == "direct_relational_import":
                         log.info(f"*** CALLING run_direct_relational_import for field '{field}' ***")
                         import_details = relational_import.run_direct_relational_import(
