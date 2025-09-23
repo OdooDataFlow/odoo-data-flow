@@ -15,10 +15,12 @@ from . import cache, conf_lib, writer
 def _resolve_related_ids(
     config: Union[str, dict[str, Any]], related_model: str, external_ids: pl.Series
 ) -> Optional[pl.DataFrame]:
-    """Resolve related ids.
-
-    Resolves external IDs for a related model, trying cache first,
+    """Resolve external IDs for a related model, trying cache first,
     then falling back to a bulk XML-ID resolution.
+
+    This function handles both external IDs (like 'module.identifier') and
+    direct database IDs. Database IDs are used directly without resolution,
+    while external IDs are resolved through XML lookup.
     """
     # 1. Try to load from cache
     if isinstance(config, str):
@@ -27,10 +29,10 @@ def _resolve_related_ids(
             log.info(f"Cache hit for related model '{related_model}'.")
             return related_model_cache
 
-    # 2. Fallback to bulk XML-ID resolution
+    # 2. Fallback to bulk resolution (both database IDs and XML IDs)
     log.warning(
         f"Cache miss for related model '{related_model}'. "
-        f"Falling back to slow XML-ID resolution."
+        f"Falling back to resolution process."
     )
     if isinstance(config, dict):
         connection = conf_lib.get_connection_from_dict(config)
@@ -38,22 +40,46 @@ def _resolve_related_ids(
         connection = conf_lib.get_connection_from_config(config_file=config)
     
     id_list = external_ids.drop_nulls().unique().to_list()
-    log.info(f"Resolving {len(id_list)} unique external IDs for '{related_model}'...")
+    log.info(f"Resolving {len(id_list)} unique IDs for '{related_model}'...")
 
-    # Split full XML-ID 'module.identifier' into components
-    split_ids = [(i.split(".", 1)[0], i.split(".", 1)[1]) for i in id_list if "." in i]
-    # Separate numeric database IDs from other invalid IDs
-    db_ids = [int(i) for i in id_list if isinstance(i, str) and i.isdigit()]
-    invalid_ids = [i for i in id_list if not (isinstance(i, str) and ("." in i or i.isdigit()))]
+    # Separate numeric database IDs from XML IDs
+    db_ids = []
+    xml_ids = []
+    invalid_ids = []
+    
+    for id_val in id_list:
+        if isinstance(id_val, str) and id_val.isdigit():
+            # It's a numeric database ID
+            db_ids.append(int(id_val))
+        elif isinstance(id_val, str) and "." in id_val:
+            # It's an XML ID in 'module.identifier' format
+            xml_ids.append(id_val)
+        else:
+            # Neither a database ID nor a valid XML ID
+            invalid_ids.append(id_val)
     
     if invalid_ids:
         log.warning(
-            f"Skipping {len(invalid_ids)} invalid external_ids for model "
+            f"Skipping {len(invalid_ids)} invalid IDs for model "
             f"'{related_model}' (must be numeric database IDs or "
             f"'module.identifier' format XML IDs)."
         )
-        if not split_ids and not db_ids:
+        if not db_ids and not xml_ids:
             return None
+    
+    resolved_map = {}
+    
+    # Handle database IDs directly
+    if db_ids:
+        log.info(f"Using {len(db_ids)} database IDs directly without XML resolution")
+        # For database IDs, the "external ID" is the same as the database ID (as string)
+        for db_id in db_ids:
+            resolved_map[str(db_id)] = db_id
+    
+    # Handle XML IDs through traditional resolution
+    if xml_ids:
+        log.info(f"Resolving {len(xml_ids)} XML IDs through traditional lookup")
+        split_ids = [(i.split(".", 1)[0], i.split(".", 1)[1]) for i in xml_ids]
         domain = [
             "&",
             ("module", "=", split_ids[0][0]),
