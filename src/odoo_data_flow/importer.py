@@ -260,7 +260,9 @@ def run_import(  # noqa: C901
                     total=len(import_plan["strategies"]),
                 )
                 for field, strategy_info in import_plan["strategies"].items():
+                    log.debug(f"Processing field '{field}' with strategy '{strategy_info['strategy']}'")
                     if strategy_info["strategy"] == "direct_relational_import":
+                        log.debug(f"Calling run_direct_relational_import for field '{field}'")
                         import_details = relational_import.run_direct_relational_import(
                             config,
                             model,
@@ -275,6 +277,7 @@ def run_import(  # noqa: C901
                             filename,
                         )
                         if import_details:
+                            log.debug(f"Direct relational import returned details for field '{field}': {import_details}")
                             import_threaded.import_data(
                                 config=config,
                                 model=import_details["model"],
@@ -284,7 +287,10 @@ def run_import(  # noqa: C901
                                 batch_size=batch_size_run,
                             )
                             Path(import_details["file_csv"]).unlink()
+                        else:
+                            log.debug(f"Direct relational import returned None for field '{field}'")
                     elif strategy_info["strategy"] == "write_tuple":
+                        log.debug(f"Calling run_write_tuple_import for field '{field}'")
                         result = relational_import.run_write_tuple_import(
                             config,
                             model,
@@ -304,6 +310,7 @@ def run_import(  # noqa: C901
                                 "Check logs for details."
                             )
                     elif strategy_info["strategy"] == "write_o2m_tuple":
+                        log.debug(f"Calling run_write_o2m_tuple_import for field '{field}'")
                         result = relational_import.run_write_o2m_tuple_import(
                             config,
                             model,
