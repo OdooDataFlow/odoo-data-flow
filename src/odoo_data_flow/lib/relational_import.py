@@ -608,22 +608,40 @@ def run_write_o2m_tuple_import(
     # For /id fields, we also need to check for empty strings
     if field.endswith("/id"):
         log.debug(f"Filtering /id field '{field}' for non-null and non-empty values")
+        original_count = source_df.height
         o2m_df = source_df.filter(pl.col(field).is_not_null() & (pl.col(field) != ""))
+        filtered_count = o2m_df.height
         log.debug(f"Filtered DataFrame shape for '{field}': {o2m_df.shape}")
-        log.debug(f"Sample data from filtered DataFrame: {o2m_df.head(3) if o2m_df.height > 0 else 'Empty'}")
+        log.debug(f"Original count: {original_count}, Filtered count: {filtered_count}")
+        if filtered_count > 0:
+            log.debug(f"Sample data from filtered DataFrame: {o2m_df.head(3)}")
+        else:
+            log.debug("No rows found with non-empty data in field")
+            # Let's check what data actually exists
+            sample_data = source_df.select(["id", field]).head(5)
+            log.debug(f"Sample data from source_df for field '{field}': {sample_data}")
     else:
         log.debug(f"Filtering field '{field}' for non-null values")
+        original_count = source_df.height
         o2m_df = source_df.filter(pl.col(field).is_not_null())
+        filtered_count = o2m_df.height
         log.debug(f"Filtered DataFrame shape for '{field}': {o2m_df.shape}")
-        log.debug(f"Sample data from filtered DataFrame: {o2m_df.head(3) if o2m_df.height > 0 else 'Empty'}")
+        log.debug(f"Original count: {original_count}, Filtered count: {filtered_count}")
+        if filtered_count > 0:
+            log.debug(f"Sample data from filtered DataFrame: {o2m_df.head(3)}")
+        else:
+            log.debug("No rows found with non-null data in field")
 
     for record in o2m_df.iter_rows(named=True):
         parent_external_id = record["id"]
         parent_db_id = id_map.get(parent_external_id)
         if not parent_db_id:
+            log.debug(f"No database ID found for parent external ID '{parent_external_id}', skipping")
             continue
 
         o2m_json_data = record[field]
+        log.debug(f"Processing record {parent_external_id} with data: {o2m_json_data}")
+        
         try:
             child_records = json.loads(o2m_json_data)
             if not isinstance(child_records, list):
@@ -631,8 +649,10 @@ def run_write_o2m_tuple_import(
 
             # Odoo command: (0, 0, {values}) for creating new records
             o2m_commands = [(0, 0, vals) for vals in child_records]
+            log.debug(f"Writing {len(o2m_commands)} commands for parent {parent_external_id}")
             parent_model.write([parent_db_id], {field: o2m_commands})
             successful_updates += 1
+            log.debug(f"Successfully updated parent {parent_external_id}")
 
         except json.JSONDecodeError:
             log.error(
