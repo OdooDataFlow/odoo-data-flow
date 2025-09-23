@@ -713,6 +713,34 @@ def run_write_o2m_tuple_import(
                         }
                     )
 
+        except json.JSONDecodeError:
+            log.error(
+                f"Failed to decode JSON for parent '{parent_external_id}' "
+                f"in field '{field}'. Value: {o2m_json_data}"
+            )
+            failed_records_to_report.append(
+                {
+                    "model": model,
+                    "field": field,
+                    "parent_external_id": parent_external_id,
+                    "related_external_id": "N/A (JSON Data)",
+                    "error_reason": "Invalid JSON format",
+                }
+            )
+        except Exception as e:
+            log.error(
+                f"Failed to write o2m commands for parent '{parent_external_id}': {e}"
+            )
+            failed_records_to_report.append(
+                {
+                    "model": model,
+                    "field": field,
+                    "parent_external_id": parent_external_id,
+                    "related_external_id": "N/A (JSON Data)",
+                    "error_reason": str(e),
+                }
+            )
+
     if failed_records_to_report:
         writer.write_relational_failures_to_csv(
             model, field, original_filename, failed_records_to_report
