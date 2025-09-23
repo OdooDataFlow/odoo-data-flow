@@ -243,11 +243,11 @@ def run_import(  # noqa: C901
     fail_file_was_created = _count_lines(fail_output_file) > 1
     is_truly_successful = success and not fail_file_was_created
 
-    if is_truly_successful:
-        id_map = cast(dict[str, int], stats.get("id_map", {}))
-        if id_map:
-            if isinstance(config, str):
-                cache.save_id_map(config, model, id_map)
+    # Initialize id_map early to avoid UnboundLocalError
+    id_map = cast(dict[str, int], stats.get("id_map", {})) if is_truly_successful else {}
+    if is_truly_successful and id_map:
+        if isinstance(config, str):
+            cache.save_id_map(config, model, id_map)
 
         # --- Main Import Process ---
     log.info(f"*** STARTING MAIN IMPORT PROCESS ***")
