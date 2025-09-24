@@ -1,6 +1,7 @@
 """Handles relational import strategies like m2m and o2m."""
 
 import json
+import os
 import tempfile
 import time
 from typing import Any, Optional, Union
@@ -499,7 +500,6 @@ def run_write_tuple_import(
         tmp_path = tmp.name
 
     log.info(f"*** TEMPORARY FILE CREATED: {tmp_path} ***")
-    log.info(f"*** TEMPORARY FILE SIZE: {os.path.getsize(tmp_path)} bytes ***")
 
     return {
         "file_csv": tmp_path,
