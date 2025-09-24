@@ -1,7 +1,6 @@
 """Handles relational import strategies like m2m and o2m."""
 
 import json
-import os
 import tempfile
 from typing import Any, Optional, Union
 
@@ -435,16 +434,17 @@ def run_write_tuple_import(
     )
     log.info(f"*** RUNNING WRITE TUPLE IMPORT FOR FIELD '{field}' ***")
     log.info(f"*** STRATEGY DETAILS: {strategy_details} ***")
-    
+
     # Add a small delay to reduce server load and prevent connection pool exhaustion
     import time
+
     time.sleep(0.1)
 
     # Check if required keys exist
     relational_table = strategy_details.get("relation_table")
     owning_model_fk = strategy_details.get("relation_field")
     related_model_fk = strategy_details.get("relation")
-    
+
     log.info(f"*** RELATIONAL TABLE: {relational_table} ***")
     log.info(f"*** OWNING MODEL FK: {owning_model_fk} ***")
     log.info(f"*** RELATED MODEL FK: {related_model_fk} ***")
@@ -453,7 +453,7 @@ def run_write_tuple_import(
     relational_table, owning_model_fk = _derive_missing_relation_info(
         config, model, field, relational_table, owning_model_fk, related_model_fk
     )
-    
+
     # If we still don't have the required information, we can't proceed
     # with this strategy
     if not relational_table or not owning_model_fk:
@@ -473,7 +473,7 @@ def run_write_tuple_import(
     log.debug(f"Available columns in source_df: {source_df.columns}")
     log.debug(f"Looking for field: {field}")
     log.debug(f"Field '{field}' in source_df.columns: {field in source_df.columns}")
-    
+
     # Check if the field exists in the DataFrame (redundant check for debugging)
     if field not in source_df.columns:
         # Check if the field with /id suffix exists (common for relation fields)
@@ -490,8 +490,12 @@ def run_write_tuple_import(
 
     # 2. Prepare the related model's IDs using the resolver
     all_related_ext_ids = source_df.get_column(field).str.split(",").explode()
-    log.info(f"*** TOTAL RELATED EXTERNAL IDS BEFORE FILTERING: {len(all_related_ext_ids)} ***")
-    log.info(f"*** SAMPLE RELATED EXTERNAL IDS: {all_related_ext_ids.head(5).to_list()} ***")
+    log.info(
+        f"*** TOTAL RELATED EXTERNAL IDS BEFORE FILTERING: {len(all_related_ext_ids)} ***"
+    )
+    log.info(
+        f"*** SAMPLE RELATED EXTERNAL IDS: {all_related_ext_ids.head(5).to_list()} ***"
+    )
     if related_model_fk is None:
         log.error(
             f"Cannot resolve related IDs: Missing relation in strategy details "
@@ -529,20 +533,70 @@ def run_write_tuple_import(
     log.info(f"*** LINK DF SHAPE AFTER RELATED JOIN: {link_df.shape} ***")
     log.info(f"*** LINK DF SAMPLE AFTER RELATED JOIN: {link_df.head(3)} ***")
 
-    # 4. Write to a temporary file and return import details
-    with tempfile.NamedTemporaryFile(
-        mode="w+", delete=False, suffix=".csv", newline=""
-    ) as tmp:
-        link_df.select([owning_model_fk, f"{related_model_fk}/id"]).write_csv(tmp.name)
-        tmp_path = tmp.name
+    # 4. Process the data directly (since this is write_tuple, not import_details)
+    # For write_tuple, we need to update records in the owning model similar to how
+    # _create_relational_records does it, but without the complexity of creating
+    # records in a separate relational table
+    if isinstance(config, dict):
+        connection = conf_lib.get_connection_from_dict(config)
+    else:
+        connection = conf_lib.get_connection_from_config(config_file=config)
 
-    log.info(f"*** TEMPORARY FILE CREATED: {tmp_path} ***")
+    try:
+        owning_model = connection.get_model(model)
+    except Exception as e:
+        log.error(f"Failed to access model '{model}' in Odoo. Error: {e}")
+        return False
 
-    return {
-        "file_csv": tmp_path,
-        "model": relational_table,
-        "unique_id_field": owning_model_fk,
-    }
+    successful_updates = 0
+    failed_records_to_report = []
+
+    # Get unique combinations of parent external IDs and related external IDs
+    for row in link_df.iter_rows(named=True):
+        parent_external_id = row["external_id"]
+        parent_db_id = id_map.get(parent_external_id)
+        related_db_id = row[f"{related_model_fk}/id"]
+
+        if not parent_db_id:
+            log.debug(
+                f"No database ID found for parent external ID '{parent_external_id}', skipping"
+            )
+            continue
+
+        try:
+            # For many2many fields, we use the (4, ID) command to link an existing record
+            m2m_command = [(4, related_db_id, 0)]
+            owning_model.write([parent_db_id], {field: m2m_command})
+            successful_updates += 1
+            log.debug(
+                f"Successfully updated record {parent_external_id} with related ID {related_db_id}"
+            )
+
+        except Exception as write_error:
+            log.error(
+                f"Failed to update record {parent_external_id} with related ID {related_db_id}: {write_error}"
+            )
+            failed_records_to_report.append(
+                {
+                    "model": model,
+                    "field": field,
+                    "parent_external_id": parent_external_id,
+                    "related_external_id": str(related_db_id),
+                    "error_reason": str(write_error),
+                }
+            )
+
+    if failed_records_to_report:
+        writer.write_relational_failures_to_csv(
+            model, field, original_filename, failed_records_to_report
+        )
+
+    log.info(
+        f"Finished 'Write Tuple' for '{field}': "
+        f"{successful_updates} successful, {len(failed_records_to_report)} failed."
+    )
+
+    return successful_updates > 0
 
 
 def _create_relational_records(
