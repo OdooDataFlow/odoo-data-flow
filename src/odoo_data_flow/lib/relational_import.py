@@ -491,10 +491,12 @@ def run_write_tuple_import(
     # 2. Prepare the related model's IDs using the resolver
     all_related_ext_ids = source_df.get_column(field).str.split(",").explode()
     log.info(
-        f"*** TOTAL RELATED EXTERNAL IDS BEFORE FILTERING: {len(all_related_ext_ids)} ***"
+        "*** TOTAL RELATED EXTERNAL IDS BEFORE FILTERING: "
+        f"{len(all_related_ext_ids)} ***"
     )
     log.info(
-        f"*** SAMPLE RELATED EXTERNAL IDS: {all_related_ext_ids.head(5).to_list()} ***"
+        "*** SAMPLE RELATED EXTERNAL IDS: "
+        f"{all_related_ext_ids.head(5).to_list()} ***"
     )
     if related_model_fk is None:
         log.error(
@@ -559,22 +561,28 @@ def run_write_tuple_import(
 
         if not parent_db_id:
             log.debug(
-                f"No database ID found for parent external ID '{parent_external_id}', skipping"
+                f"No database ID found for parent external ID "
+                f"'{parent_external_id}', skipping"
             )
             continue
 
         try:
-            # For many2many fields, we use the (4, ID) command to link an existing record
+            log.debug(
+                "For many2many fields, we use the (4, ID) command "
+                "to link an existing record"
+            )
             m2m_command = [(4, related_db_id, 0)]
             owning_model.write([parent_db_id], {field: m2m_command})
             successful_updates += 1
             log.debug(
-                f"Successfully updated record {parent_external_id} with related ID {related_db_id}"
+                f"Successfully updated record {parent_external_id} "
+                f"with related ID {related_db_id}"
             )
 
         except Exception as write_error:
             log.error(
-                f"Failed to update record {parent_external_id} with related ID {related_db_id}: {write_error}"
+                f"Failed to update record {parent_external_id} "
+                f"with related ID {related_db_id}: {write_error}"
             )
             failed_records_to_report.append(
                 {
