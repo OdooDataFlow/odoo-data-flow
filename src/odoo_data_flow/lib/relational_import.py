@@ -38,7 +38,7 @@ def _resolve_related_ids(
         connection = conf_lib.get_connection_from_dict(config)
     else:
         connection = conf_lib.get_connection_from_config(config_file=config)
-    
+
     id_list = external_ids.drop_nulls().unique().to_list()
     log.info(f"Resolving {len(id_list)} unique IDs for '{related_model}'...")
 
@@ -46,7 +46,7 @@ def _resolve_related_ids(
     db_ids = []
     xml_ids = []
     invalid_ids = []
-    
+
     for id_val in id_list:
         if isinstance(id_val, str) and id_val.isdigit():
             # It's a numeric database ID
@@ -57,7 +57,7 @@ def _resolve_related_ids(
         else:
             # Neither a database ID nor a valid XML ID
             invalid_ids.append(id_val)
-    
+
     if invalid_ids:
         log.warning(
             f"Skipping {len(invalid_ids)} invalid IDs for model "
@@ -66,16 +66,16 @@ def _resolve_related_ids(
         )
         if not db_ids and not xml_ids:
             return None
-    
+
     resolved_map = {}
-    
+
     # Handle database IDs directly
     if db_ids:
         log.info(f"Using {len(db_ids)} database IDs directly without XML resolution")
         # For database IDs, the "external ID" is the same as the database ID (as string)
         for db_id in db_ids:
             resolved_map[str(db_id)] = db_id
-    
+
     # Handle XML IDs through traditional resolution
     if xml_ids:
         log.info(f"Resolving {len(xml_ids)} XML IDs through traditional lookup")
@@ -102,7 +102,8 @@ def _resolve_related_ids(
                     return None
             else:
                 xml_resolved_map = {
-                    f"{rec['module']}.{rec['name']}": rec["res_id"] for rec in resolved_data
+                    f"{rec['module']}.{rec['name']}": rec["res_id"]
+                    for rec in resolved_data
                 }
                 resolved_map.update(xml_resolved_map)
                 log.info(
@@ -119,7 +120,10 @@ def _resolve_related_ids(
             f"({len(db_ids)} database IDs, {len([k for k in resolved_map.keys() if '.' in k])} XML IDs)."
         )
         return pl.DataFrame(
-            {"external_id": list(resolved_map.keys()), "db_id": list(resolved_map.values())}
+            {
+                "external_id": list(resolved_map.keys()),
+                "db_id": list(resolved_map.values()),
+            }
         )
     return None
 
@@ -204,9 +208,10 @@ def run_direct_relational_import(
         description=f"Pass 2/2: Updating relations for [bold]{field}[/bold]",
     )
     log.info(f"Running 'Direct Relational Import' for field '{field}'...")
-    
+
     # Add a small delay to reduce server load and prevent connection pool exhaustion
     import time
+
     time.sleep(0.1)
 
     # Check if required keys exist
@@ -228,13 +233,10 @@ def run_direct_relational_import(
         return None
 
     # 1. Prepare the owning model's IDs
-    owning_df = pl.DataFrame({
-        "external_id": list(id_map.keys()), 
-        "db_id": list(id_map.values())
-    }, schema={
-        "external_id": pl.Utf8,
-        "db_id": pl.Int64
-    })
+    owning_df = pl.DataFrame(
+        {"external_id": list(id_map.keys()), "db_id": list(id_map.values())},
+        schema={"external_id": pl.Utf8, "db_id": pl.Int64},
+    )
 
     # Check if the field exists in the DataFrame
     if field not in source_df.columns:
@@ -254,15 +256,19 @@ def run_direct_relational_import(
     log.debug(f"Available columns in source_df: {source_df.columns}")
     log.debug(f"Looking for field: {field}")
     log.debug(f"Field '{field}' in source_df.columns: {field in source_df.columns}")
-    
+
     # Check if the field exists in the DataFrame (redundant check for debugging)
     if field not in source_df.columns:
-        log.error(f"Field '{field}' still not found in source DataFrame after resolution")
+        log.error(
+            f"Field '{field}' still not found in source DataFrame after resolution"
+        )
         return None
 
     # 2. Prepare the related model's IDs using the resolver
     all_related_ext_ids = source_df.get_column(field).str.split(",").explode()
-    log.debug(f"Total related external IDs before filtering: {len(all_related_ext_ids)}")
+    log.debug(
+        f"Total related external IDs before filtering: {len(all_related_ext_ids)}"
+    )
     log.debug(f"Sample related external IDs: {all_related_ext_ids.head(5).to_list()}")
     if related_model_fk is None:
         log.error(
@@ -385,7 +391,8 @@ def run_write_tuple_import(
         task_id,
         description=f"Pass 2/2: Updating relations for [bold]{field}[/bold]",
     )
-    log.info(f"Running 'Write Tuple' for field '{field}'...")
+    log.info(f"*** RUNNING WRITE TUPLE IMPORT FOR FIELD '{field}' ***")
+    log.info(f"*** STRATEGY DETAILS: {strategy_details} ***")
     
     # Add a small delay to reduce server load and prevent connection pool exhaustion
     import time
@@ -395,11 +402,17 @@ def run_write_tuple_import(
     relational_table = strategy_details.get("relation_table")
     owning_model_fk = strategy_details.get("relation_field")
     related_model_fk = strategy_details.get("relation")
+    
+    log.info(f"*** RELATIONAL TABLE: {relational_table} ***")
+    log.info(f"*** OWNING MODEL FK: {owning_model_fk} ***")
+    log.info(f"*** RELATED MODEL FK: {related_model_fk} ***")
 
     # Try to derive missing information if possible
     relational_table, owning_model_fk = _derive_missing_relation_info(
         model, field, relational_table, owning_model_fk, related_model_fk
     )
+    log.info(f"*** AFTER DERIVATION - RELATIONAL TABLE: {relational_table} ***")
+    log.info(f"*** AFTER DERIVATION - OWNING MODEL FK: {owning_model_fk} ***")
 
     # If we still don't have the required information, we can't proceed
     # with this strategy
@@ -411,15 +424,19 @@ def run_write_tuple_import(
         return False
 
     # 1. Prepare the owning model's IDs
-    owning_df = pl.DataFrame({
-        "external_id": list(id_map.keys()), 
-        "db_id": list(id_map.values())
-    }, schema={
-        "external_id": pl.Utf8,
-        "db_id": pl.Int64
-    })
+    owning_df = pl.DataFrame(
+        {"external_id": list(id_map.keys()), "db_id": list(id_map.values())},
+        schema={"external_id": pl.Utf8, "db_id": pl.Int64},
+    )
+    log.info(f"*** OWNING DF SHAPE: {owning_df.shape} ***")
+    log.info(f"*** OWNING DF SAMPLE: {owning_df.head(3)} ***")
 
-    # Check if the field exists in the DataFrame
+    # Debug: Print available columns and the field we're looking for
+    log.debug(f"Available columns in source_df: {source_df.columns}")
+    log.debug(f"Looking for field: {field}")
+    log.debug(f"Field '{field}' in source_df.columns: {field in source_df.columns}")
+    
+    # Check if the field exists in the DataFrame (redundant check for debugging)
     if field not in source_df.columns:
         # Check if the field with /id suffix exists (common for relation fields)
         field_with_id = f"{field}/id"
@@ -433,20 +450,10 @@ def run_write_tuple_import(
             )
             return False
 
-    # Debug: Print available columns and the field we're looking for
-    log.debug(f"Available columns in source_df: {source_df.columns}")
-    log.debug(f"Looking for field: {field}")
-    log.debug(f"Field '{field}' in source_df.columns: {field in source_df.columns}")
-    
-    # Check if the field exists in the DataFrame (redundant check for debugging)
-    if field not in source_df.columns:
-        log.error(f"Field '{field}' still not found in source DataFrame after resolution")
-        return False
-
     # 2. Prepare the related model's IDs using the resolver
     all_related_ext_ids = source_df.get_column(field).str.split(",").explode()
-    log.debug(f"Total related external IDs before filtering: {len(all_related_ext_ids)}")
-    log.debug(f"Sample related external IDs: {all_related_ext_ids.head(5).to_list()}")
+    log.info(f"*** TOTAL RELATED EXTERNAL IDS BEFORE FILTERING: {len(all_related_ext_ids)} ***")
+    log.info(f"*** SAMPLE RELATED EXTERNAL IDS: {all_related_ext_ids.head(5).to_list()} ***")
     if related_model_fk is None:
         log.error(
             f"Cannot resolve related IDs: Missing relation in strategy details "
@@ -459,26 +466,46 @@ def run_write_tuple_import(
     if related_model_df is None:
         log.error(f"Could not resolve IDs for related model '{related_model_fk}'.")
         return False
+    log.info(f"*** RELATED MODEL DF SHAPE: {related_model_df.shape} ***")
+    log.info(f"*** RELATED MODEL DF SAMPLE: {related_model_df.head(3)} ***")
 
     # 3. Create the link table DataFrame
-    link_df = _prepare_link_dataframe(
-        source_df, field, owning_df, related_model_df, owning_model_fk, related_model_fk
-    )
+    link_df = source_df.select(["id", field]).rename({"id": "external_id"})
+    # Ensure external_id is treated as string to match the owning_df schema
+    link_df = link_df.with_columns(pl.col("external_id").cast(pl.Utf8))
+    link_df = link_df.with_columns(pl.col(field).str.split(",")).explode(field)
+    log.info(f"*** LINK DF SHAPE BEFORE JOIN: {link_df.shape} ***")
+    log.info(f"*** LINK DF SAMPLE BEFORE JOIN: {link_df.head(3)} ***")
 
-    # 4. Create records in the relational table
-    return _create_relational_records(
-        config,
-        model,
-        field,
-        relational_table,
-        owning_model_fk,
-        related_model_fk,
-        link_df,
-        owning_df,
-        related_model_df,
-        original_filename,
-        batch_size,
+    # Join to get DB IDs for the owning model
+    link_df = link_df.join(owning_df, on="external_id", how="inner").rename(
+        {"db_id": owning_model_fk}
     )
+    log.info(f"*** LINK DF SHAPE AFTER OWNING JOIN: {link_df.shape} ***")
+    log.info(f"*** LINK DF SAMPLE AFTER OWNING JOIN: {link_df.head(3)} ***")
+
+    # Join to get DB IDs for the related model
+    link_df = link_df.join(
+        related_model_df.rename({"external_id": field}), on=field, how="inner"
+    ).rename({"db_id": f"{related_model_fk}/id"})
+    log.info(f"*** LINK DF SHAPE AFTER RELATED JOIN: {link_df.shape} ***")
+    log.info(f"*** LINK DF SAMPLE AFTER RELATED JOIN: {link_df.head(3)} ***")
+
+    # 4. Write to a temporary file and return import details
+    with tempfile.NamedTemporaryFile(
+        mode="w+", delete=False, suffix=".csv", newline=""
+    ) as tmp:
+        link_df.select([owning_model_fk, f"{related_model_fk}/id"]).write_csv(tmp.name)
+        tmp_path = tmp.name
+
+    log.info(f"*** TEMPORARY FILE CREATED: {tmp_path} ***")
+    log.info(f"*** TEMPORARY FILE SIZE: {os.path.getsize(tmp_path)} bytes ***")
+
+    return {
+        "file_csv": tmp_path,
+        "model": relational_table,
+        "unique_id_field": owning_model_fk,
+    }
 
 
 def _create_relational_records(
@@ -606,7 +633,7 @@ def run_write_o2m_tuple_import(
         description=f"Pass 2/2: Updating relations for [bold]{field}[/bold]",
     )
     log.info(f"Running 'Write O2M Tuple' for field '{field}'...")
-    
+
     # Add a small delay to reduce server load and prevent connection pool exhaustion
     time.sleep(0.1)
 
@@ -636,10 +663,12 @@ def run_write_o2m_tuple_import(
     log.debug(f"Available columns in source_df: {source_df.columns}")
     log.debug(f"Looking for field: {field}")
     log.debug(f"Field '{field}' in source_df.columns: {field in source_df.columns}")
-    
+
     # Check if the field exists in the DataFrame (redundant check for debugging)
     if field not in source_df.columns:
-        log.error(f"Field '{field}' still not found in source DataFrame after resolution")
+        log.error(
+            f"Field '{field}' still not found in source DataFrame after resolution"
+        )
         return False
 
     # Filter for rows that actually have data in the o2m field
@@ -669,15 +698,19 @@ def run_write_o2m_tuple_import(
         parent_external_id = record["id"]
         parent_db_id = id_map.get(parent_external_id)
         if not parent_db_id:
-            log.debug(f"No database ID found for parent external ID '{parent_external_id}', skipping")
+            log.debug(
+                f"No database ID found for parent external ID '{parent_external_id}', skipping"
+            )
             continue
 
         o2m_json_data = record[field]
-        log.debug(f"Processing record {parent_external_id} with field '{field}' data: {o2m_json_data}")
-        
+        log.debug(
+            f"Processing record {parent_external_id} with field '{field}' data: {o2m_json_data}"
+        )
+
         try:
             # Check if this is JSON data or comma-separated values
-            if isinstance(o2m_json_data, str) and o2m_json_data.startswith('['):
+            if isinstance(o2m_json_data, str) and o2m_json_data.startswith("["):
                 # JSON format - one2many field
                 child_records = json.loads(o2m_json_data)
                 if not isinstance(child_records, list):
@@ -685,24 +718,34 @@ def run_write_o2m_tuple_import(
 
                 # Odoo command: (0, 0, {values}) for creating new records
                 o2m_commands = [(0, 0, vals) for vals in child_records]
-                log.debug(f"Writing {len(o2m_commands)} JSON commands for parent {parent_external_id} to field '{field}'")
+                log.debug(
+                    f"Writing {len(o2m_commands)} JSON commands for parent {parent_external_id} to field '{field}'"
+                )
                 parent_model.write([parent_db_id], {field: o2m_commands})
                 successful_updates += 1
-                log.debug(f"Successfully updated parent {parent_external_id} with JSON data")
+                log.debug(
+                    f"Successfully updated parent {parent_external_id} with JSON data"
+                )
             else:
                 # Comma-separated values - likely from /id field
                 if isinstance(o2m_json_data, str):
                     # Split by comma and process each value
-                    values = [v.strip() for v in o2m_json_data.split(',') if v.strip()]
-                    log.debug(f"Processing comma-separated values for parent {parent_external_id}: {values}")
+                    values = [v.strip() for v in o2m_json_data.split(",") if v.strip()]
+                    log.debug(
+                        f"Processing comma-separated values for parent {parent_external_id}: {values}"
+                    )
                     # For many2many fields, we would create (4, ID) commands to link existing records
                     # But we need to resolve the IDs first
                     # This is a simplified example - in reality we'd need to resolve the IDs
-                    log.debug(f"Would write {len(values)} values for parent {parent_external_id} to field '{field}'")
+                    log.debug(
+                        f"Would write {len(values)} values for parent {parent_external_id} to field '{field}'"
+                    )
                     # Placeholder - actual implementation would depend on field type
                     successful_updates += 1
                 else:
-                    log.warning(f"Unexpected data type for field '{field}': {type(o2m_json_data)}")
+                    log.warning(
+                        f"Unexpected data type for field '{field}': {type(o2m_json_data)}"
+                    )
                     failed_records_to_report.append(
                         {
                             "model": model,
