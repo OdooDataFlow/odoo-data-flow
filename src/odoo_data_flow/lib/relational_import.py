@@ -414,6 +414,79 @@ def _prepare_link_dataframe(
     return link_df
 
 
+def _execute_write_tuple_updates(
+    config: Union[str, dict[str, Any]],
+    model: str,
+    field: str,
+    link_df: pl.DataFrame,
+    id_map: dict[str, int],
+    related_model_fk: str,
+    original_filename: str,
+) -> bool:
+    """Execute the actual updates for write_tuple strategy."""
+    if isinstance(config, dict):
+        connection = conf_lib.get_connection_from_dict(config)
+    else:
+        connection = conf_lib.get_connection_from_config(config_file=config)
+
+    try:
+        owning_model = connection.get_model(model)
+    except Exception as e:
+        log.error(f"Failed to access model '{model}' in Odoo. Error: {e}")
+        return False
+
+    successful_updates = 0
+    failed_records_to_report = []
+
+    # Process each row in the link DataFrame
+    for row in link_df.iter_rows(named=True):
+        parent_external_id = row["external_id"]
+        parent_db_id = id_map.get(parent_external_id)
+        related_db_id = row[f"{related_model_fk}/id"]
+
+        if not parent_db_id:
+            log.debug(
+                f"No database ID found for parent external ID "
+                f"'{parent_external_id}', skipping"
+            )
+            continue
+
+        try:
+            log.debug(
+                "For many2many fields, we use the (4, ID) command "
+                "to link an existing record"
+            )
+            m2m_command = [(4, related_db_id, 0)]
+            owning_model.write([parent_db_id], {field: m2m_command})
+            successful_updates += 1
+            log.debug(
+                f"Successfully updated record {parent_external_id} "
+                f"with related ID {related_db_id}"
+            )
+
+        except Exception as write_error:
+            log.error(
+                f"Failed to update record {parent_external_id} "
+                f"with related ID {related_db_id}: {write_error}"
+            )
+            failed_records_to_report.append(
+                {
+                    "model": model,
+                    "field": field,
+                    "parent_external_id": parent_external_id,
+                    "related_external_id": str(related_db_id),
+                    "error_reason": str(write_error),
+                }
+            )
+
+    if failed_records_to_report:
+        writer.write_relational_failures_to_csv(
+            model, field, original_filename, failed_records_to_report
+        )
+
+    return successful_updates > 0
+
+
 def run_write_tuple_import(
     config: Union[str, dict[str, Any]],
     model: str,
@@ -437,7 +510,6 @@ def run_write_tuple_import(
 
     # Add a small delay to reduce server load and prevent connection pool exhaustion
     import time
-
     time.sleep(0.1)
 
     # Check if required keys exist
@@ -535,76 +607,27 @@ def run_write_tuple_import(
     log.info(f"*** LINK DF SHAPE AFTER RELATED JOIN: {link_df.shape} ***")
     log.info(f"*** LINK DF SAMPLE AFTER RELATED JOIN: {link_df.head(3)} ***")
 
-    # 4. Process the data directly (since this is write_tuple, not import_details)
-    # For write_tuple, we need to update records in the owning model similar to how
-    # _create_relational_records does it, but without the complexity of creating
-    # records in a separate relational table
-    if isinstance(config, dict):
-        connection = conf_lib.get_connection_from_dict(config)
+    # 4. Execute the updates
+    success = _execute_write_tuple_updates(
+        config, model, field, link_df, id_map, related_model_fk, original_filename
+    )
+
+    # Count successful updates - get from link_df
+    if link_df.height > 0:
+        successful_count = len([
+            row['external_id'] for row in link_df.iter_rows(named=True)
+            if id_map.get(row['external_id'])
+        ])
     else:
-        connection = conf_lib.get_connection_from_config(config_file=config)
-
-    try:
-        owning_model = connection.get_model(model)
-    except Exception as e:
-        log.error(f"Failed to access model '{model}' in Odoo. Error: {e}")
-        return False
-
-    successful_updates = 0
-    failed_records_to_report = []
-
-    # Get unique combinations of parent external IDs and related external IDs
-    for row in link_df.iter_rows(named=True):
-        parent_external_id = row["external_id"]
-        parent_db_id = id_map.get(parent_external_id)
-        related_db_id = row[f"{related_model_fk}/id"]
-
-        if not parent_db_id:
-            log.debug(
-                f"No database ID found for parent external ID "
-                f"'{parent_external_id}', skipping"
-            )
-            continue
-
-        try:
-            log.debug(
-                "For many2many fields, we use the (4, ID) command "
-                "to link an existing record"
-            )
-            m2m_command = [(4, related_db_id, 0)]
-            owning_model.write([parent_db_id], {field: m2m_command})
-            successful_updates += 1
-            log.debug(
-                f"Successfully updated record {parent_external_id} "
-                f"with related ID {related_db_id}"
-            )
-
-        except Exception as write_error:
-            log.error(
-                f"Failed to update record {parent_external_id} "
-                f"with related ID {related_db_id}: {write_error}"
-            )
-            failed_records_to_report.append(
-                {
-                    "model": model,
-                    "field": field,
-                    "parent_external_id": parent_external_id,
-                    "related_external_id": str(related_db_id),
-                    "error_reason": str(write_error),
-                }
-            )
-
-    if failed_records_to_report:
-        writer.write_relational_failures_to_csv(
-            model, field, original_filename, failed_records_to_report
-        )
+        successful_count = 0
+    failed_count = 0 if success else 'unknown'
 
     log.info(
         f"Finished 'Write Tuple' for '{field}': "
-        f"{successful_updates} successful, {len(failed_records_to_report)} failed."
+        f"{successful_count} successful, {failed_count} failed."
     )
 
-    return successful_updates > 0
+    return success
 
 
 def _create_relational_records(
