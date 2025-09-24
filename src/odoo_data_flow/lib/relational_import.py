@@ -476,6 +476,11 @@ def _execute_write_tuple_updates(
         parent_external_id = row["external_id"]
         parent_db_id = id_map.get(parent_external_id)
         related_db_id = row[f"{related_model_fk}/id"]
+        
+        log.debug(
+            f"Processing row - parent_external_id: {parent_external_id}, "
+            f"parent_db_id: {parent_db_id}, related_db_id: {related_db_id}"
+        )
 
         if not parent_db_id:
             log.debug(
@@ -486,15 +491,31 @@ def _execute_write_tuple_updates(
 
         try:
             log.debug(
+                f"Constructing many2many command for {parent_external_id} -> {related_db_id}"
+            )
+            # For many2many fields, we use the (4, ID) command to link an existing record
+            log.debug(
                 "For many2many fields, we use the (4, ID) command "
                 "to link an existing record"
             )
-            m2m_command = [(4, related_db_id, 0)]
+            # Ensure related_db_id is an integer
+            if isinstance(related_db_id, str) and related_db_id.isdigit():
+                related_db_id_int = int(related_db_id)
+            elif isinstance(related_db_id, (int, float)):
+                related_db_id_int = int(related_db_id)
+            else:
+                raise ValueError(f"Invalid related_db_id format: {related_db_id}")
+                
+            m2m_command = [(4, related_db_id_int, 0)]  # Convert to proper tuple format
+            log.debug(
+                f"Writing m2m command for parent {parent_external_id} ({parent_db_id}) "
+                f"with field '{field}': {m2m_command}"
+            )
             owning_model.write([parent_db_id], {field: m2m_command})
             successful_updates += 1
             log.debug(
                 f"Successfully updated record {parent_external_id} "
-                f"with related ID {related_db_id}"
+                f"with related ID {related_db_id_int}"
             )
 
         except Exception as write_error:
