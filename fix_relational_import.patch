@@ -1,0 +1,21 @@
+diff --git a/src/odoo_data_flow/lib/relational_import.py b/src/odoo_data_flow/lib/relational_import.py
+index a38d710..fix_relational_import_fixes 100644
+--- a/src/odoo_data_flow/lib/relational_import.py
++++ b/src/odoo_data_flow/lib/relational_import.py
+@@ -744,7 +744,12 @@ def run_write_o2m_tuple_import(
+                         # In a real implementation, we would need to check the field type
+                         if resolved_ids:
+                             # For many2many fields, create (4, ID) commands to link existing records
+-                            o2m_commands = [(4, rid) if isinstance(rid, int) else (4, rid) for rid in resolved_ids]
++                            # Fix mypy type errors: Use (4, ID, 0) format for Odoo commands
++                            o2m_commands = []
++                            for rid in resolved_ids:
++                                if isinstance(rid, (int, str)) and str(rid).isdigit():
++                                    # It's a numeric database ID
++                                    o2m_commands.append((4, int(rid), 0))
++                                else:
++                                    # It's an XML ID
++                                    o2m_commands.append((4, 0, rid))
+ 
+                             log.debug(
+                                 f"Writing {len(o2m_commands)} many2many commands for parent {parent_external_id} to field '{field}'"

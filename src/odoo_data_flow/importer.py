@@ -243,86 +243,150 @@ def run_import(  # noqa: C901
     fail_file_was_created = _count_lines(fail_output_file) > 1
     is_truly_successful = success and not fail_file_was_created
 
-    if is_truly_successful:
-        id_map = cast(dict[str, int], stats.get("id_map", {}))
-        if id_map:
-            if isinstance(config, str):
-                cache.save_id_map(config, model, id_map)
+    # Initialize id_map early to avoid UnboundLocalError
+    id_map = (
+        cast(dict[str, int], stats.get("id_map", {})) if is_truly_successful else {}
+    )
+    if is_truly_successful and id_map:
+        if isinstance(config, str):
+            cache.save_id_map(config, model, id_map)
 
-        # --- Pass 2: Relational Strategies ---
-        if import_plan.get("strategies") and not fail:
+        # --- Main Import Process ---
+    log.info("*** STARTING MAIN IMPORT PROCESS ***")
+    log.info(f"*** MODEL: {model} ***")
+    log.info(f"*** FILENAME: {filename} ***")
+    log.info(f"*** IMPORT PLAN KEYS: {list(import_plan.keys())} ***")
+    if "strategies" in import_plan:
+        log.info(f"*** IMPORT PLAN STRATEGIES: {import_plan['strategies']} ***")
+        log.info(
+            f"*** IMPORT PLAN STRATEGIES COUNT: {len(import_plan['strategies'])} ***"
+        )
+    else:
+        log.info("*** NO STRATEGIES FOUND IN IMPORT PLAN ***")
+
+    # --- Pass 1: Standard Fields ---
+    if not fail:
+        log.info("*** PASS 2: STARTING RELATIONAL IMPORT PROCESS ***")
+        log.info(f"*** DETECTED STRATEGIES: {import_plan.get('strategies', {})} ***")
+        log.info(f"*** STRATEGIES COUNT: {len(import_plan.get('strategies', {}))} ***")
+        # Read the CSV file with explicit schema for /id suffixed columns
+        # Override automatic type inference to ensure all /id suffixed columns are strings
+        df = pl.read_csv(filename, separator=separator, truncate_ragged_lines=True)
+
+        # Identify columns that end with /id suffix
+        id_columns = [col for col in df.columns if col.endswith("/id")]
+
+        # If we have /id suffixed columns, re-read with explicit schema
+        if id_columns:
+            log.debug(f"Found /id suffixed columns: {id_columns}")
+            # Create schema override to force /id columns to be strings
+            schema_overrides = {col: pl.Utf8 for col in id_columns}
+            log.debug(f"Schema overrides for /id columns: {schema_overrides}")
+            # Re-read with explicit schema
             source_df = pl.read_csv(
-                filename, separator=separator, truncate_ragged_lines=True
+                filename,
+                separator=separator,
+                truncate_ragged_lines=True,
+                schema_overrides=schema_overrides,
             )
-            with Progress() as progress:
-                task_id = progress.add_task(
-                    "Pass 2/2: Relational fields",
-                    total=len(import_plan["strategies"]),
+            log.debug(
+                f"Re-read DataFrame with schema overrides. /id column types: {[f'{col}: {source_df[col].dtype}' for col in id_columns]}"
+            )
+        else:
+            source_df = df
+        with Progress() as progress:
+            task_id = progress.add_task(
+                "Pass 2/2: Updating relations",
+                total=len(import_plan["strategies"]),
+            )
+            for field, strategy_info in import_plan["strategies"].items():
+                log.info(
+                    f"*** PROCESSING FIELD '{field}' WITH STRATEGY '{strategy_info['strategy']}' ***"
                 )
-                for field, strategy_info in import_plan["strategies"].items():
-                    if strategy_info["strategy"] == "direct_relational_import":
-                        import_details = relational_import.run_direct_relational_import(
-                            config,
-                            model,
-                            field,
-                            strategy_info,
-                            source_df,
-                            id_map,
-                            max_conn,
-                            batch_size_run,
-                            progress,
-                            task_id,
-                            filename,
+                if strategy_info["strategy"] == "direct_relational_import":
+                    log.info(
+                        f"*** CALLING run_direct_relational_import for field '{field}' ***"
+                    )
+                    import_details = relational_import.run_direct_relational_import(
+                        config,
+                        model,
+                        field,
+                        strategy_info,
+                        source_df,
+                        id_map,
+                        max_conn,
+                        batch_size_run,
+                        progress,
+                        task_id,
+                        filename,
+                    )
+                    if import_details:
+                        log.info(
+                            f"*** DIRECT RELATIONAL IMPORT RETURNED DETAILS FOR FIELD '{field}' ***"
                         )
-                        if import_details:
-                            import_threaded.import_data(
-                                config=config,
-                                model=import_details["model"],
-                                unique_id_field=import_details["unique_id_field"],
-                                file_csv=import_details["file_csv"],
-                                max_connection=max_conn,
-                                batch_size=batch_size_run,
-                            )
-                            Path(import_details["file_csv"]).unlink()
-                    elif strategy_info["strategy"] == "write_tuple":
-                        result = relational_import.run_write_tuple_import(
-                            config,
-                            model,
-                            field,
-                            strategy_info,
-                            source_df,
-                            id_map,
-                            max_conn,
-                            batch_size_run,
-                            progress,
-                            task_id,
-                            filename,
+                        import_threaded.import_data(
+                            config=config,
+                            model=import_details["model"],
+                            unique_id_field=import_details["unique_id_field"],
+                            file_csv=import_details["file_csv"],
+                            max_connection=max_conn,
+                            batch_size=batch_size_run,
                         )
-                        if not result:
-                            log.warning(
-                                f"Write tuple import failed for field '{field}'. "
-                                "Check logs for details."
-                            )
-                    elif strategy_info["strategy"] == "write_o2m_tuple":
-                        result = relational_import.run_write_o2m_tuple_import(
-                            config,
-                            model,
-                            field,
-                            strategy_info,
-                            source_df,
-                            id_map,
-                            max_conn,
-                            batch_size_run,
-                            progress,
-                            task_id,
-                            filename,
+                        Path(import_details["file_csv"]).unlink()
+                    else:
+                        log.info(
+                            f"*** DIRECT RELATIONAL IMPORT RETURNED NONE FOR FIELD '{field}' ***"
                         )
-                        if not result:
-                            log.warning(
-                                f"Write O2M tuple import failed for field '{field}'. "
-                                "Check logs for details."
-                            )
-                    progress.update(task_id, advance=1)
+                elif strategy_info["strategy"] == "write_tuple":
+                    log.info(
+                        f"*** CALLING run_write_tuple_import FOR FIELD '{field}' ***"
+                    )
+                    result = relational_import.run_write_tuple_import(
+                        config,
+                        model,
+                        field,
+                        strategy_info,
+                        source_df,
+                        id_map,
+                        max_conn,
+                        batch_size_run,
+                        progress,
+                        task_id,
+                        filename,
+                    )
+                    if not result:
+                        log.warning(
+                            f"Write tuple import failed for field '{field}'. "
+                            "Check logs for details."
+                        )
+                elif strategy_info["strategy"] == "write_o2m_tuple":
+                    log.info(
+                        f"*** CALLING run_write_o2m_tuple_import FOR FIELD '{field}' ***"
+                    )
+                    result = relational_import.run_write_o2m_tuple_import(
+                        config,
+                        model,
+                        field,
+                        strategy_info,
+                        source_df,
+                        id_map,
+                        max_conn,
+                        batch_size_run,
+                        progress,
+                        task_id,
+                        filename,
+                    )
+                    if not result:
+                        log.warning(
+                            f"Write O2M tuple import failed for field '{field}'. "
+                            "Check logs for details."
+                        )
+
+                    # Add a small delay between relational import operations
+                    # to give the server time to release database connections
+                    time.sleep(0.5)
+
+                progress.update(task_id, advance=1)
 
         log.info(
             f"{stats.get('total_records', 0)} records processed. "

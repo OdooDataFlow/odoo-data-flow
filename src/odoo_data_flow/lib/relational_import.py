@@ -1,6 +1,7 @@
 """Handles relational import strategies like m2m and o2m."""
 
 import json
+import os
 import tempfile
 from typing import Any, Optional, Union
 
@@ -432,18 +433,27 @@ def run_write_tuple_import(
         task_id,
         description=f"Pass 2/2: Updating relations for [bold]{field}[/bold]",
     )
-    log.info(f"Running 'Write Tuple' for field '{field}'...")
+    log.info(f"*** RUNNING WRITE TUPLE IMPORT FOR FIELD '{field}' ***")
+    log.info(f"*** STRATEGY DETAILS: {strategy_details} ***")
+    
+    # Add a small delay to reduce server load and prevent connection pool exhaustion
+    import time
+    time.sleep(0.1)
 
     # Check if required keys exist
     relational_table = strategy_details.get("relation_table")
     owning_model_fk = strategy_details.get("relation_field")
     related_model_fk = strategy_details.get("relation")
+    
+    log.info(f"*** RELATIONAL TABLE: {relational_table} ***")
+    log.info(f"*** OWNING MODEL FK: {owning_model_fk} ***")
+    log.info(f"*** RELATED MODEL FK: {related_model_fk} ***")
 
     # Try to derive missing information if possible
     relational_table, owning_model_fk = _derive_missing_relation_info(
         config, model, field, relational_table, owning_model_fk, related_model_fk
     )
-
+    
     # If we still don't have the required information, we can't proceed
     # with this strategy
     if not relational_table or not owning_model_fk:
@@ -454,31 +464,34 @@ def run_write_tuple_import(
         return False
 
     # 1. Prepare the owning model's IDs
-    owning_df = pl.DataFrame({"external_id": id_map.keys(), "db_id": id_map.values()})
+    owning_df = pl.DataFrame(
+        {"external_id": list(id_map.keys()), "db_id": list(id_map.values())},
+        schema={"external_id": pl.Utf8, "db_id": pl.Int64},
+    )
 
     # Debug: Print available columns and the field we're looking for
     log.debug(f"Available columns in source_df: {source_df.columns}")
     log.debug(f"Looking for field: {field}")
-
-    # Determine the actual column name to look for
-    # For many2many fields, the column name in the DataFrame typically has /id suffix
-    actual_field_name = field
-    if f"{field}/id" in source_df.columns:
-        actual_field_name = f"{field}/id"
-        log.debug(f"Found external ID column: {actual_field_name}")
-
-    # Check if the field exists in the DataFrame
-    if actual_field_name not in source_df.columns:
-        log.error(
-            f"Field '{actual_field_name}' not found in source DataFrame. "
-            f"Available columns: {source_df.columns}"
-        )
-        return False
+    log.debug(f"Field '{field}' in source_df.columns: {field in source_df.columns}")
+    
+    # Check if the field exists in the DataFrame (redundant check for debugging)
+    if field not in source_df.columns:
+        # Check if the field with /id suffix exists (common for relation fields)
+        field_with_id = f"{field}/id"
+        if field_with_id in source_df.columns:
+            log.debug(f"Using field '{field_with_id}' instead of '{field}'")
+            field = field_with_id
+        else:
+            log.error(
+                f"Field '{field}' not found in source DataFrame. "
+                f"Available columns: {source_df.columns}"
+            )
+            return False
 
     # 2. Prepare the related model's IDs using the resolver
-    all_related_ext_ids = (
-        source_df.get_column(actual_field_name).str.split(",").explode()
-    )
+    all_related_ext_ids = source_df.get_column(field).str.split(",").explode()
+    log.info(f"*** TOTAL RELATED EXTERNAL IDS BEFORE FILTERING: {len(all_related_ext_ids)} ***")
+    log.info(f"*** SAMPLE RELATED EXTERNAL IDS: {all_related_ext_ids.head(5).to_list()} ***")
     if related_model_fk is None:
         log.error(
             f"Cannot resolve related IDs: Missing relation in strategy details "
@@ -491,32 +504,45 @@ def run_write_tuple_import(
     if related_model_df is None:
         log.error(f"Could not resolve IDs for related model '{related_model_fk}'.")
         return False
+    log.info(f"*** RELATED MODEL DF SHAPE: {related_model_df.shape} ***")
+    log.info(f"*** RELATED MODEL DF SAMPLE: {related_model_df.head(3)} ***")
 
     # 3. Create the link table DataFrame
-    link_df = _prepare_link_dataframe(
-        source_df,
-        actual_field_name,
-        owning_df,
-        related_model_df,
-        owning_model_fk,
-        related_model_fk,
-    )
+    link_df = source_df.select(["id", field]).rename({"id": "external_id"})
+    # Ensure external_id is treated as string to match the owning_df schema
+    link_df = link_df.with_columns(pl.col("external_id").cast(pl.Utf8))
+    link_df = link_df.with_columns(pl.col(field).str.split(",")).explode(field)
+    log.info(f"*** LINK DF SHAPE BEFORE JOIN: {link_df.shape} ***")
+    log.info(f"*** LINK DF SAMPLE BEFORE JOIN: {link_df.head(3)} ***")
 
-    # 4. Create records in the relational table
-    return _create_relational_records(
-        config,
-        model,
-        field,
-        actual_field_name,
-        relational_table,
-        owning_model_fk,
-        related_model_fk,
-        link_df,
-        owning_df,
-        related_model_df,
-        original_filename,
-        batch_size,
+    # Join to get DB IDs for the owning model
+    link_df = link_df.join(owning_df, on="external_id", how="inner").rename(
+        {"db_id": owning_model_fk}
     )
+    log.info(f"*** LINK DF SHAPE AFTER OWNING JOIN: {link_df.shape} ***")
+    log.info(f"*** LINK DF SAMPLE AFTER OWNING JOIN: {link_df.head(3)} ***")
+
+    # Join to get DB IDs for the related model
+    link_df = link_df.join(
+        related_model_df.rename({"external_id": field}), on=field, how="inner"
+    ).rename({"db_id": f"{related_model_fk}/id"})
+    log.info(f"*** LINK DF SHAPE AFTER RELATED JOIN: {link_df.shape} ***")
+    log.info(f"*** LINK DF SAMPLE AFTER RELATED JOIN: {link_df.head(3)} ***")
+
+    # 4. Write to a temporary file and return import details
+    with tempfile.NamedTemporaryFile(
+        mode="w+", delete=False, suffix=".csv", newline=""
+    ) as tmp:
+        link_df.select([owning_model_fk, f"{related_model_fk}/id"]).write_csv(tmp.name)
+        tmp_path = tmp.name
+
+    log.info(f"*** TEMPORARY FILE CREATED: {tmp_path} ***")
+
+    return {
+        "file_csv": tmp_path,
+        "model": relational_table,
+        "unique_id_field": owning_model_fk,
+    }
 
 
 def _create_relational_records(
