@@ -48,17 +48,17 @@ def _resolve_related_ids(
         if isinstance(id_val, str) and id_val.isdigit():
             # It's a numeric database ID
             db_ids.append(int(id_val))
-        elif isinstance(id_val, str) and "." in id_val:
-            # It's an XML ID in 'module.identifier' format
+        elif isinstance(id_val, str) and len(id_val) > 0:
+            # It's a non-empty string that's not purely numeric - treat as XML ID
             xml_ids.append(id_val)
         else:
-            # Neither a database ID nor a valid XML ID
+            # Empty or None values
             invalid_ids.append(id_val)
     
     if invalid_ids:
         log.warning(
             f"Skipping {len(invalid_ids)} invalid IDs for model "
-            f"'{related_model}' (neither database IDs nor 'module.identifier' format). "
+            f"'{related_model}' (empty or None values). "
             f"Sample invalid IDs: {invalid_ids[:5]}"
         )
         if not db_ids and not xml_ids:
@@ -81,22 +81,17 @@ def _resolve_related_ids(
         else:
             connection = conf_lib.get_connection_from_config(config_file=config)
         
-        # Split full XML-ID 'module.identifier' into components
-        split_ids = [(i.split(".", 1)[0], i.split(".", 1)[1]) for i in xml_ids]
-        
-        domain = [
-            "&",
-            ("module", "=", split_ids[0][0]),
-            ("name", "=", split_ids[0][1]),
-        ]
-        for module, name in split_ids[1:]:
-            domain.insert(0, "|")
-            domain.append("&")
-            domain.append(("module", "=", module))
-            domain.append(("name", "=", name))
-
+        # For XML IDs, we need to look them up by name
         try:
             data_model = connection.get_model("ir.model.data")
+            
+            # Build domain for XML ID lookup by name
+            # We'll look for records where the name matches any of our XML IDs
+            if len(xml_ids) == 1:
+                domain = [("name", "=", xml_ids[0])]
+            else:
+                domain = [("name", "in", xml_ids)]
+            
             resolved_data = data_model.search_read(domain, ["module", "name", "res_id"])
             if not resolved_data:
                 log.error(
@@ -108,7 +103,7 @@ def _resolve_related_ids(
                     return None
             else:
                 xml_resolved_map = {
-                    f"{rec['module']}.{rec['name']}": rec["res_id"] for rec in resolved_data
+                    rec["name"]: rec["res_id"] for rec in resolved_data
                 }
                 resolved_map.update(xml_resolved_map)
                 log.info(
@@ -122,7 +117,7 @@ def _resolve_related_ids(
     if resolved_map:
         log.info(
             f"Successfully resolved {len(resolved_map)} IDs for model '{related_model}' "
-            f"({len(db_ids)} database IDs, {len([k for k in resolved_map.keys() if '.' in k])} XML IDs)."
+            f"({len(db_ids)} database IDs, {len(xml_ids)} XML IDs)."
         )
         return pl.DataFrame(
             {"external_id": list(resolved_map.keys()), "db_id": list(resolved_map.values())}
