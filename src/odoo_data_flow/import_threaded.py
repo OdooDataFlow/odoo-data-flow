@@ -533,10 +533,10 @@ def _create_batch_individually(
             continue
         except Exception as create_error:
             error_str_lower = str(create_error).lower()
-            
+
             # Special handling for Odoo server internal errors
             if (
-                "tuple index out of range" in error_str_lower 
+                "tuple index out of range" in error_str_lower
                 and "odoo server error" in error_str_lower
             ):
                 log.warning(
