@@ -794,7 +794,12 @@ def run_write_o2m_tuple_import(
     failed_records_to_report = []
 
     # Filter for rows that actually have data in the o2m field
-    o2m_df = source_df.filter(pl.col(field).is_not_null())
+    # Check if the field with /id suffix exists (common for relation fields)
+    actual_field_name = field
+    if f"{field}/id" in source_df.columns:
+        actual_field_name = f"{field}/id"
+    
+    o2m_df = source_df.filter(pl.col(actual_field_name).is_not_null())
 
     for record in o2m_df.iter_rows(named=True):
         parent_external_id = record["id"]
@@ -802,7 +807,7 @@ def run_write_o2m_tuple_import(
         if not parent_db_id:
             continue
 
-        o2m_json_data = record[field]
+        o2m_json_data = record[actual_field_name]
         try:
             child_records = json.loads(o2m_json_data)
             if not isinstance(child_records, list):
