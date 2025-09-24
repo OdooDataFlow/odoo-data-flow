@@ -89,6 +89,7 @@ def _resolve_related_ids(
 
 
 def _derive_missing_relation_info(
+    config: Union[str, dict[str, Any]],
     model: str,
     field: str,
     relational_table: Optional[str],
@@ -97,7 +98,11 @@ def _derive_missing_relation_info(
 ) -> tuple[Optional[str], Optional[str]]:
     """Derive missing relation table and field names if possible.
 
+    First tries to query Odoo's ir.model.relation table to get actual relationship info.
+    If that fails, falls back to derivation logic based on naming conventions.
+
     Args:
+        config: Configuration for connecting to Odoo
         model: The owning model name
         field: The field name
         relational_table: Current relation table name (may be None)
@@ -110,10 +115,18 @@ def _derive_missing_relation_info(
     """
     # Try to derive missing information if possible
     if (not relational_table or not owning_model_fk) and related_model_fk:
-        # Try to derive the relation table and field names
-        derived_table, derived_field = _derive_relation_info(
-            model, field, related_model_fk
+        # First, try to get relation info from Odoo's ir.model.relation table
+        odoo_relation_info = _query_relation_info_from_odoo(
+            config, model, related_model_fk
         )
+
+        if odoo_relation_info:
+            derived_table, derived_field = odoo_relation_info
+        else:
+            # Fallback to the derivation logic
+            derived_table, derived_field = _derive_relation_info(
+                model, field, related_model_fk
+            )
 
         # Only use derived values if we were missing them
         if not relational_table:
@@ -124,6 +137,78 @@ def _derive_missing_relation_info(
             owning_model_fk = derived_field
 
     return relational_table, owning_model_fk
+
+
+def _query_relation_info_from_odoo(
+    config: Union[str, dict[str, Any]], model: str, related_model_fk: str
+) -> Optional[tuple[str, str]]:
+    """Query Odoo's ir.model.relation table to get actual relationship information.
+
+    Args:
+        config: Configuration for connecting to Odoo
+        model: The owning model name
+        related_model_fk: The related model name
+
+    Returns:
+        A tuple of (relation_table, relation_field) or None if not found
+    """
+    try:
+        # Get connection to Odoo
+        if isinstance(config, dict):
+            connection = conf_lib.get_connection_from_dict(config)
+        else:
+            connection = conf_lib.get_connection_from_config(config_file=config)
+
+        if not connection.is_connected():
+            log.warning("Cannot query ir.model.relation: Odoo connection failed.")
+            return None
+
+        # Query ir.model.relation table
+        # Look for relations where our models are involved
+        relation_model = connection.get_model("ir.model.relation")
+
+        # Search for relations involving both models
+        # We need to check both orders since the relation could be defined either way
+        domain = [
+            "|",
+            "&",
+            ("model", "=", model),
+            ("comodel", "=", related_model_fk),
+            "&",
+            ("model", "=", related_model_fk),
+            ("comodel", "=", model),
+        ]
+
+        relations = relation_model.search_read(domain, ["name", "model", "comodel"])
+
+        if relations:
+            # Found matching relations, use the first one
+            relation = relations[0]
+            relation_table = relation["name"]
+
+            # Determine the owning model field name based on which model is "model"
+            # The owning model's foreign key in the relation table is derived
+            # from its own model name, e.g., 'res.partner' -> 'res_partner_id'.
+            relation_field = f"{model.replace('.', '_')}_id"
+
+            log.info(
+                f"Found relation info from ir.model.relation: "
+                f"table='{relation_table}', field='{relation_field}'"
+            )
+            return relation_table, relation_field
+        else:
+            log.debug(
+                f"No relation found in ir.model.relation for models "
+                f"'{model}' and '{related_model_fk}'"
+            )
+            return None
+
+    except Exception as e:
+        log.warning(
+            f"Failed to query ir.model.relation for models '{model}' and "
+            f"'{related_model_fk}'. Error: {e}"
+        )
+        return None
 
 
 def _derive_relation_info(
@@ -140,11 +225,19 @@ def _derive_relation_info(
         A tuple of (relation_table, relation_field)
     """
     # Derive relation table name (typically follows pattern: model1_model2_rel)
-    models = sorted([model, related_model_fk])
-    derived_table = f"{models[0].replace('.', '_')}_{models[1].replace('.', '_')}_rel"
+    # with models sorted alphabetically for canonical naming
+    models = sorted([model.replace(".", "_"), related_model_fk.replace(".", "_")])
+    derived_table = f"{models[0]}_{models[1]}_rel"
 
     # Derive the owning model field name (typically model_name_id)
+    # In Odoo's many2many tables, column names typically use the full model name
+    # with dots replaced by underscores, e.g., res.partner -> res_partner_id
     derived_field = f"{model.replace('.', '_')}_id"
+
+    log.debug(
+        f"Derived relation table: '{derived_table}' for models "
+        f"'{model}' and '{related_model_fk}'"
+    )
 
     return derived_table, derived_field
 
@@ -176,7 +269,7 @@ def run_direct_relational_import(
 
     # Try to derive missing information if possible
     relational_table, owning_model_fk = _derive_missing_relation_info(
-        model, field, relational_table, owning_model_fk, related_model_fk
+        config, model, field, relational_table, owning_model_fk, related_model_fk
     )
 
     # If we don't have the required information, we can't proceed with this strategy
@@ -194,16 +287,25 @@ def run_direct_relational_import(
     log.debug(f"Available columns in source_df: {source_df.columns}")
     log.debug(f"Looking for field: {field}")
 
+    # Determine the actual column name to look for
+    # For many2many fields, the column name in the DataFrame typically has /id suffix
+    actual_field_name = field
+    if f"{field}/id" in source_df.columns:
+        actual_field_name = f"{field}/id"
+        log.debug(f"Found external ID column: {actual_field_name}")
+
     # Check if the field exists in the DataFrame
-    if field not in source_df.columns:
+    if actual_field_name not in source_df.columns:
         log.error(
-            f"Field '{field}' not found in source DataFrame. "
+            f"Field '{actual_field_name}' not found in source DataFrame. "
             f"Available columns: {source_df.columns}"
         )
         return None
 
     # 2. Prepare the related model's IDs using the resolver
-    all_related_ext_ids = source_df.get_column(field).str.split(",").explode()
+    all_related_ext_ids = (
+        source_df.get_column(actual_field_name).str.split(",").explode()
+    )
     if related_model_fk is None:
         log.error(
             f"Cannot resolve related IDs: Missing relation in strategy details "
@@ -218,8 +320,10 @@ def run_direct_relational_import(
         return None
 
     # 3. Create the link table DataFrame
-    link_df = source_df.select(["id", field]).rename({"id": "external_id"})
-    link_df = link_df.with_columns(pl.col(field).str.split(",")).explode(field)
+    link_df = source_df.select(["id", actual_field_name]).rename({"id": "external_id"})
+    link_df = link_df.with_columns(pl.col(actual_field_name).str.split(",")).explode(
+        actual_field_name
+    )
 
     # Join to get DB IDs for the owning model
     link_df = link_df.join(owning_df, on="external_id", how="inner").rename(
@@ -228,7 +332,9 @@ def run_direct_relational_import(
 
     # Join to get DB IDs for the related model
     link_df = link_df.join(
-        related_model_df.rename({"external_id": field}), on=field, how="inner"
+        related_model_df.rename({"external_id": actual_field_name}),
+        on=actual_field_name,
+        how="inner",
     ).rename({"db_id": f"{related_model_fk}/id"})
 
     # 4. Write to a temporary file and return import details
@@ -247,7 +353,7 @@ def run_direct_relational_import(
 
 def _prepare_link_dataframe(
     source_df: pl.DataFrame,
-    field: str,
+    actual_field_name: str,
     owning_df: pl.DataFrame,
     related_model_df: pl.DataFrame,
     owning_model_fk: str,
@@ -257,7 +363,8 @@ def _prepare_link_dataframe(
 
     Args:
         source_df: The source DataFrame
-        field: The field name
+        actual_field_name: The actual field name in the DataFrame
+            (may include /id suffix)
         owning_df: DataFrame with owning model IDs
         related_model_df: DataFrame with related model IDs
         owning_model_fk: The owning model foreign key field name
@@ -268,27 +375,29 @@ def _prepare_link_dataframe(
     """
     # Debug: Print available columns and the field we're looking for
     log.debug(f"Available columns in source_df: {source_df.columns}")
-    log.debug(f"Looking for field: {field}")
+    log.debug(f"Looking for field: {actual_field_name}")
 
     # Check if the field exists in the DataFrame
-    if field not in source_df.columns:
+    if actual_field_name not in source_df.columns:
         log.error(
-            f"Field '{field}' not found in source DataFrame. "
+            f"Field '{actual_field_name}' not found in source DataFrame. "
             f"Available columns: {source_df.columns}"
         )
         # Return an empty DataFrame with the expected schema
         return pl.DataFrame(
             schema={
                 "external_id": pl.Utf8,
-                field: pl.Utf8,
+                actual_field_name: pl.Utf8,
                 owning_model_fk: pl.Int64,
                 f"{related_model_fk}/id": pl.Int64,
             }
         )
 
     # Create the link table DataFrame
-    link_df = source_df.select(["id", field]).rename({"id": "external_id"})
-    link_df = link_df.with_columns(pl.col(field).str.split(",")).explode(field)
+    link_df = source_df.select(["id", actual_field_name]).rename({"id": "external_id"})
+    link_df = link_df.with_columns(pl.col(actual_field_name).str.split(",")).explode(
+        actual_field_name
+    )
 
     # Join to get DB IDs for the owning model
     link_df = link_df.join(owning_df, on="external_id", how="inner").rename(
@@ -297,7 +406,9 @@ def _prepare_link_dataframe(
 
     # Join to get DB IDs for the related model
     link_df = link_df.join(
-        related_model_df.rename({"external_id": field}), on=field, how="inner"
+        related_model_df.rename({"external_id": actual_field_name}),
+        on=actual_field_name,
+        how="inner",
     ).rename({"db_id": f"{related_model_fk}/id"})
 
     return link_df
@@ -330,7 +441,7 @@ def run_write_tuple_import(
 
     # Try to derive missing information if possible
     relational_table, owning_model_fk = _derive_missing_relation_info(
-        model, field, relational_table, owning_model_fk, related_model_fk
+        config, model, field, relational_table, owning_model_fk, related_model_fk
     )
 
     # If we still don't have the required information, we can't proceed
@@ -349,16 +460,25 @@ def run_write_tuple_import(
     log.debug(f"Available columns in source_df: {source_df.columns}")
     log.debug(f"Looking for field: {field}")
 
+    # Determine the actual column name to look for
+    # For many2many fields, the column name in the DataFrame typically has /id suffix
+    actual_field_name = field
+    if f"{field}/id" in source_df.columns:
+        actual_field_name = f"{field}/id"
+        log.debug(f"Found external ID column: {actual_field_name}")
+
     # Check if the field exists in the DataFrame
-    if field not in source_df.columns:
+    if actual_field_name not in source_df.columns:
         log.error(
-            f"Field '{field}' not found in source DataFrame. "
+            f"Field '{actual_field_name}' not found in source DataFrame. "
             f"Available columns: {source_df.columns}"
         )
         return False
 
     # 2. Prepare the related model's IDs using the resolver
-    all_related_ext_ids = source_df.get_column(field).str.split(",").explode()
+    all_related_ext_ids = (
+        source_df.get_column(actual_field_name).str.split(",").explode()
+    )
     if related_model_fk is None:
         log.error(
             f"Cannot resolve related IDs: Missing relation in strategy details "
@@ -374,7 +494,12 @@ def run_write_tuple_import(
 
     # 3. Create the link table DataFrame
     link_df = _prepare_link_dataframe(
-        source_df, field, owning_df, related_model_df, owning_model_fk, related_model_fk
+        source_df,
+        actual_field_name,
+        owning_df,
+        related_model_df,
+        owning_model_fk,
+        related_model_fk,
     )
 
     # 4. Create records in the relational table
@@ -382,6 +507,7 @@ def run_write_tuple_import(
         config,
         model,
         field,
+        actual_field_name,
         relational_table,
         owning_model_fk,
         related_model_fk,
@@ -397,6 +523,7 @@ def _create_relational_records(
     config: Union[str, dict[str, Any]],
     model: str,
     field: str,
+    actual_field_name: str,
     relational_table: str,
     owning_model_fk: str,
     related_model_fk: str,
@@ -408,10 +535,16 @@ def _create_relational_records(
 ) -> bool:
     """Create records in the relational table.
 
+    For many2many relationships in Odoo, we need to update the owning model's
+    field with special commands, rather than trying to access the relationship
+    table directly as a model.
+
     Args:
         config: Configuration for the connection
-        model: The model name
-        field: The field name
+        model: The model name (owning model)
+        field: The field name (many2many field)
+        actual_field_name: The actual field name in the DataFrame
+            (may include /id suffix)
         relational_table: The relational table name
         owning_model_fk: The owning model foreign key field name
         related_model_fk: The related model name
@@ -428,75 +561,97 @@ def _create_relational_records(
         connection = conf_lib.get_connection_from_dict(config)
     else:
         connection = conf_lib.get_connection_from_config(config_file=config)
-    rel_model = connection.get_model(relational_table)
+
+    # For many2many relationships, we need to use the owning model to set the field
+    # rather than trying to access the relationship table directly as a model
+    try:
+        owning_model = connection.get_model(model)
+    except Exception as e:
+        log.error(f"Failed to access owning model '{model}' in Odoo. Error: {e}")
+        return False
 
     # We need to map back to the original external IDs for failure reporting
     # This is a bit heavy, but necessary for accurate error logs.
-    original_links_df = link_df.select(["external_id", field]).rename(
-        {"external_id": "parent_external_id"}
+    # The link_df contains the external_id column and the actual field column
+    # These columns already contain individual IDs (not comma-separated) because
+    # they have been processed by _prepare_link_dataframe
+    original_links_df = link_df.select(["external_id", actual_field_name]).rename(
+        {"external_id": "parent_external_id", actual_field_name: "related_external_id"}
     )
-    original_links_df = original_links_df.with_columns(
-        pl.col(field).str.split(",")
-    ).explode(field)
-    original_links_df = original_links_df.rename({field: "related_external_id"})
 
-    # Join with resolved IDs to get the data for `create`
-    create_df = original_links_df.join(
+    # Join with resolved IDs to get the data for updating records
+    update_df = original_links_df.join(
         owning_df.rename({"external_id": "parent_external_id"}),
         on="parent_external_id",
         how="inner",
     ).rename({"db_id": owning_model_fk})
-    create_df = create_df.join(
+    update_df = update_df.join(
         related_model_df.rename({"external_id": "related_external_id"}),
         on="related_external_id",
         how="inner",
     ).rename({"db_id": f"{related_model_fk}/id"})
 
-    vals_list = create_df.select([owning_model_fk, f"{related_model_fk}/id"]).to_dicts()
-    # Keep original IDs for error reporting
-    report_list = create_df.select(
-        ["parent_external_id", "related_external_id"]
-    ).to_dicts()
+    # Group by owning model ID and collect all related IDs for each owner
+    # This is needed because we update each owning record once with all
+    # its related records
+    # Use Polars group_by and agg for better performance than row iteration
+    grouped_df = update_df.group_by(owning_model_fk).agg(
+        pl.col(f"{related_model_fk}/id")
+    )
+    # Convert Polars Series to Python lists for type safety
+    grouped_data: dict[int, list[int]] = {}
+    for i in range(len(grouped_df)):
+        owning_id = grouped_df[owning_model_fk][i]
+        related_ids_series = grouped_df[f"{related_model_fk}/id"][i]
+        grouped_data[owning_id] = related_ids_series.to_list()
 
-    successful_creates = 0
+    successful_updates = 0
     failed_records_to_report = []
-    batch_size = 50
 
-    for i in range(0, len(vals_list), batch_size):
-        vals_batch = vals_list[i : i + batch_size]
-        report_batch = report_list[i : i + batch_size]
+    # Update each owning record with its many2many field values
+    for owning_id, related_ids in grouped_data.items():
         try:
-            rel_model.create(vals_batch)
-            successful_creates += len(vals_batch)
+            # For many2many fields, we use the (6, 0, [IDs]) command to replace
+            # the entire set of related records for this owner
+            # This replaces any existing relationships with the new set
+            m2m_command = [(6, 0, related_ids)]
+
+            # Update the owning record with the many2many field
+            owning_model.write([owning_id], {field: m2m_command})
+            successful_updates += 1
+
         except Exception as e:
             log.error(
-                f"Failed to create a batch of {len(vals_batch)} records for "
-                f"'{relational_table}'. Reason: {e}"
+                f"Failed to update record {owning_id} with many2many field '{field}'. "
+                f"Reason: {e}"
             )
-            # Fallback to one-by-one to salvage what we can and log failures
-            for j, vals in enumerate(vals_batch):
-                try:
-                    rel_model.create(vals)
-                    successful_creates += 1
-                except Exception as inner_e:
-                    report_item = report_batch[j]
-                    report_item["model"] = model
-                    report_item["field"] = field
-                    report_item["error_reason"] = str(inner_e)
-                    failed_records_to_report.append(report_item)
+            # Find the corresponding report items and add them to failed records
+            failed_items = [
+                {
+                    "model": model,
+                    "field": field,
+                    "parent_external_id": row["parent_external_id"],
+                    "related_external_id": row["related_external_id"],
+                    "error_reason": str(e),
+                }
+                for row in update_df.filter(
+                    pl.col(owning_model_fk) == owning_id
+                ).iter_rows(named=True)
+            ]
+            failed_records_to_report.extend(failed_items)
 
     if failed_records_to_report:
         writer.write_relational_failures_to_csv(
             model, field, original_filename, failed_records_to_report
         )
 
-    failed_creates = len(failed_records_to_report)
+    failed_updates = len(failed_records_to_report)
     log.info(
         f"Finished 'Write Tuple' for '{field}': "
-        f"{successful_creates} successful, {failed_creates} failed."
+        f"{successful_updates} successful, {failed_updates} failed."
     )
 
-    return successful_creates > 0
+    return successful_updates > 0
 
 
 def run_write_o2m_tuple_import(

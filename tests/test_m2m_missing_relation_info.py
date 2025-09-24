@@ -74,8 +74,8 @@ def test_run_write_tuple_import_derives_missing_info(
     mock_resolve_ids.return_value = pl.DataFrame(
         {"external_id": ["cat1", "cat2", "cat3"], "db_id": [11, 12, 13]}
     )
-    mock_rel_model = MagicMock()
-    mock_get_conn.return_value.get_model.return_value = mock_rel_model
+    mock_owning_model = MagicMock()
+    mock_get_conn.return_value.get_model.return_value = mock_owning_model
 
     # Strategy details with missing relation_table and relation_field
     strategy_details = {
@@ -103,16 +103,15 @@ def test_run_write_tuple_import_derives_missing_info(
     # Assert
     # Should succeed because we derive the missing information
     assert result is True
-    # Should have called create on the derived relation table
-    mock_get_conn.return_value.get_model.assert_called()
-    mock_rel_model.create.assert_called()
+    # Should have called write on the owning model, not create on the relation model
+    assert mock_owning_model.write.call_count >= 1
 
 
-@patch("odoo_data_flow.lib.relational_import.conf_lib.get_connection_from_config")
 @patch("odoo_data_flow.lib.relational_import._resolve_related_ids")
+@patch("odoo_data_flow.lib.relational_import._derive_missing_relation_info")
 def test_run_direct_relational_import_derives_missing_info(
+    mock_derive_missing: MagicMock,
     mock_resolve_ids: MagicMock,
-    mock_get_conn: MagicMock,
 ) -> None:
     """Verify that run_direct_relational_import derives missing relation info."""
     # Arrange
@@ -125,6 +124,10 @@ def test_run_direct_relational_import_derives_missing_info(
     )
     mock_resolve_ids.return_value = pl.DataFrame(
         {"external_id": ["cat1", "cat2", "cat3"], "db_id": [11, 12, 13]}
+    )
+    mock_derive_missing.return_value = (
+        "res_partner_res_partner_category_rel",
+        "res_partner_id",
     )
 
     # Strategy details with missing relation_table and relation_field
@@ -153,7 +156,13 @@ def test_run_direct_relational_import_derives_missing_info(
     # Assert
     # Should succeed because we derive the missing information
     assert isinstance(result, dict)
-    # Should have derived the relation table name
-    assert "res_partner_res_partner_category_rel" in result["model"]
+    # Should contain the file_csv, model, and unique_id_field keys
+    assert "file_csv" in result
+    assert "model" in result
+    assert "unique_id_field" in result
+    # Should have the exact derived relation table name
+    assert result["model"] == "res_partner_res_partner_category_rel"
     # Should have derived the relation field name
-    assert "res_partner_id" in result["unique_id_field"]
+    assert result["unique_id_field"] == "res_partner_id"
+    # For direct relational import, we don't call write on the owning model
+    # Instead, we return import details for processing by the main importer

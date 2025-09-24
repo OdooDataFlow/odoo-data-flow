@@ -94,8 +94,8 @@ def test_run_write_tuple_import(
     mock_resolve_ids.return_value = pl.DataFrame(
         {"external_id": ["cat1", "cat2", "cat3"], "db_id": [11, 12, 13]}
     )
-    mock_rel_model = MagicMock()
-    mock_get_conn.return_value.get_model.return_value = mock_rel_model
+    mock_owning_model = MagicMock()
+    mock_get_conn.return_value.get_model.return_value = mock_owning_model
 
     strategy_details = {
         "relation_table": "res.partner.category.rel",
@@ -123,7 +123,8 @@ def test_run_write_tuple_import(
 
     # Assert
     assert result is True
-    assert mock_rel_model.create.call_count == 1
+    # Should have called write on the owning model, not create on the relation model
+    assert mock_owning_model.write.call_count >= 1
 
 
 @patch("odoo_data_flow.lib.relational_import.cache.load_id_map", return_value=None)
