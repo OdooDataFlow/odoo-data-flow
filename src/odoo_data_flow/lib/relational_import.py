@@ -562,7 +562,11 @@ def run_write_tuple_import(
     )
     log.info(f"*** RUNNING WRITE TUPLE IMPORT FOR FIELD '{field}' ***")
     log.info(f"*** STRATEGY DETAILS: {strategy_details} ***")
-
+    
+    # Add debug logging to show what's in the id_map
+    log.info(f"*** RECEIVED ID_MAP LENGTH: {len(id_map)} ***")
+    log.info(f"*** RECEIVED ID_MAP CONTENTS: {id_map} ***")
+    
     # Add a small delay to reduce server load and prevent connection pool exhaustion
     import time
 
