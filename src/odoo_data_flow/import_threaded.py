@@ -705,12 +705,27 @@ def _execute_load_batch(  # noqa: C901
             # Sanitize the id column values to prevent XML ID constraint violations
             from .lib.internal.tools import to_xmlid
             sanitized_load_lines = []
-            for line in load_lines:
+            for i, line in enumerate(load_lines):
                 sanitized_line = list(line)
                 if uid_index < len(sanitized_line):
                     # Sanitize the source_id (which is in the id column)
-                    sanitized_line[uid_index] = to_xmlid(sanitized_line[uid_index])
+                    original_id = sanitized_line[uid_index]
+                    sanitized_id = to_xmlid(original_id)
+                    sanitized_line[uid_index] = sanitized_id
+                    log.debug(
+                        f"Sanitized ID for line {i}: '{original_id}' -> '{sanitized_id}'"
+                    )
+                else:
+                    log.warning(
+                        f"Line {i} does not have enough columns for uid_index {uid_index}. "
+                        f"Line has {len(line)} columns."
+                    )
                 sanitized_load_lines.append(sanitized_line)
+            
+            log.debug(
+                f"Sanitized {len(sanitized_load_lines)} lines. "
+                f"Sample sanitized IDs: {[line[uid_index] if uid_index < len(line) else 'MISSING' for line in sanitized_load_lines[:3]]}"
+            )
             
             res = model.load(load_header, sanitized_load_lines, context=context)
             
