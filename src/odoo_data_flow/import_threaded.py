@@ -691,16 +691,26 @@ def _execute_load_batch(  # noqa: C901
         try:
             log.debug(f"Attempting `load` for chunk of batch {batch_number}...")
             log.debug(f"Load header: {load_header}")
-            log.debug(f"Load lines count: {len(sanitized_load_lines)}")
-            if sanitized_load_lines:
-                first_line_preview = sanitized_load_lines[0][:10] if len(sanitized_load_lines[0]) > 10 else sanitized_load_lines[0]
+            log.debug(f"Load lines count: {len(load_lines)}")
+            if load_lines:
+                first_line_preview = load_lines[0][:10] if len(load_lines[0]) > 10 else load_lines[0]
                 log.debug(f"First load line (first 10 fields): {first_line_preview}")
                 log.debug(f"Full header: {load_header}")
                 # Log the full header and first line for debugging
                 if len(load_header) > 10:
                     log.debug(f"Full load_header: {load_header}")
-                if len(sanitized_load_lines[0]) > 10:
-                    log.debug(f"Full first load_line: {sanitized_load_lines[0]}")
+                if len(load_lines[0]) > 10:
+                    log.debug(f"Full first load_line: {load_lines[0]}")
+            
+            # Sanitize the id column values to prevent XML ID constraint violations
+            from .lib.internal.tools import to_xmlid
+            sanitized_load_lines = []
+            for line in load_lines:
+                sanitized_line = list(line)
+                if uid_index < len(sanitized_line):
+                    # Sanitize the source_id (which is in the id column)
+                    sanitized_line[uid_index] = to_xmlid(sanitized_line[uid_index])
+                sanitized_load_lines.append(sanitized_line)
             
             res = model.load(load_header, sanitized_load_lines, context=context)
             
