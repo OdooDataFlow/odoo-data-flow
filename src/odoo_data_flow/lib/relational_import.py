@@ -156,10 +156,6 @@ def _query_relation_info_from_odoo(
         else:
             connection = conf_lib.get_connection_from_config(config_file=config)
 
-        if not connection.is_connected():
-            log.warning("Cannot query ir.model.relation: Odoo connection failed.")
-            return None
-
         # Query ir.model.relation table
         # Look for relations where our models are involved
         relation_model = connection.get_model("ir.model.relation")
