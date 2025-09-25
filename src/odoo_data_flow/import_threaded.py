@@ -592,6 +592,12 @@ def _create_batch_individually(
                 i, create_error, line, error_summary
             )
             failed_lines.append(new_failed_line)
+    # Debug: Log the id_map before returning
+    log.info(f"*** PASS 1 ID_MAP LENGTH BEFORE RETURN: {len(id_map)} ***")
+    log.info(f"*** PASS 1 ID_MAP CONTENTS BEFORE RETURN: {id_map} ***")
+    # Debug: Log the id_map before returning
+    log.info(f"*** FALLBACK ID_MAP LENGTH BEFORE RETURN: {len(id_map)} ***")
+    log.info(f"*** FALLBACK ID_MAP CONTENTS BEFORE RETURN: {id_map} ***")
     return {
         "id_map": id_map,
         "failed_lines": failed_lines,
@@ -1347,6 +1353,8 @@ def import_data(
 
             # If we get here, Pass 1 was not aborted. Now determine final status.
             id_map = pass_1_results.get("id_map", {})
+            log.info(f"*** MAIN IMPORT ID_MAP LENGTH AFTER PASS 1: {len(id_map)} ***")
+            log.info(f"*** MAIN IMPORT ID_MAP CONTENTS AFTER PASS 1: {id_map} ***")
             pass_2_successful = True  # Assume success if no Pass 2 is needed.
             updates_made = 0
 
