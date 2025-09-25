@@ -693,7 +693,8 @@ def _execute_load_batch(  # noqa: C901
             log.debug(f"Load header: {load_header}")
             log.debug(f"Load lines count: {len(sanitized_load_lines)}")
             if sanitized_load_lines:
-                log.debug(f"First load line (first 10 fields): {sanitized_load_lines[0][:10] if len(sanitized_load_lines[0]) > 10 else sanitized_load_lines[0]}")
+                first_line_preview = sanitized_load_lines[0][:10] if len(sanitized_load_lines[0]) > 10 else sanitized_load_lines[0]
+                log.debug(f"First load line (first 10 fields): {first_line_preview}")
                 log.debug(f"Full header: {load_header}")
                 # Log the full header and first line for debugging
                 if len(load_header) > 10:
