@@ -242,13 +242,15 @@ def run_import(  # noqa: C901
 
     fail_file_was_created = _count_lines(fail_output_file) > 1
     is_truly_successful = success and not fail_file_was_created
+    log.info(f"*** SUCCESS: {success} ***")
+    log.info(f"*** FAIL_FILE_WAS_CREATED: {fail_file_was_created} ***")
+    log.info(f"*** IS_TRULY_SUCCESSFUL: {is_truly_successful} ***")
 
     # Initialize id_map early to avoid UnboundLocalError
     id_map = (
         cast(dict[str, int], stats.get("id_map", {})) if is_truly_successful else {}
     )
     log.info(f"*** STATS DICTIONARY: {stats} ***")
-    log.info(f"*** IS_TRULY_SUCCESSFUL: {is_truly_successful} ***")
     log.info(f"*** EXTRACTED ID_MAP FROM STATS: {id_map} ***")
     log.info(f"*** ID_MAP LENGTH: {len(id_map)} ***")
     if is_truly_successful and id_map:
