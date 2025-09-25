@@ -247,9 +247,9 @@ def run_import(  # noqa: C901
     log.info(f"*** IS_TRULY_SUCCESSFUL: {is_truly_successful} ***")
 
     # Initialize id_map early to avoid UnboundLocalError
-    id_map = (
-        cast(dict[str, int], stats.get("id_map", {})) if is_truly_successful else {}
-    )
+    # FIX: Extract id_map regardless of success status to preserve successful mappings
+    # Even if some records failed, we still want to use the successful mappings for Pass 2
+    id_map = cast(dict[str, int], stats.get("id_map", {}))
     log.info(f"*** STATS DICTIONARY: {stats} ***")
     log.info(f"*** EXTRACTED ID_MAP FROM STATS: {id_map} ***")
     log.info(f"*** ID_MAP LENGTH: {len(id_map)} ***")
