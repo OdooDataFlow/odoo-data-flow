@@ -247,6 +247,10 @@ def run_import(  # noqa: C901
     id_map = (
         cast(dict[str, int], stats.get("id_map", {})) if is_truly_successful else {}
     )
+    log.info(f"*** STATS DICTIONARY: {stats} ***")
+    log.info(f"*** IS_TRULY_SUCCESSFUL: {is_truly_successful} ***")
+    log.info(f"*** EXTRACTED ID_MAP FROM STATS: {id_map} ***")
+    log.info(f"*** ID_MAP LENGTH: {len(id_map)} ***")
     if is_truly_successful and id_map:
         if isinstance(config, str):
             cache.save_id_map(config, model, id_map)
