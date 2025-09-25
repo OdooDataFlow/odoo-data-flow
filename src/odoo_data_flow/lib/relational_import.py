@@ -35,15 +35,15 @@ def _resolve_related_ids(
         connection = conf_lib.get_connection_from_dict(config)
     else:
         connection = conf_lib.get_connection_from_config(config_file=config)
-    
+
     id_list = external_ids.drop_nulls().unique().to_list()
     log.info(f"Resolving {len(id_list)} unique IDs for '{related_model}'...")
-    
+
     # Separate database IDs from XML IDs
     db_ids = []
     xml_ids = []
     invalid_ids = []
-    
+
     for id_val in id_list:
         if isinstance(id_val, str) and id_val.isdigit():
             # It's a numeric database ID
@@ -54,7 +54,7 @@ def _resolve_related_ids(
         else:
             # Empty or None values
             invalid_ids.append(id_val)
-    
+
     if invalid_ids:
         log.warning(
             f"Skipping {len(invalid_ids)} invalid IDs for model "
@@ -63,16 +63,16 @@ def _resolve_related_ids(
         )
         if not db_ids and not xml_ids:
             return None
-    
+
     resolved_map = {}
-    
+
     # Handle database IDs directly
     if db_ids:
         log.info(f"Using {len(db_ids)} database IDs directly without XML resolution")
         # For database IDs, the "external ID" is the same as the database ID (as string)
         for db_id in db_ids:
             resolved_map[str(db_id)] = db_id
-    
+
     # Handle XML IDs through traditional resolution
     if xml_ids:
         log.info(f"Resolving {len(xml_ids)} XML IDs through traditional lookup")
@@ -80,18 +80,18 @@ def _resolve_related_ids(
             connection = conf_lib.get_connection_from_dict(config)
         else:
             connection = conf_lib.get_connection_from_config(config_file=config)
-        
+
         # For XML IDs, we need to look them up by name
         try:
             data_model = connection.get_model("ir.model.data")
-            
+
             # Build domain for XML ID lookup by name
             # We'll look for records where the name matches any of our XML IDs
             if len(xml_ids) == 1:
                 domain = [("name", "=", xml_ids[0])]
             else:
                 domain = [("name", "in", xml_ids)]
-            
+
             resolved_data = data_model.search_read(domain, ["module", "name", "res_id"])
             if not resolved_data:
                 log.error(
@@ -102,9 +102,7 @@ def _resolve_related_ids(
                 if not db_ids:
                     return None
             else:
-                xml_resolved_map = {
-                    rec["name"]: rec["res_id"] for rec in resolved_data
-                }
+                xml_resolved_map = {rec["name"]: rec["res_id"] for rec in resolved_data}
                 resolved_map.update(xml_resolved_map)
                 log.info(
                     f"Successfully resolved {len(xml_resolved_map)} XML IDs for model '{related_model}'."
@@ -113,14 +111,17 @@ def _resolve_related_ids(
             log.error(f"An error occurred during bulk XML-ID resolution: {e}")
             if not db_ids:
                 return None
-    
+
     if resolved_map:
         log.info(
             f"Successfully resolved {len(resolved_map)} IDs for model '{related_model}' "
             f"({len(db_ids)} database IDs, {len(xml_ids)} XML IDs)."
         )
         return pl.DataFrame(
-            {"external_id": list(resolved_map.keys()), "db_id": list(resolved_map.values())}
+            {
+                "external_id": list(resolved_map.keys()),
+                "db_id": list(resolved_map.values()),
+            }
         )
     return None
 
@@ -476,7 +477,7 @@ def _execute_write_tuple_updates(
         parent_external_id = row["external_id"]
         parent_db_id = id_map.get(parent_external_id)
         related_db_id = row[f"{related_model_fk}/id"]
-        
+
         log.debug(
             f"Processing row - parent_external_id: {parent_external_id}, "
             f"parent_db_id: {parent_db_id}, related_db_id: {related_db_id}"
@@ -505,7 +506,7 @@ def _execute_write_tuple_updates(
                 related_db_id_int = int(related_db_id)
             else:
                 raise ValueError(f"Invalid related_db_id format: {related_db_id}")
-                
+
             m2m_command = [(4, related_db_id_int, 0)]  # Convert to proper tuple format
             log.debug(
                 f"Writing m2m command for parent {parent_external_id} ({parent_db_id}) "
@@ -564,6 +565,7 @@ def run_write_tuple_import(
 
     # Add a small delay to reduce server load and prevent connection pool exhaustion
     import time
+
     time.sleep(0.1)
 
     # Check if required keys exist
@@ -594,6 +596,8 @@ def run_write_tuple_import(
         {"external_id": list(id_map.keys()), "db_id": list(id_map.values())},
         schema={"external_id": pl.Utf8, "db_id": pl.Int64},
     )
+    log.info(f"*** OWNING DF SHAPE: {owning_df.shape} ***")
+    log.info(f"*** OWNING DF SAMPLE: {owning_df.head(3)} ***")
 
     # Debug: Print available columns and the field we're looking for
     log.debug(f"Available columns in source_df: {source_df.columns}")
@@ -621,8 +625,7 @@ def run_write_tuple_import(
         f"{len(all_related_ext_ids)} ***"
     )
     log.info(
-        "*** SAMPLE RELATED EXTERNAL IDS: "
-        f"{all_related_ext_ids.head(5).to_list()} ***"
+        f"*** SAMPLE RELATED EXTERNAL IDS: {all_related_ext_ids.head(5).to_list()} ***"
     )
     if related_model_fk is None:
         log.error(
@@ -648,6 +651,21 @@ def run_write_tuple_import(
     log.info(f"*** LINK DF SAMPLE BEFORE JOIN: {link_df.head(3)} ***")
 
     # Join to get DB IDs for the owning model
+    log.info(f"*** LINK DF SHAPE BEFORE OWNING JOIN: {link_df.shape} ***")
+    log.info(f"*** LINK DF SAMPLE BEFORE OWNING JOIN: {link_df.head(3)} ***")
+    log.info(f"*** OWNING DF SHAPE: {owning_df.shape} ***")
+    log.info(f"*** OWNING DF SAMPLE: {owning_df.head(3)} ***")
+    
+    # Debug: Check unique external_id values in both DataFrames
+    link_external_ids = link_df.get_column("external_id").unique().to_list()
+    owning_external_ids = owning_df.get_column("external_id").unique().to_list()
+    log.info(f"*** LINK DF EXTERNAL IDS: {link_external_ids} ***")
+    log.info(f"*** OWNING DF EXTERNAL IDS: {owning_external_ids} ***")
+    
+    # Debug: Check for intersection
+    intersection = set(link_external_ids) & set(owning_external_ids)
+    log.info(f"*** INTERSECTION OF EXTERNAL IDS: {intersection} ***")
+    
     link_df = link_df.join(owning_df, on="external_id", how="inner").rename(
         {"db_id": owning_model_fk}
     )
@@ -668,13 +686,16 @@ def run_write_tuple_import(
 
     # Count successful updates - get from link_df
     if link_df.height > 0:
-        successful_count = len([
-            row['external_id'] for row in link_df.iter_rows(named=True)
-            if id_map.get(row['external_id'])
-        ])
+        successful_count = len(
+            [
+                row["external_id"]
+                for row in link_df.iter_rows(named=True)
+                if id_map.get(row["external_id"])
+            ]
+        )
     else:
         successful_count = 0
-    failed_count = 0 if success else 'unknown'
+    failed_count = 0 if success else "unknown"
 
     log.info(
         f"Finished 'Write Tuple' for '{field}': "
@@ -852,7 +873,7 @@ def run_write_o2m_tuple_import(
     actual_field_name = field
     if f"{field}/id" in source_df.columns:
         actual_field_name = f"{field}/id"
-    
+
     o2m_df = source_df.filter(pl.col(actual_field_name).is_not_null())
 
     for record in o2m_df.iter_rows(named=True):
