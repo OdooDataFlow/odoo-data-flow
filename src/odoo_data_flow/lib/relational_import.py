@@ -512,7 +512,13 @@ def _execute_write_tuple_updates(
                 f"Writing m2m command for parent {parent_external_id} ({parent_db_id}) "
                 f"with field '{field}': {m2m_command}"
             )
-            owning_model.write([parent_db_id], {field: m2m_command})
+            # Strip /id suffix from field name when sending to Odoo
+            base_field_name = field.rstrip("/id")
+            if base_field_name != field:
+                log.debug(
+                    f"Stripped /id suffix from field name: '{field}' -> '{base_field_name}'"
+                )
+            owning_model.write([parent_db_id], {base_field_name: m2m_command})
             successful_updates += 1
             log.debug(
                 f"Successfully updated record {parent_external_id} "
@@ -562,11 +568,11 @@ def run_write_tuple_import(
     )
     log.info(f"*** RUNNING WRITE TUPLE IMPORT FOR FIELD '{field}' ***")
     log.info(f"*** STRATEGY DETAILS: {strategy_details} ***")
-    
+
     # Add debug logging to show what's in the id_map
     log.info(f"*** RECEIVED ID_MAP LENGTH: {len(id_map)} ***")
     log.info(f"*** RECEIVED ID_MAP CONTENTS: {id_map} ***")
-    
+
     # Add a small delay to reduce server load and prevent connection pool exhaustion
     import time
 
@@ -659,17 +665,17 @@ def run_write_tuple_import(
     log.info(f"*** LINK DF SAMPLE BEFORE OWNING JOIN: {link_df.head(3)} ***")
     log.info(f"*** OWNING DF SHAPE: {owning_df.shape} ***")
     log.info(f"*** OWNING DF SAMPLE: {owning_df.head(3)} ***")
-    
+
     # Debug: Check unique external_id values in both DataFrames
     link_external_ids = link_df.get_column("external_id").unique().to_list()
     owning_external_ids = owning_df.get_column("external_id").unique().to_list()
     log.info(f"*** LINK DF EXTERNAL IDS: {link_external_ids} ***")
     log.info(f"*** OWNING DF EXTERNAL IDS: {owning_external_ids} ***")
-    
+
     # Debug: Check for intersection
     intersection = set(link_external_ids) & set(owning_external_ids)
     log.info(f"*** INTERSECTION OF EXTERNAL IDS: {intersection} ***")
-    
+
     link_df = link_df.join(owning_df, on="external_id", how="inner").rename(
         {"db_id": owning_model_fk}
     )
