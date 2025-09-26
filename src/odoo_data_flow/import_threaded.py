@@ -845,6 +845,74 @@ def _execute_load_batch(  # noqa: C901
         # Converting types here can cause bulk import failures when there are type inconsistencies
         log.debug(f"Skipping type conversion for batch {batch_number}, using raw values for load method")
 
+        # PRE-PROCESSING: Clean up field values to prevent type errors
+        # Convert float string values like "1.0" to integers for integer fields
+        # This prevents "tuple index out of range" errors in Odoo server processing
+        try:
+            # Get field metadata - _fields might be a property that needs to be called
+            model_fields = None
+            if hasattr(model, '_fields'):
+                model_fields_attr = getattr(model, '_fields')
+                if callable(model_fields_attr):
+                    # It's a method, call it to get the fields
+                    model_fields = model_fields_attr()
+                else:
+                    # It's a property/dictionary, use it directly
+                    model_fields = model_fields_attr
+            
+            if model_fields:
+                cleaned_load_lines = []
+                for row in load_lines:
+                    cleaned_row = []
+                    for i, value in enumerate(row):
+                        if i < len(load_header):
+                            field_name = load_header[i]
+                            clean_field_name = field_name.split("/")[0]  # Handle external ID fields like 'parent_id/id'
+                            # Only attempt cleanup if we have field metadata and this field exists
+                            if clean_field_name in model_fields:
+                                field_info = model_fields[clean_field_name]
+                                field_type = field_info.get("type") if hasattr(field_info, 'get') else None
+                                # Only clean up for integer fields
+                                if field_type in ('integer', 'positive', 'negative'):
+                                    str_value = str(value) if value is not None else ""
+                                    # Convert float string values like "1.0", "2.0" to integers
+                                    if '.' in str_value:
+                                        try:
+                                            float_val = float(str_value)
+                                            if float_val.is_integer():
+                                                # It's a whole number like 1.0, 2.0 - convert to int
+                                                cleaned_row.append(int(float_val))
+                                            else:
+                                                # It's a non-integer float like 1.5 - keep original to let Odoo handle
+                                                cleaned_row.append(value)
+                                        except ValueError:
+                                            # Not a valid float - keep original to let Odoo handle
+                                            cleaned_row.append(value)
+                                    elif str_value.lstrip('-').isdigit():
+                                        # It's an integer string like "1", "-5" - convert to int
+                                        try:
+                                            cleaned_row.append(int(str_value))
+                                        except ValueError:
+                                            # Not a valid integer - keep original to let Odoo handle
+                                            cleaned_row.append(value)
+                                    else:
+                                        # Not a numeric string - keep original to let Odoo handle
+                                        cleaned_row.append(value)
+                                else:
+                                    # For all other field types, keep original value
+                                    cleaned_row.append(value)
+                            else:
+                                # If field doesn't exist in model, pass original value
+                                cleaned_row.append(value)
+                        else:
+                            # Safety check: if index doesn't match, keep original value
+                            cleaned_row.append(value)
+                    cleaned_load_lines.append(cleaned_row)
+                load_lines = cleaned_load_lines
+        except Exception as e:
+            log.warning(f"Pre-processing for type conversion failed, proceeding without conversion: {e}")
+            # Continue with original values if pre-processing fails
+
         # DEBUG: Log what we're sending to Odoo
         log.debug(
             f"Sending to Odoo - load_header (first 10): {load_header[:10]}"
@@ -862,6 +930,27 @@ def _execute_load_batch(  # noqa: C901
                 log.debug(f"Full load_header: {load_header}")
             if len(load_lines[0]) > 10:
                 log.debug(f"Full first load_line: {load_lines[0]}")
+            
+            # EXTRA DEBUGGING: Check for problematic values in integer fields
+            # Look for float string values like "1.0" in fields that should be integers
+            for i, field_name in enumerate(load_header):
+                clean_field_name = field_name.split("/")[0]  # Handle external ID fields like 'parent_id/id'
+                # Check if we have field metadata and this is an integer field
+                if hasattr(model, '_fields') and clean_field_name in model._fields:
+                    field_info = model._fields[clean_field_name]
+                    field_type = field_info.get("type")
+                    if field_type in ('integer', 'positive', 'negative'):
+                        # Check first few rows for float-like values in integer fields
+                        for j, row in enumerate(load_lines[:5]):  # Check first 5 rows
+                            if i < len(row):
+                                value = row[i]
+                                str_value = str(value) if value is not None else ""
+                                if "." in str_value and str_value.replace('.', '').replace('-', '').isdigit():
+                                    log.warning(
+                                        f"Potentially problematic float value '{str_value}' "
+                                        f"found in integer field '{field_name}' (row {j+1}). "
+                                        f"This might cause 'tuple index out of range' errors."
+                                    )
         try:
             log.debug(f"Attempting `load` for chunk of batch {batch_number}...")
             res = model.load(load_header, load_lines, context=context)
