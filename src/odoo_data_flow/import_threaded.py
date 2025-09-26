@@ -912,6 +912,35 @@ def _execute_load_batch(  # noqa: C901
                 )
                 is_scalable_error = True
 
+            # SPECIAL CASE: Tuple index out of range errors
+            # These can occur when sending wrong types to Odoo fields
+            # Should trigger immediate fallback to individual record processing
+            elif "tuple index out of range" in error_str:
+                log.warning(
+                    f"Tuple index out of range error detected during load for "
+                    f"batch {batch_number}. This is often caused by sending incorrect "
+                    f"data types to Odoo fields. Falling back to individual record processing."
+                )
+                progress.console.print(
+                    f"[yellow]WARN:[/] Batch {batch_number} failed `load` "
+                    f"due to tuple index out of range error. "
+                    f"Falling back to `create` for {len(current_chunk)} records "
+                    f"to prevent further server errors."
+                )
+                # Fall back to individual record processing when bulk processing fails due to type errors
+                fallback_result = _create_batch_individually(
+                    model,
+                    current_chunk,
+                    batch_header,
+                    uid_index,
+                    context,
+                    ignore_list,
+                )
+                aggregated_id_map.update(fallback_result.get("id_map", {}))
+                aggregated_failed_lines.extend(fallback_result.get("failed_lines", []))
+                lines_to_process = lines_to_process[chunk_size:]
+                continue
+
             # For all other exceptions, use the original scalable error detection
             is_scalable_error = (
                 "memory" in error_str
