@@ -52,48 +52,93 @@ def _format_odoo_error(error: Any) -> str:
     return str(error).strip().replace("\n", " ")
 
 
-def _read_data_file(
+def _read_data_file(  # noqa: C901
     file_path: str, separator: str, encoding: str, skip: int
 ) -> tuple[list[str], list[list[Any]]]:
     """Reads a CSV file and returns its header and data.
 
     This function handles opening and parsing a CSV file, skipping any
-    initial lines as specified. It validates that an 'id' column exists,
-    which is required for all import operations. It also handles common
-    file I/O errors like FileNotFoundError.
+    specified number of leading rows. It's the primary entry point for
+    getting CSV data into the import system.
 
     Args:
-        file_path (str): The full path to the source CSV file.
-        separator (str): The delimiter character used to separate columns.
+        file_path (str): Path to the CSV file to read.
+        separator (str): Field separator character (e.g., ',', ';').
         encoding (str): The character encoding of the file.
-        skip (int): The number of lines to skip at the top of the file before
-            reading the header.
+        skip (int): Number of leading rows to skip.
 
     Returns:
-        tuple[list[str], list[list[Any]]]: A tuple containing the header
-        (as a list of strings) and the data (as a list of lists). Returns
-        an empty tuple `([], [])` if the file cannot be read.
-
-    Raises:
-        ValueError: If the source file does not contain a required 'id' column.
+        tuple[list[str], list[list[Any]]]: A tuple containing the header row
+        and a list of data rows. Returns `([], [])` if the file cannot be read.
     """
+    # First try with the specified encoding
     try:
         with open(file_path, encoding=encoding, newline="") as f:
             reader = csv.reader(f, delimiter=separator)
-            header = next(reader)
-            if "id" not in header:
-                raise ValueError("Source file must contain an 'id' column.")
-            for _ in range(skip):
-                next(reader)
-            return header, list(reader)
-    except FileNotFoundError:
-        log.error(f"Source file not found: {file_path}")
+            all_rows = list(reader)
+
+        if len(all_rows) <= skip:
+            return [], []
+
+        header = all_rows[skip]
+        all_data = all_rows[skip + 1 :]
+
+        # Validate that the 'id' column is present in the header
+        if "id" not in header:
+            raise ValueError("Source file must contain an 'id' column.")
+
+        return header, all_data
+    except UnicodeDecodeError:
+        # If UnicodeDecodeError occurs, try fallback encodings
+        log.warning(
+            f"Unicode decode error with encoding '{encoding}', "
+            f"trying fallback encodings..."
+        )
+        encodings_to_try = ["utf-8", "latin-1", "cp1252", "iso-8859-1"]
+
+        for enc in encodings_to_try:
+            try:
+                with open(file_path, encoding=enc, newline="") as f:
+                    reader = csv.reader(f, delimiter=separator)
+                    all_rows = list(reader)
+
+                if len(all_rows) <= skip:
+                    return [], []
+
+                header = all_rows[skip]
+                all_data = all_rows[skip + 1 :]
+
+                # Validate that the 'id' column is present in the header
+                if "id" not in header:
+                    raise ValueError("Source file must contain an 'id' column.")
+
+                log.warning(
+                    f"File {file_path} was read successfully with encoding '{enc}' "
+                    f"instead of '{encoding}'"
+                )
+                return header, all_data
+            except UnicodeDecodeError:
+                continue  # Try next encoding
+            except OSError:  # File-related errors
+                continue  # Try next encoding
+            except Exception:
+                # For non-file-related exceptions, don't try other encodings
+                # just propagate the original exception
+                raise
+
+        # If all fallback encodings also fail with UnicodeDecodeError
+        log.error(
+            f"Could not read data file {file_path} with any of the tried encodings"
+        )
         return [], []
-    except Exception as e:
-        log.error(f"Failed to read file {file_path}: {e}")
-        if isinstance(e, ValueError):
-            raise
+    except OSError:  # File-related errors like FileNotFoundError
+        # If the original encoding attempt fails due to file issues, return empty lists
+        # to maintain backward compatibility
+        log.error(f"Could not read data file {file_path}: file access error")
         return [], []
+    except Exception:
+        # For any other exception (not file-related or UnicodeDecodeError), propagate it
+        raise
 
 
 def _filter_ignored_columns(
