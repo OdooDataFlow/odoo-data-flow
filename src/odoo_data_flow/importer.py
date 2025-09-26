@@ -269,8 +269,18 @@ def run_import(  # noqa: C901
         log.info("*** PASS 2: STARTING RELATIONAL IMPORT PROCESS ***")
         log.info(f"*** DETECTED STRATEGIES: {import_plan.get('strategies', {})} ***")
         log.info(f"*** STRATEGIES COUNT: {len(import_plan.get('strategies', {}))} ***")
+
+        # Check if file exists and is not empty before reading
+        if not os.path.exists(filename):
+            log.warning(f"File does not exist: {filename}")
+            return
+        if os.path.getsize(filename) == 0:
+            log.warning(f"File is empty: {filename}, skipping relational import")
+            return
+
         # Read the CSV file with explicit schema for /id suffixed columns
-        # Override automatic type inference to ensure all /id suffixed columns are strings
+        # Override automatic type inference to ensure all /id suffixed
+        # columns are strings
         df = pl.read_csv(filename, separator=separator, truncate_ragged_lines=True)
 
         # Identify columns that end with /id suffix
@@ -290,7 +300,8 @@ def run_import(  # noqa: C901
                 schema_overrides=schema_overrides,
             )
             log.debug(
-                f"Re-read DataFrame with schema overrides. /id column types: {[f'{col}: {source_df[col].dtype}' for col in id_columns]}"
+                f"Re-read DataFrame with schema overrides. /id column types: "
+                f"{[f'{col}: {source_df[col].dtype}' for col in id_columns]}"
             )
         else:
             source_df = df
@@ -301,11 +312,13 @@ def run_import(  # noqa: C901
             )
             for field, strategy_info in import_plan["strategies"].items():
                 log.info(
-                    f"*** PROCESSING FIELD '{field}' WITH STRATEGY '{strategy_info['strategy']}' ***"
+                    f"*** PROCESSING FIELD '{field}' WITH "
+                    f"STRATEGY '{strategy_info['strategy']}' ***"
                 )
                 if strategy_info["strategy"] == "direct_relational_import":
                     log.info(
-                        f"*** CALLING run_direct_relational_import for field '{field}' ***"
+                        f"*** CALLING run_direct_relational_import "
+                        f"for field '{field}' ***"
                     )
                     import_details = relational_import.run_direct_relational_import(
                         config,
@@ -322,7 +335,8 @@ def run_import(  # noqa: C901
                     )
                     if import_details:
                         log.info(
-                            f"*** DIRECT RELATIONAL IMPORT RETURNED DETAILS FOR FIELD '{field}' ***"
+                            f"*** DIRECT RELATIONAL IMPORT RETURNED "
+                            f"DETAILS FOR FIELD '{field}' ***"
                         )
                         import_threaded.import_data(
                             config=config,
@@ -335,7 +349,8 @@ def run_import(  # noqa: C901
                         Path(import_details["file_csv"]).unlink()
                     else:
                         log.info(
-                            f"*** DIRECT RELATIONAL IMPORT RETURNED NONE FOR FIELD '{field}' ***"
+                            f"*** DIRECT RELATIONAL IMPORT RETURNED "
+                            f"NONE FOR FIELD '{field}' ***"
                         )
                 elif strategy_info["strategy"] == "write_tuple":
                     log.info(
@@ -361,7 +376,8 @@ def run_import(  # noqa: C901
                         )
                 elif strategy_info["strategy"] == "write_o2m_tuple":
                     log.info(
-                        f"*** CALLING run_write_o2m_tuple_import FOR FIELD '{field}' ***"
+                        f"*** CALLING run_write_o2m_tuple_import "
+                        f"FOR FIELD '{field}' ***"
                     )
                     result = relational_import.run_write_o2m_tuple_import(
                         config,

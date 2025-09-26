@@ -87,6 +87,7 @@ def _resolve_related_ids(
 
             # Build domain for XML ID lookup by name
             # We'll look for records where the name matches any of our XML IDs
+            domain: list[tuple[str, str, Union[str, list[str]]]]
             if len(xml_ids) == 1:
                 domain = [("name", "=", xml_ids[0])]
             else:
@@ -105,7 +106,8 @@ def _resolve_related_ids(
                 xml_resolved_map = {rec["name"]: rec["res_id"] for rec in resolved_data}
                 resolved_map.update(xml_resolved_map)
                 log.info(
-                    f"Successfully resolved {len(xml_resolved_map)} XML IDs for model '{related_model}'."
+                    f"Successfully resolved {len(xml_resolved_map)} XML IDs for "
+                    f"model '{related_model}'."
                 )
         except Exception as e:
             log.error(f"An error occurred during bulk XML-ID resolution: {e}")
@@ -492,7 +494,8 @@ def _execute_write_tuple_updates(
 
         try:
             log.debug(
-                f"Constructing many2many command for {parent_external_id} -> {related_db_id}"
+                f"Constructing many2many command for {parent_external_id} -> "
+                f"{related_db_id}"
             )
             # For many2many fields, we use the (4, ID) command to link an existing record
             log.debug(
@@ -592,8 +595,16 @@ def run_write_tuple_import(
         return False
 
     # 1. Prepare the owning model's IDs
+    # Normalize external IDs to ensure consistency between pass 1 and pass 2
+    # This addresses the join issue where external IDs didn't match exactly
+    normalized_id_map = {
+        str(external_id).strip(): db_id for external_id, db_id in id_map.items()
+    }
     owning_df = pl.DataFrame(
-        {"external_id": list(id_map.keys()), "db_id": list(id_map.values())},
+        {
+            "external_id": list(normalized_id_map.keys()),
+            "db_id": list(normalized_id_map.values()),
+        },
         schema={"external_id": pl.Utf8, "db_id": pl.Int64},
     )
     log.info(f"*** OWNING DF SHAPE: {owning_df.shape} ***")
@@ -643,29 +654,16 @@ def run_write_tuple_import(
     log.info(f"*** RELATED MODEL DF SAMPLE: {related_model_df.head(3)} ***")
 
     # 3. Create the link table DataFrame
+    # Ensure external_id column is properly typed and normalized
     link_df = source_df.select(["id", field]).rename({"id": "external_id"})
-    # Ensure external_id is treated as string to match the owning_df schema
-    link_df = link_df.with_columns(pl.col("external_id").cast(pl.Utf8))
+    # Normalize external IDs to match the format used in id_map
+    link_df = link_df.with_columns(
+        [pl.col("external_id").cast(pl.Utf8).str.strip_chars()]
+    )
     link_df = link_df.with_columns(pl.col(field).str.split(",")).explode(field)
-    log.info(f"*** LINK DF SHAPE BEFORE JOIN: {link_df.shape} ***")
-    log.info(f"*** LINK DF SAMPLE BEFORE JOIN: {link_df.head(3)} ***")
-
-    # Join to get DB IDs for the owning model
     log.info(f"*** LINK DF SHAPE BEFORE OWNING JOIN: {link_df.shape} ***")
     log.info(f"*** LINK DF SAMPLE BEFORE OWNING JOIN: {link_df.head(3)} ***")
-    log.info(f"*** OWNING DF SHAPE: {owning_df.shape} ***")
-    log.info(f"*** OWNING DF SAMPLE: {owning_df.head(3)} ***")
-    
-    # Debug: Check unique external_id values in both DataFrames
-    link_external_ids = link_df.get_column("external_id").unique().to_list()
-    owning_external_ids = owning_df.get_column("external_id").unique().to_list()
-    log.info(f"*** LINK DF EXTERNAL IDS: {link_external_ids} ***")
-    log.info(f"*** OWNING DF EXTERNAL IDS: {owning_external_ids} ***")
-    
-    # Debug: Check for intersection
-    intersection = set(link_external_ids) & set(owning_external_ids)
-    log.info(f"*** INTERSECTION OF EXTERNAL IDS: {intersection} ***")
-    
+
     link_df = link_df.join(owning_df, on="external_id", how="inner").rename(
         {"db_id": owning_model_fk}
     )

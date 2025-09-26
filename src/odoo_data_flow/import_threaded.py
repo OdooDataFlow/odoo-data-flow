@@ -675,11 +675,14 @@ def _execute_load_batch(  # noqa: C901
 
         # DEBUG: Log what we're sending to Odoo
         log.debug(
-            f"Sending to Odoo - load_header (first 10): {load_header[:10]}{'...' if len(load_header) > 10 else ''}"
+            f"Sending to Odoo - load_header (first 10): {load_header[:10]}"
+            f"{'...' if len(load_header) > 10 else ''}"
         )
         if load_lines:
             log.debug(
-                f"Sending to Odoo - first load_line (first 10 fields): {load_lines[0][:10] if len(load_lines[0]) > 10 else load_lines[0]}{'...' if len(load_lines[0]) > 10 else ''}"
+                f"Sending to Odoo - first load_line (first 10 fields): "
+                f"{load_lines[0][:10] if len(load_lines[0]) > 10 else load_lines[0]}"
+                f"{'...' if len(load_lines[0]) > 10 else ''}"
             )
             log.debug(f"Sending to Odoo - load_lines count: {len(load_lines)}")
             # Log the full header and first line for debugging
