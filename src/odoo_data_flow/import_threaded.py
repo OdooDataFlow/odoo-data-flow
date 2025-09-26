@@ -991,6 +991,61 @@ def _execute_load_batch(  # noqa: C901
                                     )
         try:
             log.debug(f"Attempting `load` for chunk of batch {batch_number}...")
+            
+            # PRE-PROCESSING: Clean up field values to prevent type errors
+            # Convert float string values like "1.0" to integers for integer fields
+            # This prevents "tuple index out of range" errors in Odoo server processing
+            processed_load_lines = []
+            if hasattr(model, '_fields'):
+                for row in load_lines:
+                    processed_row = []
+                    for i, value in enumerate(row):
+                        if i < len(load_header):
+                            field_name = load_header[i].split("/")[0]  # Handle external ID fields like 'parent_id/id'
+                            if field_name in model._fields:
+                                field_info = model._fields[field_name]
+                                field_type = field_info.get("type")
+                                # Only convert for integer fields
+                                if field_type in ('integer', 'positive', 'negative'):
+                                    str_value = str(value) if value is not None else ""
+                                    # Convert float string values like "1.0", "2.0" to integers
+                                    if '.' in str_value:
+                                        try:
+                                            float_val = float(str_value)
+                                            if float_val.is_integer():
+                                                # It's a whole number like 1.0, 2.0 - convert to int
+                                                processed_row.append(int(float_val))
+                                            else:
+                                                # It's a non-integer float like 1.5 - keep original to let Odoo handle
+                                                processed_row.append(value)
+                                        except ValueError:
+                                            # Not a valid float - keep original to let Odoo handle
+                                            processed_row.append(value)
+                                    elif str_value.lstrip('-').isdigit():
+                                        # It's an integer string like "1", "-5" - convert to int
+                                        try:
+                                            processed_row.append(int(str_value))
+                                        except ValueError:
+                                            # Not a valid integer - keep original to let Odoo handle
+                                            processed_row.append(value)
+                                    else:
+                                        # Not a numeric string - keep original to let Odoo handle
+                                        processed_row.append(value)
+                                else:
+                                    # For all other field types, keep original value
+                                    processed_row.append(value)
+                            else:
+                                # If field doesn't exist or model has no _fields, pass original value
+                                processed_row.append(value)
+                        else:
+                            # Safety check: if index doesn't match, keep original value
+                            processed_row.append(value)
+                    processed_load_lines.append(processed_row)
+                load_lines = processed_load_lines
+            else:
+                # If model has no _fields, use original values
+                log.debug("Model has no _fields attribute, using raw values for load method")
+            
             res = model.load(load_header, load_lines, context=context)
             if res.get("messages"):
                 error = res["messages"][0].get("message", "Batch load failed.")
