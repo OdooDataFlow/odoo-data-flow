@@ -716,20 +716,31 @@ def _execute_load_batch(  # noqa: C901
                     original_id = sanitized_line[uid_index]
                     sanitized_id = to_xmlid(original_id)
                     sanitized_line[uid_index] = sanitized_id
-                    log.debug(
-                        f"Sanitized ID for line {i}: '{original_id}' -> '{sanitized_id}'"
-                    )
+                    if i < 3:  # Only log first 3 lines for debugging
+                        log.debug(
+                            f"Sanitized ID for line {i}: '{original_id}' -> '{sanitized_id}'"
+                        )
                 else:
-                    log.warning(
-                        f"Line {i} does not have enough columns for uid_index {uid_index}. "
-                        f"Line has {len(line)} columns."
-                    )
+                    if i < 3:  # Only log first 3 lines for debugging
+                        log.warning(
+                            f"Line {i} does not have enough columns for uid_index {uid_index}. "
+                            f"Line has {len(line)} columns."
+                        )
                 sanitized_load_lines.append(sanitized_line)
             
-            log.debug(
-                f"Sanitized {len(sanitized_load_lines)} lines. "
-                f"Sample sanitized IDs: {[line[uid_index] if uid_index < len(line) else 'MISSING' for line in sanitized_load_lines[:3]]}"
-            )
+            # Log sample of sanitized data without large base64 content
+            log.debug(f"Load header: {load_header}")
+            log.debug(f"Load lines count: {len(sanitized_load_lines)}")
+            if sanitized_load_lines and len(sanitized_load_lines) > 0:
+                # Show first line but truncate large base64 data
+                preview_line = []
+                for i, field_value in enumerate(sanitized_load_lines[0][:10] if len(sanitized_load_lines[0]) > 10 else sanitized_load_lines[0]):
+                    if isinstance(field_value, str) and len(field_value) > 100:
+                        # Truncate large strings (likely base64 data)
+                        preview_line.append(f"{field_value[:50]}...[{len(field_value)-100} chars truncated]...{field_value[-50:]}")
+                    else:
+                        preview_line.append(field_value)
+                log.debug(f"First load line (first 10 fields, truncated if large): {preview_line}")
             
             res = model.load(load_header, sanitized_load_lines, context=context)
             
