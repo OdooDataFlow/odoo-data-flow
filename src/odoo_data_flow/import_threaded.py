@@ -649,7 +649,7 @@ def _create_batch_individually(
                         model_fields = model_fields_attr()
                     else:
                         # It's a property/dictionary, use it directly
-                        model_fields = model_fields_attr
+                        model_fields = model_fields_attr if (hasattr(model_fields_attr, "__iter__") and not callable(model_fields_attr)) else None
 
                 if model_fields and clean_field_name in model_fields:
                     field_info = model_fields[clean_field_name]
@@ -864,12 +864,17 @@ def _execute_load_batch(  # noqa: C901
             model_fields = None
             if hasattr(model, '_fields'):
                 model_fields_attr = getattr(model, '_fields')
+                # Check if it's callable first, but be careful about the result
                 if callable(model_fields_attr):
-                    # It's a method, call it to get the fields
-                    model_fields = model_fields_attr()
+                    try:
+                        # It's a method, call it to get the fields
+                        model_fields = model_fields_attr()
+                    except Exception:
+                        # If calling fails, treat it as a dictionary anyway
+                        model_fields = model_fields_attr if (hasattr(model_fields_attr, "__iter__") and not callable(model_fields_attr)) else None
                 else:
                     # It's a property/dictionary, use it directly
-                    model_fields = model_fields_attr
+                    model_fields = model_fields_attr if (hasattr(model_fields_attr, "__iter__") and not callable(model_fields_attr)) else None
             
             if model_fields:
                 cleaned_load_lines = []
@@ -951,16 +956,25 @@ def _execute_load_batch(  # noqa: C901
                 model_fields = None
                 if hasattr(model, '_fields'):
                     model_fields_attr = getattr(model, '_fields')
+                    # Check if it's callable first, but be careful about the result
                     if callable(model_fields_attr):
-                        # It's a method, call it to get the fields
-                        model_fields = model_fields_attr()
+                        try:
+                            # It's a method, call it to get the fields
+                            model_fields = model_fields_attr()
+                        except Exception:
+                            # If calling fails, treat it as a dictionary anyway
+                            model_fields = model_fields_attr if (hasattr(model_fields_attr, "__iter__") and not callable(model_fields_attr)) else None
                     else:
                         # It's a property/dictionary, use it directly
-                        model_fields = model_fields_attr
+                        model_fields = model_fields_attr if (hasattr(model_fields_attr, "__iter__") and not callable(model_fields_attr)) else None
 
                 if model_fields and clean_field_name in model_fields:
                     field_info = model_fields[clean_field_name]
                     field_type = field_info.get("type")
+                    # Ensure it's iterable for the 'in' check later
+                    if not hasattr(model_fields, '__iter__') or callable(model_fields):
+                        # If it's not iterable or it's a callable, set to None
+                        model_fields = None
                     if field_type in ('integer', 'positive', 'negative'):
                         # Check first few rows for float-like values in integer fields
                         for j, row in enumerate(load_lines[:5]):  # Check first 5 rows
