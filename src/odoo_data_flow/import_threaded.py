@@ -684,10 +684,11 @@ def _create_batch_individually(
             # Special handling for tuple index out of range errors
             # These can occur when sending wrong types to Odoo fields
             if "tuple index out of range" in error_str_lower:
-                log.warning(
-                    f"Tuple index out of range error detected during create for "
-                    f"record {source_id}. This is often caused by sending incorrect "
-                    f"data types to Odoo fields. Skipping record and continuing with other records."
+                # Use progress console for user-facing messages to avoid flooding logs
+                progress.console.print(
+                    f"[yellow]WARN:[/] Tuple index error for record '{source_id}'. "
+                    f"This often happens when sending text values to numeric fields. "
+                    f"Check your data types."
                 )
                 error_message = (
                     f"Tuple index out of range error for record {source_id}: "
@@ -717,10 +718,11 @@ def _create_batch_individually(
             # Special handling for tuple index out of range errors
             # These can occur when sending wrong types to Odoo fields
             if "tuple index out of range" in error_str_lower:
-                log.warning(
-                    f"Tuple index out of range error detected during create for "
-                    f"record {source_id}. This is often caused by sending incorrect "
-                    f"data types to Odoo fields. Skipping record and continuing with other records."
+                # Use progress console for user-facing messages to avoid flooding logs
+                progress.console.print(
+                    f"[yellow]WARN:[/] Tuple index error for record '{source_id}'. "
+                    f"This often happens when sending text values to numeric fields. "
+                    f"Check your data types."
                 )
                 error_message = (
                     f"Tuple index out of range error for record {source_id}: "
@@ -1041,11 +1043,7 @@ def _execute_load_batch(  # noqa: C901
             # These can occur when sending wrong types to Odoo fields
             # Should trigger immediate fallback to individual record processing
             elif "tuple index out of range" in error_str:
-                log.warning(
-                    f"Tuple index out of range error detected during load for "
-                    f"batch {batch_number}. This is often caused by sending incorrect "
-                    f"data types to Odoo fields. Falling back to individual record processing."
-                )
+                # Use progress console for user-facing messages to avoid flooding logs
                 progress.console.print(
                     f"[yellow]WARN:[/] Batch {batch_number} failed `load` "
                     f"due to tuple index out of range error. "
