@@ -608,6 +608,7 @@ def _create_batch_individually(
     uid_index: int,
     context: dict[str, Any],
     ignore_list: list[str],
+    progress: Any = None,  # Optional progress object for user-facing messages
 ) -> dict[str, Any]:
     """Fallback to create records one-by-one to get detailed errors."""
     id_map: dict[str, int] = {}
@@ -687,11 +688,13 @@ def _create_batch_individually(
             # These can occur when sending wrong types to Odoo fields
             if "tuple index out of range" in error_str_lower:
                 # Use progress console for user-facing messages to avoid flooding logs
-                progress.console.print(
-                    f"[yellow]WARN:[/] Tuple index error for record '{source_id}'. "
-                    f"This often happens when sending text values to numeric fields. "
-                    f"Check your data types."
-                )
+                # Only if progress object is available
+                if progress is not None:
+                    progress.console.print(
+                        f"[yellow]WARN:[/] Tuple index error for record '{source_id}'. "
+                        f"This often happens when sending text values to numeric fields. "
+                        f"Check your data types."
+                    )
                 error_message = (
                     f"Tuple index out of range error for record {source_id}: "
                     f"This is often caused by sending incorrect data types to Odoo fields. "
@@ -700,11 +703,13 @@ def _create_batch_individually(
                 failed_lines.append([*line, error_message])
                 
                 # Also display warning to user console
-                progress.console.print(
-                    f"[yellow]WARN:[/] Tuple index error for record '{source_id}'. "
-                    f"This often happens when sending text values to numeric fields. "
-                    f"Check your data types."
-                )
+                # Only if progress object is available
+                if progress is not None:
+                    progress.console.print(
+                        f"[yellow]WARN:[/] Tuple index error for record '{source_id}'. "
+                        f"This often happens when sending text values to numeric fields. "
+                        f"Check your data types."
+                    )
                 
                 continue
             else:
@@ -722,11 +727,13 @@ def _create_batch_individually(
             if ("tuple index out of range" in error_str_lower or 
                 ("does not seem to be an integer" in error_str_lower and "for field" in error_str_lower)):
                 # Use progress console for user-facing messages to avoid flooding logs
-                progress.console.print(
-                    f"[yellow]WARN:[/] Tuple index error for record '{source_id}'. "
-                    f"This often happens when sending text values to numeric fields. "
-                    f"Check your data types."
-                )
+                # Only if progress object is available
+                if progress is not None:
+                    progress.console.print(
+                        f"[yellow]WARN:[/] Tuple index error for record '{source_id}'. "
+                        f"This often happens when sending text values to numeric fields. "
+                        f"Check your data types."
+                    )
                 error_message = (
                     f"Tuple index out of range error for record {source_id}: "
                     f"This is often caused by sending incorrect data types to Odoo fields. "
@@ -819,7 +826,7 @@ def _execute_load_batch(  # noqa: C901
             f"Batch {batch_number}: Fail mode active, using `create` method."
         )
         result = _create_batch_individually(
-            model, batch_lines, batch_header, uid_index, context, ignore_list
+            model, batch_lines, batch_header, uid_index, context, ignore_list, progress
         )
         result["success"] = bool(result.get("id_map"))
         return result
@@ -1005,8 +1012,29 @@ def _execute_load_batch(  # noqa: C901
                     for i, value in enumerate(row):
                         if i < len(load_header):
                             field_name = load_header[i].split("/")[0]  # Handle external ID fields like 'parent_id/id'
-                            if field_name in model._fields:
-                                field_info = model._fields[field_name]
+                            # Check if model has _fields attribute and get field metadata properly
+                            model_fields = None
+                            if hasattr(model, '_fields'):
+                                model_fields_attr = getattr(model, '_fields')
+                                # Check if it's callable first
+                                if callable(model_fields_attr):
+                                    try:
+                                        # It's a method, call it to get the fields
+                                        model_fields = model_fields_attr()
+                                    except Exception:
+                                        # If calling fails, fall back to None
+                                        model_fields = None
+                                else:
+                                    # It's a property/dictionary, use it directly
+                                    # But make sure it's iterable
+                                    if hasattr(model_fields_attr, '__iter__') and not callable(model_fields_attr):
+                                        model_fields = model_fields_attr
+                                    else:
+                                        model_fields = None
+                            
+                            # Only process if we have valid field metadata
+                            if model_fields and field_name in model_fields:
+                                field_info = model_fields[field_name]
                                 field_type = field_info.get("type")
                                 # Only convert for integer fields
                                 if field_type in ('integer', 'positive', 'negative'):
@@ -1117,6 +1145,7 @@ def _execute_load_batch(  # noqa: C901
                     uid_index,
                     context,
                     ignore_list,
+                    progress,  # Pass progress for user-facing messages
                 )
                 aggregated_id_map.update(fallback_result.get("id_map", {}))
                 aggregated_failed_lines.extend(fallback_result.get("failed_lines", []))
@@ -1185,6 +1214,7 @@ def _execute_load_batch(  # noqa: C901
                             uid_index,
                             context,
                             ignore_list,
+                            progress,  # Pass progress for user-facing messages
                         )
                         aggregated_id_map.update(fallback_result.get("id_map", {}))
                         aggregated_failed_lines.extend(
@@ -1208,6 +1238,7 @@ def _execute_load_batch(  # noqa: C901
                 uid_index,
                 context,
                 ignore_list,
+                progress,  # Pass progress for user-facing messages
             )
             aggregated_id_map.update(fallback_result.get("id_map", {}))
             aggregated_failed_lines.extend(fallback_result.get("failed_lines", []))
