@@ -729,6 +729,11 @@ def _execute_load_batch(  # noqa: C901
             
             res = model.load(load_header, sanitized_load_lines, context=context)
             
+            # DEBUG: Log detailed information about the load response
+            log.debug(f"Load response type: {type(res)}")
+            log.debug(f"Load response keys: {list(res.keys()) if hasattr(res, 'keys') else 'Not a dict'}")
+            log.debug(f"Load response full content: {res}")
+            
             # DEBUG: Log what we got back from Odoo
             log.debug(
                 f"Load response - messages: {res.get('messages', 'None')}, "
