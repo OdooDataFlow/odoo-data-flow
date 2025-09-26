@@ -91,6 +91,10 @@ def _read_data_file(
         return [], []
     except Exception as e:
         log.error(f"Failed to read file {file_path}: {e}")
+        log.error(f"Exception type: {type(e).__name__}")
+        log.error(f"Exception args: {e.args}")
+        import traceback
+        log.error(f"Full traceback: {traceback.format_exc()}")
         if isinstance(e, ValueError):
             raise
         return [], []
