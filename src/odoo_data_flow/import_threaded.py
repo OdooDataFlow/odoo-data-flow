@@ -425,6 +425,68 @@ def _convert_external_id_field(
     return base_field_name, converted_value
 
 
+def _safe_convert_field_value(field_name: str, field_value: Any, field_type: str) -> Any:
+    """Safely convert field values to prevent type-related errors.
+    
+    Args:
+        field_name: Name of the field being converted
+        field_value: Raw field value to convert
+        field_type: Target Odoo field type (integer, float, etc.)
+        
+    Returns:
+        Safely converted field value, or original value if conversion unsafe
+    """
+    if field_value is None or field_value == "":
+        # Handle empty values appropriately by field type
+        if field_type in ('integer', 'float', 'positive', 'negative'):
+            return 0  # Use 0 for empty numeric fields
+        else:
+            return field_value  # Keep original for other field types
+    
+    # Convert to string for processing
+    str_value = str(field_value).strip()
+    
+    # Handle external ID fields specially (they should remain as strings)
+    if field_name.endswith('/id'):
+        return str_value
+    
+    # Handle numeric field conversions
+    if field_type in ('integer', 'positive', 'negative'):
+        try:
+            # Handle float strings like "1.0", "2.0" by converting to int
+            if '.' in str_value:
+                float_val = float(str_value)
+                if float_val.is_integer():
+                    return int(float_val)
+                else:
+                    # Non-integer float - leave as-is to let Odoo handle it
+                    return str_value
+            elif str_value.lstrip('-').isdigit():
+                # Integer string like "1", "-5"
+                return int(str_value)
+            else:
+                # Non-numeric string - leave as-is
+                return str_value
+        except (ValueError, TypeError):
+            # Conversion failed - leave as original string to let Odoo handle it
+            return field_value
+    
+    elif field_type == 'float':
+        try:
+            # Convert numeric strings to float
+            if str_value.replace('.', '').replace('-', '').isdigit():
+                return float(str_value)
+            else:
+                # Non-numeric string - leave as-is
+                return str_value
+        except (ValueError, TypeError):
+            # Conversion failed - leave as original string
+            return field_value
+    
+    # For all other field types, return original value
+    return field_value
+
+
 def _process_external_id_fields(
     model: Any,
     clean_vals: dict[str, Any],
@@ -571,9 +633,25 @@ def _create_batch_individually(
 
             # 2. PREPARE FOR CREATE
             vals = dict(zip(batch_header, line))
+            
+            # Apply safe field value conversion to prevent type errors
+            safe_vals = {}
+            for field_name, field_value in vals.items():
+                # Get field type information if available
+                clean_field_name = field_name.split("/")[0]
+                field_type = None
+                if hasattr(model, '_fields') and clean_field_name in model._fields:
+                    field_info = model._fields[clean_field_name]
+                    field_type = field_info.get('type')
+                
+                # Apply safe conversion based on field type
+                safe_vals[field_name] = _safe_convert_field_value(
+                    field_name, field_value, field_type or 'unknown'
+                )
+            
             clean_vals = {
                 k: v
-                for k, v in vals.items()
+                for k, v in safe_vals.items()
                 if k.split("/")[0] not in ignore_set
                 # Allow external ID fields through for conversion
             }
