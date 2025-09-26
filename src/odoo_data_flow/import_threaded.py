@@ -590,11 +590,30 @@ def _create_batch_individually(
             new_record = model.create(converted_vals, context=context)
             id_map[source_id] = new_record.id
         except IndexError as e:
-            error_message = f"Malformed row detected (row {i + 1} in batch): {e}"
-            failed_lines.append([*line, error_message])
-            if "Fell back to create" in error_summary:
-                error_summary = "Malformed CSV row detected"
-            continue
+            error_str_lower = str(e).lower()
+            
+            # Special handling for tuple index out of range errors
+            # These can occur when sending wrong types to Odoo fields
+            if "tuple index out of range" in error_str_lower:
+                log.warning(
+                    f"Tuple index out of range error detected during create for "
+                    f"record {source_id}. This is often caused by sending incorrect "
+                    f"data types to Odoo fields. Skipping record and continuing with other records."
+                )
+                error_message = (
+                    f"Tuple index out of range error for record {source_id}: "
+                    f"This is often caused by sending incorrect data types to Odoo fields. "
+                    f"Check your data types and ensure they match the Odoo field types."
+                )
+                failed_lines.append([*line, error_message])
+                continue
+            else:
+                # Handle other IndexError as malformed row
+                error_message = f"Malformed row detected (row {i + 1} in batch): {e}"
+                failed_lines.append([*line, error_message])
+                if "Fell back to create" in error_summary:
+                    error_summary = "Malformed CSV row detected"
+                continue
         except Exception as create_error:
             error_str_lower = str(create_error).lower()
 
