@@ -580,7 +580,9 @@ def _handle_create_error(
         if "Fell back to create" in error_summary:
             error_summary = "Database serialization conflict detected during create"
     elif (
-        "tuple index out of range" in error_str_lower or "indexerror" in error_str_lower
+        "tuple index out of range" in error_str_lower or 
+        "indexerror" in error_str_lower or
+        ("does not seem to be an integer" in error_str_lower and "for field" in error_str_lower)
     ):
         error_message = f"Tuple unpacking error in row {i + 1}: {create_error}"
         if "Fell back to create" in error_summary:
@@ -717,7 +719,8 @@ def _create_batch_individually(
 
             # Special handling for tuple index out of range errors
             # These can occur when sending wrong types to Odoo fields
-            if "tuple index out of range" in error_str_lower:
+            if ("tuple index out of range" in error_str_lower or 
+                ("does not seem to be an integer" in error_str_lower and "for field" in error_str_lower)):
                 # Use progress console for user-facing messages to avoid flooding logs
                 progress.console.print(
                     f"[yellow]WARN:[/] Tuple index error for record '{source_id}'. "
@@ -1097,11 +1100,12 @@ def _execute_load_batch(  # noqa: C901
             # SPECIAL CASE: Tuple index out of range errors
             # These can occur when sending wrong types to Odoo fields
             # Should trigger immediate fallback to individual record processing
-            elif "tuple index out of range" in error_str:
+            elif ("tuple index out of range" in error_str or 
+                  ("does not seem to be an integer" in error_str and "for field" in error_str)):
                 # Use progress console for user-facing messages to avoid flooding logs
                 progress.console.print(
                     f"[yellow]WARN:[/] Batch {batch_number} failed `load` "
-                    f"due to tuple index out of range error. "
+                    f"due to type conversion error. "
                     f"Falling back to `create` for {len(current_chunk)} records "
                     f"to prevent further server errors."
                 )
