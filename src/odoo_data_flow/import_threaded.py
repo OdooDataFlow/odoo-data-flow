@@ -481,9 +481,14 @@ def _convert_field_types(
             # Ensure the value is a string for processing
             str_value = str(field_value) if field_value is not None else ""
             
-            # Skip type conversion for empty values - send original to let Odoo handle it
+            # Handle empty values: for numeric fields, send 0; for others, send original
             if str_value.strip() == "":
-                converted_vals[field_name] = field_value
+                if field_type in ('integer', 'positive', 'negative', 'float'):
+                    # For numeric fields, convert empty to 0 to prevent type issues
+                    converted_vals[field_name] = 0
+                else:
+                    # For non-numeric fields, send original value
+                    converted_vals[field_name] = field_value
                 continue
 
             # Handle specific problematic conversions, especially float-to-integer
@@ -797,9 +802,14 @@ def _execute_load_batch(  # noqa: C901
                             field_type = model._fields[field_name].type
                             str_value = str(value) if value is not None else ""
                             
-                            # Skip type conversion for empty values - send as-is
-                            if str_value.strip() == "":
-                                typed_row.append(value)  # Keep original value for empty strings
+                            # Handle empty values: for numeric fields, send 0; for others, send original
+                            if value_str.strip() == "":
+                                if field_type in ('integer', 'positive', 'negative', 'float'):
+                                    # For numeric fields, convert empty to 0 to prevent type issues
+                                    typed_row.append(0)
+                                else:
+                                    # For non-numeric fields, keep original value
+                                    typed_row.append(value)
                                 continue
                             
                             # Handle specific problematic conversions
