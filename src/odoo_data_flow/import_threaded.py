@@ -606,6 +606,14 @@ def _create_batch_individually(
                     f"Check your data types and ensure they match the Odoo field types."
                 )
                 failed_lines.append([*line, error_message])
+                
+                # Also display warning to user console
+                progress.console.print(
+                    f"[yellow]WARN:[/] Tuple index error for record '{source_id}'. "
+                    f"This often happens when sending text values to numeric fields. "
+                    f"Check your data types."
+                )
+                
                 continue
             else:
                 # Handle other IndexError as malformed row
