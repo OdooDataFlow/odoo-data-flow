@@ -640,8 +640,19 @@ def _create_batch_individually(
                 # Get field type information if available
                 clean_field_name = field_name.split("/")[0]
                 field_type = None
-                if hasattr(model, '_fields') and clean_field_name in model._fields:
-                    field_info = model._fields[clean_field_name]
+                # Check if model has _fields attribute and get field metadata properly
+                model_fields = None
+                if hasattr(model, '_fields'):
+                    model_fields_attr = getattr(model, '_fields')
+                    if callable(model_fields_attr):
+                        # It's a method, call it to get the fields
+                        model_fields = model_fields_attr()
+                    else:
+                        # It's a property/dictionary, use it directly
+                        model_fields = model_fields_attr
+
+                if model_fields and clean_field_name in model_fields:
+                    field_info = model_fields[clean_field_name]
                     field_type = field_info.get('type')
                 
                 # Apply safe conversion based on field type
@@ -936,8 +947,19 @@ def _execute_load_batch(  # noqa: C901
             for i, field_name in enumerate(load_header):
                 clean_field_name = field_name.split("/")[0]  # Handle external ID fields like 'parent_id/id'
                 # Check if we have field metadata and this is an integer field
-                if hasattr(model, '_fields') and clean_field_name in model._fields:
-                    field_info = model._fields[clean_field_name]
+                # Check if model has _fields attribute and get field metadata properly
+                model_fields = None
+                if hasattr(model, '_fields'):
+                    model_fields_attr = getattr(model, '_fields')
+                    if callable(model_fields_attr):
+                        # It's a method, call it to get the fields
+                        model_fields = model_fields_attr()
+                    else:
+                        # It's a property/dictionary, use it directly
+                        model_fields = model_fields_attr
+
+                if model_fields and clean_field_name in model_fields:
+                    field_info = model_fields[clean_field_name]
                     field_type = field_info.get("type")
                     if field_type in ('integer', 'positive', 'negative'):
                         # Check first few rows for float-like values in integer fields
