@@ -459,6 +459,67 @@ def _process_external_id_fields(
     return converted_vals, external_id_fields
 
 
+def _convert_field_types(
+    model: Any,
+    clean_vals: dict[str, Any],
+) -> dict[str, Any]:
+    """Convert field values to appropriate types for Odoo fields.
+    
+    Args:
+        model: The Odoo model object
+        clean_vals: Dictionary of clean field values
+        
+    Returns:
+        Dictionary with type-converted values
+    """
+    converted_vals = {}
+    
+    for field_name, field_value in clean_vals.items():
+        # Check if the field exists in the model
+        if hasattr(model, '_fields') and field_name in model._fields:
+            field_type = model._fields[field_name].type
+            # Ensure the value is a string for processing
+            str_value = str(field_value) if field_value is not None else ""
+            
+            # Skip type conversion for empty values - send original to let Odoo handle it
+            if str_value.strip() == "":
+                converted_vals[field_name] = field_value
+                continue
+
+            # Handle specific problematic conversions, especially float-to-integer
+            try:
+                if field_type in ('integer', 'positive', 'negative'):
+                    # For the specific issue: float strings to integer fields
+                    # Convert '1.0' -> 1, '2.0' -> 2, etc.
+                    if '.' in str_value:
+                        # Check if it's a valid numeric string with decimal
+                        numeric_part = str_value.replace('.', '').replace('-', '')
+                        if numeric_part.isdigit():
+                            # It's a numeric float string, convert to int
+                            converted_vals[field_name] = int(float(str_value))
+                        else:
+                            # Not a numeric value, pass original to let Odoo handle
+                            converted_vals[field_name] = field_value
+                    elif str_value.lstrip('-').isdigit():  # Check if it's an integer string
+                        converted_vals[field_name] = int(str_value)
+                    else:
+                        # Not a valid number, pass original to let Odoo handle
+                        converted_vals[field_name] = field_value
+                elif field_type == 'float' and str_value.replace('.', '').replace('-', '').isdigit():
+                    converted_vals[field_name] = float(str_value)
+                else:
+                    # For all other field types, pass original value to let Odoo handle
+                    converted_vals[field_name] = field_value
+            except (ValueError, TypeError):
+                # If conversion fails, pass original value to let Odoo handle it
+                converted_vals[field_name] = field_value
+        else:
+            # If field doesn't exist or model has no _fields, pass the value as-is
+            converted_vals[field_name] = field_value
+    
+    return converted_vals
+
+
 def _handle_create_error(
     i: int,
     create_error: Exception,
@@ -559,10 +620,13 @@ def _create_batch_individually(
                 # Allow external ID fields through for conversion
             }
 
-            # 3. CREATE
+            # 3. TYPE CONVERSION - Convert values to appropriate types for Odoo fields
+            typed_vals = _convert_field_types(model, clean_vals)
+            
+            # 4. CREATE
             # Convert external ID references to actual database IDs before creating
             converted_vals, external_id_fields = _process_external_id_fields(
-                model, clean_vals
+                model, typed_vals
             )
 
             log.debug(f"External ID fields found: {external_id_fields}")
@@ -717,6 +781,66 @@ def _execute_load_batch(  # noqa: C901
         if not load_lines:
             lines_to_process = lines_to_process[chunk_size:]
             continue
+
+        # TYPE CONVERSION: Convert values in load_lines to appropriate types for Odoo fields
+        # This is critical to prevent errors when sending wrong types to Odoo (like floats to integer fields)
+        # Specifically handles the case where Odoo 18 expects integers but CSV has floats like '1.0'
+        try:
+            typed_load_lines = []
+            for row in load_lines:
+                typed_row = []
+                for i, value in enumerate(row):
+                    if i < len(load_header):
+                        field_name = load_header[i]
+                        # Only attempt type conversion if model has _fields attribute
+                        if hasattr(model, '_fields') and field_name in model._fields:
+                            field_type = model._fields[field_name].type
+                            str_value = str(value) if value is not None else ""
+                            
+                            # Skip type conversion for empty values - send as-is
+                            if str_value.strip() == "":
+                                typed_row.append(value)  # Keep original value for empty strings
+                                continue
+                            
+                            # Handle specific problematic conversions
+                            try:
+                                if field_type in ('integer', 'positive', 'negative'):
+                                    # For the specific issue: float strings to integer fields
+                                    # Convert '1.0' -> 1, '2.0' -> 2, etc.
+                                    if '.' in str_value:
+                                        # Check if it's a valid numeric string with decimal
+                                        numeric_part = str_value.replace('.', '').replace('-', '')
+                                        if numeric_part.isdigit():
+                                            # It's a numeric float string, convert to int
+                                            typed_row.append(int(float(str_value)))
+                                        else:
+                                            # Not a numeric value, keep original
+                                            typed_row.append(value)
+                                    elif str_value.lstrip('-').isdigit():  # Check if it's an integer string
+                                        typed_row.append(int(str_value))
+                                    else:
+                                        # Not a valid number, keep original
+                                        typed_row.append(value)
+                                elif field_type == 'float' and str_value.replace('.', '').replace('-', '').isdigit():
+                                    typed_row.append(float(str_value))
+                                else:
+                                    # For all other cases, keep the original value
+                                    # This preserves Odoo's own type handling
+                                    typed_row.append(value)
+                            except (ValueError, TypeError):
+                                # If conversion fails, keep original value to let Odoo handle it
+                                typed_row.append(value)
+                        else:
+                            # If field doesn't exist or model has no _fields, pass original value
+                            typed_row.append(value)
+                    else:
+                        # Safety check: if index doesn't match, keep original value
+                        typed_row.append(value)
+                typed_load_lines.append(typed_row)
+            load_lines = typed_load_lines
+        except Exception as e:
+            log.warning(f"Type conversion failed for batch {batch_number}, proceeding without conversion: {e}")
+            # Continue with original values if type conversion fails
 
         # DEBUG: Log what we're sending to Odoo
         log.debug(
