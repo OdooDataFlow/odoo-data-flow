@@ -703,6 +703,11 @@ def _execute_load_batch(  # noqa: C901
             
             res = model.load(load_header, sanitized_load_lines, context=context)
             
+            # DEBUG: Log detailed information about what we got back from Odoo
+            log.debug(f"Load response type: {type(res)}")
+            log.debug(f"Load response keys: {list(res.keys()) if hasattr(res, 'keys') else 'Not a dict'}")
+            log.debug(f"Load response full content: {res}")
+            
             # DEBUG: Log what we got back from Odoo
             log.debug(
                 f"Load response - messages: {res.get('messages', 'None')}, "
@@ -719,37 +724,6 @@ def _execute_load_batch(  # noqa: C901
                     else:
                         log.info(f"Load operation returned {msg_type}: {msg_text}")
             
-            # Check for any Odoo server errors in the response
-            if res.get("messages"):
-                error = res["messages"][0].get("message", "Batch load failed.")
-                # Don't raise immediately, log and continue to capture in fail file
-                log.error(f"Odoo server error during load: {error}")
-                
-            created_ids = res.get("ids", [])
-            log.debug(f"Expected records: {len(sanitized_load_lines)}, Created records: {len(created_ids)}")
-            
-            # Always log detailed information about record creation
-            if len(created_ids) != len(sanitized_load_lines):
-                log.warning(
-                    f"Record creation mismatch: Expected {len(sanitized_load_lines)} records, "
-                    f"but only {len(created_ids)} were created"
-                )
-                if len(created_ids) == 0:
-                    log.error(
-                        f"No records were created in this batch of {len(sanitized_load_lines)}. "
-                        f"This may indicate silent failures in the Odoo load operation. "
-                        f"Check Odoo server logs for validation errors."
-                    )
-                    # Log the actual data being sent for debugging
-                    if sanitized_load_lines:
-                        log.debug(f"First few lines being sent:")
-                        for i, line in enumerate(sanitized_load_lines[:3]):
-                            log.debug(f"  Line {i}: {dict(zip(load_header, line))}")
-                else:
-                    log.warning(
-                        f"Partial record creation: {len(created_ids)}/{len(sanitized_load_lines)} "
-                        f"records were created. Some records may have failed validation."
-                    )
             # Check for any Odoo server errors in the response that should halt processing
             if res.get("messages"):
                 for message in res["messages"]:
@@ -841,6 +815,11 @@ def _execute_load_batch(  # noqa: C901
 
         except Exception as e:
             error_str = str(e).lower()
+            
+            # Log the full exception for debugging
+            import traceback
+            log.error(f"Exception during batch load: {type(e).__name__}: {e}")
+            log.error(f"Full traceback: {traceback.format_exc()}")
 
             # SPECIAL CASE: Client-side timeouts for local processing
             # These should be IGNORED entirely to allow long server processing
