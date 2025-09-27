@@ -1103,6 +1103,24 @@ def _execute_load_batch(  # noqa: C901
             # Reset serialization retry counter on successful processing
             serialization_retry_count = 0
 
+        except IndexError:
+            # Handle tuple index out of range errors specifically in load operations
+            log.warning("Tuple index out of range error detected, falling back to individual record processing")
+            progress.console.print("[yellow]WARN:[/] Tuple index out of range error, falling back to individual record processing")
+            fallback_result = _create_batch_individually(
+                model,
+                current_chunk,
+                batch_header,
+                uid_index,
+                context,
+                ignore_list,
+                progress,
+            )
+            aggregated_id_map.update(fallback_result.get("id_map", {}))
+            aggregated_failed_lines.extend(fallback_result.get("failed_lines", []))
+            lines_to_process = lines_to_process[chunk_size:]
+            continue
+            
         except Exception as e:
             error_str = str(e).lower()
 
