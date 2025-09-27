@@ -212,11 +212,14 @@ def run_import(  # noqa: C901
 
     start_time = time.time()
     try:
+        # Use corrected file if preflight validation created one
+        file_to_import = import_plan.get("_corrected_file", file_to_process)
+        
         success, stats = import_threaded.import_data(
             config=config,
             model=model,
             unique_id_field=final_uid_field,
-            file_csv=file_to_process,
+            file_csv=file_to_import,
             deferred_fields=final_deferred,
             context=parsed_context,
             fail_file=fail_output_file,
