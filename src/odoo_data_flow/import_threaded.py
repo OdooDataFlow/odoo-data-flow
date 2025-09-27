@@ -822,9 +822,12 @@ def _execute_load_batch(  # noqa: C901
     ignore_list = thread_state.get("ignore_list", [])
 
     if thread_state.get("force_create"):
-        progress.console.print(
-            f"Batch {batch_number}: Fail mode active, using `create` method."
-        )
+        # Use progress console for user-facing messages to avoid flooding logs
+        # Only if progress object is available
+        if progress is not None:
+            progress.console.print(
+                f"Batch {batch_number}: Fail mode active, using `create` method."
+            )
         result = _create_batch_individually(
             model, batch_lines, batch_header, uid_index, context, ignore_list, progress
         )
@@ -1131,12 +1134,14 @@ def _execute_load_batch(  # noqa: C901
             elif ("tuple index out of range" in error_str or 
                   ("does not seem to be an integer" in error_str and "for field" in error_str)):
                 # Use progress console for user-facing messages to avoid flooding logs
-                progress.console.print(
-                    f"[yellow]WARN:[/] Batch {batch_number} failed `load` "
-                    f"due to type conversion error. "
-                    f"Falling back to `create` for {len(current_chunk)} records "
-                    f"to prevent further server errors."
-                )
+                # Only if progress object is available
+                if progress is not None:
+                    progress.console.print(
+                        f"[yellow]WARN:[/] Batch {batch_number} failed `load` "
+                        f"due to type conversion error. "
+                        f"Falling back to `create` for {len(current_chunk)} records "
+                        f"to prevent further server errors."
+                    )
                 # Fall back to individual record processing when bulk processing fails due to type errors
                 fallback_result = _create_batch_individually(
                     model,
