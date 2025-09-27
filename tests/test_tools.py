@@ -11,7 +11,7 @@ from odoo_data_flow.lib.internal.tools import (
 
 def test_to_xmlid() -> None:
     """Test the to_xmlid function."""
-    assert to_xmlid("A.B,C\nD|E F") == "A_B_C_D_E_F"
+    assert to_xmlid("A.B,C\nD|E F") == "A.B_C_D_E_F"
     assert (
         to_xmlid("  leading and trailing spaces  ") == "__leading_and_trailing_spaces__"
     )
@@ -51,7 +51,10 @@ def test_attribute_line_dict() -> None:
     def id_gen_fun(template_id: str, attributes: dict[str, list[str]]) -> str:
         return f"id_{template_id}_{next(iter(attributes.keys()))}"
 
-    attribute_list_ids = [["att_id_1", "att_name_1"], ["att_id_2", "att_name_2"]]
+    attribute_list_ids = [
+        ["att_id_1", "att_name_1"],
+        ["att_id_2", "att_name_2"],
+    ]
     aggregator = AttributeLineDict(attribute_list_ids, id_gen_fun)
     header = ["product_tmpl_id/id", "attribute_id/id", "value_ids/id"]
     line1 = [

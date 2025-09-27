@@ -40,13 +40,17 @@ def batch(iterable: Iterable[Any], size: int) -> Iterator[list[Any]]:
 def to_xmlid(name: str) -> str:
     """Create valid xmlid.
 
-    Sanitizes a string to make it a valid XML ID, replacing special
-    characters with underscores.
+    Sanitizes a string to make it a valid XML ID, replacing only characters
+    that are invalid in XML IDs. Preserves the required '.' separator between
+    module name and identifier in Odoo XML IDs (e.g., 'module.identifier').
     """
     # A mapping of characters to replace.
-    replacements = {".": "_", ",": "_", "\n": "_", "|": "_", " ": "_"}
-    for old, new in replacements.items():
-        name = name.replace(old, new)
+    # NOTE: Do NOT replace '.' as it's required to separate module.name in Odoo XML IDs
+    # Only replace characters that are actually invalid in XML IDs:
+    # - Spaces, commas, newlines, and pipe characters are invalid
+    # - Keep dots as they are required for module.identifier format
+    translation_table = str.maketrans({",": "_", "\n": "_", "|": "_", " ": "_"})
+    name = name.translate(translation_table)
     return name.strip()
 
 
