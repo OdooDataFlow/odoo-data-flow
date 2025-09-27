@@ -1023,19 +1023,24 @@ def _execute_load_batch(  # noqa: C901
                                 if callable(model_fields_attr):
                                     try:
                                         # It's a method, call it to get the fields
-                                        model_fields = model_fields_attr()
+                                        model_fields_result = model_fields_attr()
+                                        # Only use the result if it's a dictionary/mapping
+                                        if isinstance(model_fields_result, dict):
+                                            model_fields = model_fields_result
+                                        else:
+                                            model_fields = None
                                     except Exception:
                                         # If calling fails, fall back to None
                                         model_fields = None
                                 else:
                                     # It's a property/dictionary, use it directly
-                                    # But make sure it's iterable
-                                    if hasattr(model_fields_attr, '__iter__') and not callable(model_fields_attr):
+                                    # But only if it's actually a dictionary
+                                    if isinstance(model_fields_attr, dict):
                                         model_fields = model_fields_attr
                                     else:
                                         model_fields = None
                             
-                            # Only process if we have valid field metadata
+                            # Only process if we have valid field metadata and the field exists
                             if model_fields and field_name in model_fields:
                                 field_info = model_fields[field_name]
                                 field_type = field_info.get("type")
