@@ -294,7 +294,12 @@ def run_import(  # noqa: C901
             log.warning("Attempting to read CSV with UTF-8 encoding explicitly...")
             # Note: polars doesn't expose encoding parameter directly in read_csv
             # The encoding issue should be handled at the file system level
-            df = pl.read_csv(filename, separator=separator, encoding=encoding, truncate_ragged_lines=True)
+            df = pl.read_csv(
+                filename,
+                separator=separator,
+                encoding=encoding,
+                truncate_ragged_lines=True,
+            )
 
         # Identify columns that end with /id suffix
         id_columns = [col for col in df.columns if col.endswith("/id")]

@@ -348,6 +348,46 @@ def _create_batches(
         yield i, batch_data
 
 
+def _get_model_fields(model: Any) -> Optional[dict]:
+    """Safely retrieves the fields metadata from an Odoo model.
+
+    This handles cases where `_fields` can be a dictionary or a callable
+    method, which can vary between Odoo versions or customizations.
+
+    Args:
+        model: The Odoo model object.
+
+    Returns:
+        A dictionary of field metadata, or None if it cannot be retrieved.
+    """
+    if not hasattr(model, "_fields"):
+        return None
+
+    model_fields_attr = model._fields
+    model_fields = None
+
+    if callable(model_fields_attr):
+        try:
+            # It's a method, call it to get the fields
+            model_fields_result = model_fields_attr()
+            # Only use the result if it's a dictionary/mapping
+            if isinstance(model_fields_result, dict):
+                model_fields = model_fields_result
+        except Exception:
+            # If calling fails, fall back to None
+            log.warning("Could not retrieve model fields by calling _fields method.")
+            model_fields = None
+    elif isinstance(model_fields_attr, dict):
+        # It's a property/dictionary, use it directly
+        model_fields = model_fields_attr
+    else:
+        log.warning(
+            f"Model `_fields` attribute is of unexpected type: {type(model_fields_attr)}"
+        )
+
+    return model_fields
+
+
 class RPCThreadImport(RpcThread):
     """A specialized RpcThread for handling data import and write tasks."""
 
@@ -602,6 +642,7 @@ def _create_batch_individually(
     error_summary = "Fell back to create"
     header_len = len(batch_header)
     ignore_set = set(ignore_list)
+    model_fields = _get_model_fields(model)
 
     for i, line in enumerate(batch_lines):
         try:
@@ -626,34 +667,15 @@ def _create_batch_individually(
             # Apply safe field value conversion to prevent type errors
             safe_vals = {}
             for field_name, field_value in vals.items():
-                # Get field type information if available
                 clean_field_name = field_name.split("/")[0]
-                field_type = None
-                # Check if model has _fields attribute and get field metadata properly
-                model_fields = None
-                if hasattr(model, "_fields"):
-                    model_fields_attr = model._fields
-                    if callable(model_fields_attr):
-                        # It's a method, call it to get the fields
-                        model_fields = model_fields_attr()
-                    else:
-                        # It's a property/dictionary, use it directly
-                        model_fields = (
-                            model_fields_attr
-                            if (
-                                hasattr(model_fields_attr, "__iter__")
-                                and not callable(model_fields_attr)
-                            )
-                            else None
-                        )
-
+                field_type = "unknown"
                 if model_fields and clean_field_name in model_fields:
                     field_info = model_fields[clean_field_name]
-                    field_type = field_info.get("type")
+                    field_type = field_info.get("type", "unknown")
 
                 # Apply safe conversion based on field type
                 safe_vals[field_name] = _safe_convert_field_value(
-                    field_name, field_value, field_type or "unknown"
+                    field_name, field_value, field_type
                 )
 
             clean_vals = {
@@ -879,153 +901,37 @@ def _execute_load_batch(  # noqa: C901
             if len(load_lines[0]) > 10:
                 log.debug(f"Full first load_line: {load_lines[0]}")
 
-            # EXTRA DEBUGGING: Check for problematic values in integer fields
-            # Look for float string values like "1.0" in fields that should be integers
-            for i, field_name in enumerate(load_header):
-                clean_field_name = field_name.split("/")[
-                    0
-                ]  # Handle external ID fields like 'parent_id/id'
-                # Check if we have field metadata and this is an integer field
-                # Check if model has _fields attribute and get field metadata properly
-                model_fields = None
-                if hasattr(model, "_fields"):
-                    model_fields_attr = model._fields
-                    # Check if it's callable first, but be careful about the result
-                    if callable(model_fields_attr):
-                        try:
-                            # It's a method, call it to get the fields
-                            model_fields = model_fields_attr()
-                        except Exception:
-                            # If calling fails, treat it as a dictionary anyway
-                            model_fields = (
-                                model_fields_attr
-                                if (
-                                    hasattr(model_fields_attr, "__iter__")
-                                    and not callable(model_fields_attr)
-                                )
-                                else None
-                            )
-                    else:
-                        # It's a property/dictionary, use it directly
-                        model_fields = (
-                            model_fields_attr
-                            if (
-                                hasattr(model_fields_attr, "__iter__")
-                                and not callable(model_fields_attr)
-                            )
-                            else None
-                        )
-
-                if model_fields and clean_field_name in model_fields:
-                    field_info = model_fields[clean_field_name]
-                    field_type = field_info.get("type")
-                    # Ensure it's iterable for the 'in' check later
-                    if not hasattr(model_fields, "__iter__") or callable(model_fields):
-                        # If it's not iterable or it's a callable, set to None
-                        model_fields = None
-                    if field_type in ("integer", "positive", "negative"):
-                        # Check first few rows for float-like values in integer fields
-                        for j, row in enumerate(load_lines[:5]):  # Check first 5 rows
-                            if i < len(row):
-                                value = row[i]
-                                str_value = str(value) if value is not None else ""
-                                if (
-                                    "." in str_value
-                                    and str_value.replace(".", "")
-                                    .replace("-", "")
-                                    .isdigit()
-                                ):
-                                    log.warning(
-                                        f"Potentially problematic float value '{str_value}' "
-                                        f"found in integer field '{field_name}' (row {j + 1}). "
-                                        f"This might cause 'tuple index out of range' errors."
-                                    )
-        try:
-            log.debug(f"Attempting `load` for chunk of batch {batch_number}...")
-
             # PRE-PROCESSING: Clean up field values to prevent type errors
-            # Convert float string values like "1.0" to integers for integer fields
             # This prevents "tuple index out of range" errors in Odoo server processing
-            processed_load_lines = []
-            if hasattr(model, "_fields"):
+            model_fields = _get_model_fields(model)
+            if model_fields:
+                processed_load_lines = []
                 for row in load_lines:
                     processed_row = []
                     for i, value in enumerate(row):
                         if i < len(load_header):
-                            field_name = load_header[i].split("/")[
-                                0
-                            ]  # Handle external ID fields like 'parent_id/id'
-                            # Check if model has _fields attribute and get field metadata properly
-                            model_fields = None
-                            if hasattr(model, "_fields"):
-                                model_fields_attr = model._fields
-                                # Check if it's callable first
-                                if callable(model_fields_attr):
-                                    try:
-                                        # It's a method, call it to get the fields
-                                        model_fields_result = model_fields_attr()
-                                        # Only use the result if it's a dictionary/mapping
-                                        if isinstance(model_fields_result, dict):
-                                            model_fields = model_fields_result
-                                        else:
-                                            model_fields = None
-                                    except Exception:
-                                        # If calling fails, fall back to None
-                                        model_fields = None
-                                else:
-                                    # It's a property/dictionary, use it directly
-                                    # But only if it's actually a dictionary
-                                    if isinstance(model_fields_attr, dict):
-                                        model_fields = model_fields_attr
-                                    else:
-                                        model_fields = None
+                            field_name = load_header[i]
+                            clean_field_name = field_name.split("/")[0]
 
-                            # Only process if we have valid field metadata and the field exists
-                            if model_fields and field_name in model_fields:
-                                field_info = model_fields[field_name]
-                                field_type = field_info.get("type")
-                                # Only convert for integer fields
-                                if field_type in ("integer", "positive", "negative"):
-                                    str_value = str(value) if value is not None else ""
-                                    # Convert float string values like "1.0", "2.0" to integers
-                                    if "." in str_value:
-                                        try:
-                                            float_val = float(str_value)
-                                            if float_val.is_integer():
-                                                # It's a whole number like 1.0, 2.0 - convert to int
-                                                processed_row.append(int(float_val))
-                                            else:
-                                                # It's a non-integer float like 1.5 - keep original to let Odoo handle
-                                                processed_row.append(value)
-                                        except ValueError:
-                                            # Not a valid float - keep original to let Odoo handle
-                                            processed_row.append(value)
-                                    elif str_value.lstrip("-").isdigit():
-                                        # It's an integer string like "1", "-5" - convert to int
-                                        try:
-                                            processed_row.append(int(str_value))
-                                        except ValueError:
-                                            # Not a valid integer - keep original to let Odoo handle
-                                            processed_row.append(value)
-                                    else:
-                                        # Not a numeric string - keep original to let Odoo handle
-                                        processed_row.append(value)
-                                else:
-                                    # For all other field types, keep original value
-                                    processed_row.append(value)
-                            else:
-                                # If field doesn't exist or model has no _fields, pass original value
-                                processed_row.append(value)
+                            field_type = "unknown"
+                            if clean_field_name in model_fields:
+                                field_info = model_fields[clean_field_name]
+                                field_type = field_info.get("type", "unknown")
+
+                            converted_value = _safe_convert_field_value(
+                                field_name, value, field_type
+                            )
+                            processed_row.append(converted_value)
                         else:
-                            # Safety check: if index doesn't match, keep original value
                             processed_row.append(value)
                     processed_load_lines.append(processed_row)
                 load_lines = processed_load_lines
             else:
-                # If model has no _fields, use original values
                 log.debug(
                     "Model has no _fields attribute, using raw values for load method"
                 )
+        try:
+            log.debug(f"Attempting `load` for chunk of batch {batch_number}...")
 
             res = model.load(load_header, load_lines, context=context)
             if res.get("messages"):

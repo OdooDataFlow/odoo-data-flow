@@ -8,7 +8,6 @@ import tempfile
 from typing import Any, Callable, Optional, Union, cast
 
 import polars as pl
-import tempfile
 from polars.exceptions import ColumnNotFoundError
 from rich.console import Console
 from rich.panel import Panel
