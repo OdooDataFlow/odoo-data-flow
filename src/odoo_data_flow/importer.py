@@ -419,9 +419,7 @@ def run_import(  # noqa: C901
                                 "Check logs for details."
                             )
 
-                        # Add a small delay between relational import operations
-                        # to give the server time to release database connections
-                        time.sleep(0.5)
+
 
                     progress.update(task_id, advance=1)
 

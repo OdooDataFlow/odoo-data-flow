@@ -468,9 +468,7 @@ def run_write_tuple_import(
     log.info(f"*** STRATEGY DETAILS: {strategy_details} ***")
 
     # Add a small delay to reduce server load and prevent connection pool exhaustion
-    import time
 
-    time.sleep(0.1)
 
     # Check if required keys exist
     relational_table = strategy_details.get("relation_table")
