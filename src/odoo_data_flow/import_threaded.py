@@ -52,48 +52,88 @@ def _format_odoo_error(error: Any) -> str:
     return str(error).strip().replace("\n", " ")
 
 
+def _parse_csv_data(
+    f: TextIO, separator: str, skip: int
+) -> tuple[list[str], list[list[Any]]]:
+    """Parses CSV data from a file handle, handling headers and skipping rows."""
+    reader = csv.reader(f, delimiter=separator)
+    all_rows = list(reader)
+
+    if len(all_rows) <= skip:
+        return [], []
+
+    header = all_rows[skip]
+    all_data = all_rows[skip + 1 :]
+
+    # Validate that the 'id' column is present in the header
+    if "id" not in header:
+        raise ValueError("Source file must contain an 'id' column.")
+
+    return header, all_data
+
+
 def _read_data_file(
     file_path: str, separator: str, encoding: str, skip: int
 ) -> tuple[list[str], list[list[Any]]]:
     """Reads a CSV file and returns its header and data.
 
     This function handles opening and parsing a CSV file, skipping any
-    initial lines as specified. It validates that an 'id' column exists,
-    which is required for all import operations. It also handles common
-    file I/O errors like FileNotFoundError.
+    specified number of leading rows. It's the primary entry point for
+    getting CSV data into the import system.
 
     Args:
-        file_path (str): The full path to the source CSV file.
-        separator (str): The delimiter character used to separate columns.
+        file_path (str): Path to the CSV file to read.
+        separator (str): Field separator character (e.g., ',', ';').
         encoding (str): The character encoding of the file.
-        skip (int): The number of lines to skip at the top of the file before
-            reading the header.
+        skip (int): Number of leading rows to skip.
 
     Returns:
-        tuple[list[str], list[list[Any]]]: A tuple containing the header
-        (as a list of strings) and the data (as a list of lists). Returns
-        an empty tuple `([], [])` if the file cannot be read.
-
-    Raises:
-        ValueError: If the source file does not contain a required 'id' column.
+        tuple[list[str], list[list[Any]]]: A tuple containing the header row
+        and a list of data rows. Returns `([], [])` if the file cannot be read.
     """
+    # First try with the specified encoding
     try:
         with open(file_path, encoding=encoding, newline="") as f:
-            reader = csv.reader(f, delimiter=separator)
-            header = next(reader)
-            if "id" not in header:
-                raise ValueError("Source file must contain an 'id' column.")
-            for _ in range(skip):
-                next(reader)
-            return header, list(reader)
-    except FileNotFoundError:
-        log.error(f"Source file not found: {file_path}")
+            return _parse_csv_data(f, separator, skip)
+    except UnicodeDecodeError:
+        # If UnicodeDecodeError occurs, try fallback encodings
+        log.warning(
+            f"Unicode decode error with encoding '{encoding}', "
+            f"trying fallback encodings..."
+        )
+        encodings_to_try = ["utf-8", "latin-1", "cp1252", "iso-8859-1"]
+
+        for enc in encodings_to_try:
+            try:
+                with open(file_path, encoding=enc, newline="") as f:
+                    header, all_data = _parse_csv_data(f, separator, skip)
+                log.warning(
+                    f"File {file_path} was read successfully with encoding '{enc}' "
+                    f"instead of '{encoding}'"
+                )
+                return header, all_data
+            except UnicodeDecodeError:
+                continue  # Try next encoding
+            except OSError:  # File-related errors
+                continue  # Try next encoding
+            except Exception:
+                # For non-file-related exceptions, don't try other encodings
+                # just propagate the original exception
+                raise
+
+        # If all fallback encodings also fail with UnicodeDecodeError
+        log.error(
+            f"Could not read data file {file_path} with any of the tried encodings"
+        )
         return [], []
-    except Exception as e:
-        log.error(f"Failed to read file {file_path}: {e}")
-        if isinstance(e, ValueError):
-            raise
+    except OSError:  # File-related errors like FileNotFoundError
+        # If the original encoding attempt fails due to file issues, return empty lists
+        # to maintain backward compatibility
+        log.error(f"Could not read data file {file_path}: file access error")
         return [], []
+    except Exception:
+        # For any other exception (not file-related or UnicodeDecodeError), propagate it
+        raise
 
 
 def _filter_ignored_columns(
@@ -303,6 +343,47 @@ def _create_batches(
         yield i, batch_data
 
 
+def _get_model_fields(model: Any) -> Optional[dict[str, Any]]:
+    """Safely retrieves the fields metadata from an Odoo model.
+
+    This handles cases where `_fields` can be a dictionary or a callable
+    method, which can vary between Odoo versions or customizations.
+
+    Args:
+        model: The Odoo model object.
+
+    Returns:
+        A dictionary of field metadata, or None if it cannot be retrieved.
+    """
+    if not hasattr(model, "_fields"):
+        return None
+
+    model_fields_attr = model._fields
+    model_fields = None
+
+    if callable(model_fields_attr):
+        try:
+            # It's a method, call it to get the fields
+            model_fields_result = model_fields_attr()
+            # Only use the result if it's a dictionary/mapping
+            if isinstance(model_fields_result, dict):
+                model_fields = model_fields_result
+        except Exception:
+            # If calling fails, fall back to None
+            log.warning("Could not retrieve model fields by calling _fields method.")
+            model_fields = None
+    elif isinstance(model_fields_attr, dict):
+        # It's a property/dictionary, use it directly
+        model_fields = model_fields_attr
+    else:
+        log.warning(
+            "Model `_fields` attribute is of unexpected type: %s",
+            type(model_fields_attr),
+        )
+
+    return model_fields
+
+
 class RPCThreadImport(RpcThread):
     """A specialized RpcThread for handling data import and write tasks."""
 
@@ -378,6 +459,70 @@ def _convert_external_id_field(
             # On error, value remains False
 
     return base_field_name, converted_value
+
+
+def _safe_convert_field_value(  # noqa: C901
+    field_name: str, field_value: Any, field_type: str
+) -> Any:
+    """Safely convert field values to prevent type-related errors.
+
+    Args:
+        field_name: Name of the field being converted
+        field_value: Raw field value to convert
+        field_type: Target Odoo field type (integer, float, etc.)
+
+    Returns:
+        Safely converted field value, or original value if conversion unsafe
+    """
+    if field_value is None or field_value == "":
+        # Handle empty values appropriately by field type
+        if field_type in ("integer", "float", "positive", "negative"):
+            return 0  # Use 0 for empty numeric fields
+        else:
+            return field_value  # Keep original for other field types
+
+    # Convert to string for processing
+    str_value = str(field_value).strip()
+
+    # Handle external ID fields specially (they should remain as strings)
+    if field_name.endswith("/id"):
+        return str_value
+
+    # Handle numeric field conversions
+    if field_type in ("integer", "positive", "negative"):
+        try:
+            # Handle float strings like "1.0", "2.0" by converting to int
+            if "." in str_value:
+                float_val = float(str_value)
+                if float_val.is_integer():
+                    return int(float_val)
+                else:
+                    # Non-integer float - leave as-is to let Odoo handle it
+                    return str_value
+            elif str_value.lstrip("-").isdigit():
+                # Integer string like "1", "-5"
+                return int(str_value)
+            else:
+                # Non-numeric string - leave as-is
+                return str_value
+        except (ValueError, TypeError):
+            # Conversion failed - leave as original string to let Odoo handle it
+            return field_value
+
+    elif field_type == "float":
+        try:
+            # Convert numeric strings to float
+            if str_value.replace(".", "").replace("-", "").isdigit():
+                return float(str_value)
+            else:
+                # Non-numeric string - leave as-is
+                return str_value
+        except (ValueError, TypeError):
+            # Conversion failed - leave as original string
+            return field_value
+
+    # For all other field types, return original value
+    return field_value
 
 
 def _process_external_id_fields(
@@ -465,7 +610,12 @@ def _handle_create_error(
         if "Fell back to create" in error_summary:
             error_summary = "Database serialization conflict detected during create"
     elif (
-        "tuple index out of range" in error_str_lower or "indexerror" in error_str_lower
+        "tuple index out of range" in error_str_lower
+        or "indexerror" in error_str_lower
+        or (
+            "does not seem to be an integer" in error_str_lower
+            and "for field" in error_str_lower
+        )
     ):
         error_message = f"Tuple unpacking error in row {i + 1}: {create_error}"
         if "Fell back to create" in error_summary:
@@ -484,13 +634,36 @@ def _handle_create_error(
     return error_message, failed_line, error_summary
 
 
-def _create_batch_individually(
+def _handle_tuple_index_error(
+    progress: Optional[Any],
+    source_id: str,
+    line: list[Any],
+    failed_lines: list[list[Any]],
+) -> None:
+    """Handles tuple index out of range errors by logging and recording failure."""
+    if progress is not None:
+        progress.console.print(
+            f"[yellow]WARN:[/] Tuple index error for record '{source_id}'. "
+            "This often happens when sending text values to numeric "
+            "fields. Check your data types."
+        )
+    error_message = (
+        f"Tuple index out of range error for record {source_id}: "
+        "This is often caused by sending incorrect data types to Odoo "
+        "fields. Check your data types and ensure they match the Odoo "
+        "field types."
+    )
+    failed_lines.append([*line, error_message])
+
+
+def _create_batch_individually(  # noqa: C901
     model: Any,
     batch_lines: list[list[Any]],
     batch_header: list[str],
     uid_index: int,
     context: dict[str, Any],
     ignore_list: list[str],
+    progress: Any = None,  # Optional progress object for user-facing messages
 ) -> dict[str, Any]:
     """Fallback to create records one-by-one to get detailed errors."""
     id_map: dict[str, int] = {}
@@ -498,6 +671,7 @@ def _create_batch_individually(
     error_summary = "Fell back to create"
     header_len = len(batch_header)
     ignore_set = set(ignore_list)
+    model_fields = _get_model_fields(model)
 
     for i, line in enumerate(batch_lines):
         try:
@@ -522,9 +696,24 @@ def _create_batch_individually(
 
             # 2. PREPARE FOR CREATE
             vals = dict(zip(batch_header, line))
+
+            # Apply safe field value conversion to prevent type errors
+            safe_vals = {}
+            for field_name, field_value in vals.items():
+                clean_field_name = field_name.split("/")[0]
+                field_type = "unknown"
+                if model_fields and clean_field_name in model_fields:
+                    field_info = model_fields[clean_field_name]
+                    field_type = field_info.get("type", "unknown")
+
+                # Apply safe conversion based on field type
+                safe_vals[field_name] = _safe_convert_field_value(
+                    field_name, field_value, field_type
+                )
+
             clean_vals = {
                 k: v
-                for k, v in vals.items()
+                for k, v in safe_vals.items()
                 if k.split("/")[0] not in ignore_set
                 # Allow external ID fields through for conversion
             }
@@ -541,30 +730,30 @@ def _create_batch_individually(
             new_record = model.create(converted_vals, context=context)
             id_map[sanitized_source_id] = new_record.id
         except IndexError as e:
-            error_message = f"Malformed row detected (row {i + 1} in batch): {e}"
-            failed_lines.append([*line, error_message])
-            if "Fell back to create" in error_summary:
-                error_summary = "Malformed CSV row detected"
-            continue
+            error_str_lower = str(e).lower()
+
+            # Special handling for tuple index out of range errors
+            # These can occur when sending wrong types to Odoo fields
+            if "tuple index out of range" in error_str_lower:
+                _handle_tuple_index_error(progress, source_id, line, failed_lines)
+                continue
+            else:
+                # Handle other IndexError as malformed row
+                error_message = f"Malformed row detected (row {i + 1} in batch): {e}"
+                failed_lines.append([*line, error_message])
+                if "Fell back to create" in error_summary:
+                    error_summary = "Malformed CSV row detected"
+                continue
         except Exception as create_error:
             error_str_lower = str(create_error).lower()
 
-            # Special handling for Odoo server internal errors
-            if (
-                "tuple index out of range" in error_str_lower
-                and "odoo server error" in error_str_lower
+            # Special handling for tuple index out of range errors
+            # These can occur when sending wrong types to Odoo fields
+            if "tuple index out of range" in error_str_lower or (
+                "does not seem to be an integer" in error_str_lower
+                and "for field" in error_str_lower
             ):
-                log.warning(
-                    f"Odoo server internal error detected during create for "
-                    f"record {source_id}. This is likely a bug in the Odoo server. "
-                    f"Skipping record and continuing with other records."
-                )
-                error_message = (
-                    f"Odoo server internal error (tuple index out of range) for record "
-                    f"{source_id}: This is likely a bug in the Odoo server. "
-                    f"See server logs for details."
-                )
-                failed_lines.append([*line, error_message])
+                _handle_tuple_index_error(progress, source_id, line, failed_lines)
                 continue
 
             # Special handling for database connection pool exhaustion errors
@@ -647,11 +836,14 @@ def _execute_load_batch(  # noqa: C901
     ignore_list = thread_state.get("ignore_list", [])
 
     if thread_state.get("force_create"):
-        progress.console.print(
-            f"Batch {batch_number}: Fail mode active, using `create` method."
-        )
+        # Use progress console for user-facing messages to avoid flooding logs
+        # Only if progress object is available
+        if progress is not None:
+            progress.console.print(
+                f"Batch {batch_number}: Fail mode active, using `create` method."
+            )
         result = _create_batch_individually(
-            model, batch_lines, batch_header, uid_index, context, ignore_list
+            model, batch_lines, batch_header, uid_index, context, ignore_list, progress
         )
         result["success"] = bool(result.get("id_map"))
         return result
@@ -688,38 +880,58 @@ def _execute_load_batch(  # noqa: C901
             lines_to_process = lines_to_process[chunk_size:]
             continue
 
+        # DEBUG: Log what we're sending to Odoo
+        log.debug(
+            f"Sending to Odoo - load_header (first 10): {load_header[:10]}"
+            f"{'...' if len(load_header) > 10 else ''}"
+        )
+        if load_lines:
+            log.debug(
+                f"Sending to Odoo - first load_line (first 10 fields): "
+                f"{load_lines[0][:10] if len(load_lines[0]) > 10 else load_lines[0]}"
+                f"{'...' if len(load_lines[0]) > 10 else ''}"
+            )
+            log.debug(f"Sending to Odoo - load_lines count: {len(load_lines)}")
+            # Log the full header and first line for debugging
+            if len(load_header) > 10:
+                log.debug(f"Full load_header: {load_header}")
+            if len(load_lines[0]) > 10:
+                log.debug(f"Full first load_line: {load_lines[0]}")
+
+            # PRE-PROCESSING: Clean up field values to prevent type errors
+            # This prevents "tuple index out of range" errors in Odoo server processing
+            model_fields = _get_model_fields(model)
+            if model_fields:
+                processed_load_lines = []
+                for row in load_lines:
+                    processed_row = []
+                    for i, value in enumerate(row):
+                        if i < len(load_header):
+                            field_name = load_header[i]
+                            clean_field_name = field_name.split("/")[0]
+
+                            field_type = "unknown"
+                            if clean_field_name in model_fields:
+                                field_info = model_fields[clean_field_name]
+                                field_type = field_info.get("type", "unknown")
+
+                            converted_value = _safe_convert_field_value(
+                                field_name, value, field_type
+                            )
+                            processed_row.append(converted_value)
+                        else:
+                            processed_row.append(value)
+                    processed_load_lines.append(processed_row)
+                load_lines = processed_load_lines
+            else:
+                log.debug(
+                    "Model has no _fields attribute, using raw values for load method"
+                )
         try:
             log.debug(f"Attempting `load` for chunk of batch {batch_number}...")
-            log.debug(f"Load header: {load_header}")
-            log.debug(f"Load lines count: {len(load_lines)}")
-            if load_lines:
-                log.debug(f"First load line (first 10 fields): {load_lines[0][:10] if len(load_lines[0]) > 10 else load_lines[0]}")
-                log.debug(f"Full header: {load_header}")
-                # Log the full header and first line for debugging
-                if len(load_header) > 10:
-                    log.debug(f"Full load_header: {load_header}")
-                if len(load_lines[0]) > 10:
-                    log.debug(f"Full first load_line: {load_lines[0]}")
-            
-            res = model.load(load_header, sanitized_load_lines, context=context)
-            
-            # DEBUG: Log what we got back from Odoo
-            log.debug(
-                f"Load response - messages: {res.get('messages', 'None')}, "
-                f"ids: {res.get('ids', 'None')}, "
-                f"data: {type(res)}"
-            )
-            if res.get("messages"):
-                for message in res["messages"]:
-                    msg_type = message.get("type", "unknown")
-                    msg_text = message.get("message", "")
-                    log.debug(f"Load message {msg_type}: {msg_text}")
-                    if msg_type in ["warning", "error"]:
-                        log.warning(f"Load operation returned {msg_type}: {msg_text}")
-                    else:
-                        log.info(f"Load operation returned {msg_type}: {msg_text}")
-            
-            # Check for any Odoo server errors in the response
+
+            res = model.load(load_header, load_lines, context=context)
+
             if res.get("messages"):
                 error = res["messages"][0].get("message", "Batch load failed.")
                 # Don't raise immediately, log and continue to capture in fail file
@@ -839,6 +1051,30 @@ def _execute_load_batch(  # noqa: C901
             # Reset serialization retry counter on successful processing
             serialization_retry_count = 0
 
+        except IndexError:
+            # Handle tuple index out of range errors specifically in load operations
+            log.warning(
+                "Tuple index out of range error detected, falling back to individual "
+                "record processing"
+            )
+            progress.console.print(
+                "[yellow]WARN:[/] Tuple index out of range error, falling back to "
+                "individual record processing"
+            )
+            fallback_result = _create_batch_individually(
+                model,
+                current_chunk,
+                batch_header,
+                uid_index,
+                context,
+                ignore_list,
+                progress,
+            )
+            aggregated_id_map.update(fallback_result.get("id_map", {}))
+            aggregated_failed_lines.extend(fallback_result.get("failed_lines", []))
+            lines_to_process = lines_to_process[chunk_size:]
+            continue
+
         except Exception as e:
             error_str = str(e).lower()
 
@@ -868,6 +1104,38 @@ def _execute_load_batch(  # noqa: C901
                     "Reducing chunk size and retrying to reduce server load."
                 )
                 is_scalable_error = True
+
+            # SPECIAL CASE: Tuple index out of range errors
+            # These can occur when sending wrong types to Odoo fields
+            # Should trigger immediate fallback to individual record processing
+            elif "tuple index out of range" in error_str or (
+                "does not seem to be an integer" in error_str
+                and "for field" in error_str
+            ):
+                # Use progress console for user-facing messages to avoid flooding logs
+                # Only if progress object is available
+                if progress is not None:
+                    progress.console.print(
+                        f"[yellow]WARN:[/] Batch {batch_number} failed `load` "
+                        f"due to type conversion error. "
+                        f"Falling back to `create` for {len(current_chunk)} records "
+                        f"to prevent further server errors."
+                    )
+                # Fall back to individual record processing when bulk processing fails
+                # due to type errors
+                fallback_result = _create_batch_individually(
+                    model,
+                    current_chunk,
+                    batch_header,
+                    uid_index,
+                    context,
+                    ignore_list,
+                    progress,  # Pass progress for user-facing messages
+                )
+                aggregated_id_map.update(fallback_result.get("id_map", {}))
+                aggregated_failed_lines.extend(fallback_result.get("failed_lines", []))
+                lines_to_process = lines_to_process[chunk_size:]
+                continue
 
             # For all other exceptions, use the original scalable error detection
             is_scalable_error = (
@@ -931,6 +1199,7 @@ def _execute_load_batch(  # noqa: C901
                             uid_index,
                             context,
                             ignore_list,
+                            progress,  # Pass progress for user-facing messages
                         )
                         aggregated_id_map.update(fallback_result.get("id_map", {}))
                         aggregated_failed_lines.extend(
@@ -954,6 +1223,7 @@ def _execute_load_batch(  # noqa: C901
                 uid_index,
                 context,
                 ignore_list,
+                progress,  # Pass progress for user-facing messages
             )
             aggregated_id_map.update(fallback_result.get("id_map", {}))
             aggregated_failed_lines.extend(fallback_result.get("failed_lines", []))

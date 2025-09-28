@@ -4,6 +4,7 @@ These checks are run before the main import process to catch common,
 systemic errors early (e.g., missing languages, incorrect configuration).
 """
 
+import tempfile
 from typing import Any, Callable, Optional, Union, cast
 
 import polars as pl
@@ -393,6 +394,133 @@ def _validate_header(
         _show_warning_panel("ReadOnly Fields Detected", warning_message)
 
     return True
+
+
+def _auto_correct_field_types(  # noqa: C901
+    filename: str,
+    header: list[str],
+    odoo_fields: dict[str, Any],
+    separator: str,
+    encoding: str,
+) -> Optional[str]:
+    """Auto-correct field type mismatches using Polars casting.
+
+    Args:
+        filename: Path to the source CSV file
+        header: List of CSV header columns
+        odoo_fields: Dictionary of Odoo model fields and their metadata
+        separator: CSV field separator
+        encoding: File encoding
+
+    Returns:
+        Path to corrected CSV file, or None if no corrections needed/error occurred
+    """
+    try:
+        log.info("Running type validation and auto-correction...")
+
+        # Read the CSV file with Polars
+        df = pl.read_csv(
+            filename, separator=separator, encoding=encoding, truncate_ragged_lines=True
+        )
+
+        # Check if any corrections are needed
+        corrections_needed = False
+        for field_name in header:
+            clean_field_name = field_name.split("/")[
+                0
+            ]  # Handle external ID fields like 'parent_id/id'
+            if clean_field_name in odoo_fields and clean_field_name in df.columns:
+                odoo_field = odoo_fields[clean_field_name]
+                odoo_field_type = odoo_field.get("type")
+
+                # Only validate for numeric fields that have known type conversion
+                # issues
+                if odoo_field_type in ("integer", "positive", "negative"):
+                    col_data = df.get_column(clean_field_name)
+                    non_null_values = col_data.drop_nulls()
+
+                    if not non_null_values.is_empty():
+                        # Use Polars expressions to check for float-like strings
+                        str_series = non_null_values.cast(pl.Utf8, strict=False)
+                        dot_mask = str_series.str.contains(r"\.", literal=True)
+                        if dot_mask.any():
+                            dot_values = str_series.filter(dot_mask)
+                            # Attempt to cast to float, fill errors with null
+                            float_series = dot_values.cast(pl.Float64, strict=False)
+                            # Check for non-null floats that are integers
+                            is_integer_float = float_series.is_not_null() & (
+                                float_series.round(0) == float_series
+                            )
+                            if is_integer_float.any():
+                                corrections_needed = True
+                    if corrections_needed:
+                        break
+
+        # If no corrections needed, return None to use original file
+        if not corrections_needed:
+            log.info("No type corrections needed - using original CSV file")
+            return None
+
+        # Apply corrections using Polars casting
+        log.info("Applying type corrections using Polars casting...")
+        corrected_df = df.clone()
+
+        for field_name in header:
+            clean_field_name = field_name.split("/")[
+                0
+            ]  # Handle external ID fields like 'parent_id/id'
+            if clean_field_name in odoo_fields and clean_field_name in df.columns:
+                odoo_field = odoo_fields[clean_field_name]
+                odoo_field_type = odoo_field.get("type")
+
+                # Auto-correct float strings in integer fields
+                if odoo_field_type in ("integer", "positive", "negative"):
+                    col_data = df.get_column(clean_field_name)
+                    # Convert float strings like "1.0" to integers using Polars casting
+                    # This is the same technique you found:
+                    # pl.col("sale_delay").cast(pl.Float64).cast(pl.Int64)
+                    try:
+                        corrected_df = corrected_df.with_columns(
+                            pl.col(clean_field_name)
+                            .cast(
+                                pl.Float64
+                            )  # First cast to float to handle "1.0" strings
+                            .cast(pl.Int64)  # Then cast to int to get clean integers
+                        )
+                        log.debug(
+                            f"Applied Polars casting to field '{clean_field_name}': "
+                            "pl.Float64 -> pl.Int64"
+                        )
+                    except Exception as e:
+                        log.warning(
+                            "Could not apply Polars casting to field '%s': %s",
+                            clean_field_name,
+                            e,
+                        )
+                        # Continue with original column if casting fails
+
+        # Save corrected data to temporary file
+        corrected_file = tempfile.NamedTemporaryFile(
+            mode="w+", delete=False, suffix=".csv", newline=""
+        )
+        corrected_file.close()
+
+        # Write corrected data to temporary file
+        corrected_df.write_csv(corrected_file.name, separator=separator)
+        log.info(
+            "Type corrections applied and saved to temporary file: %s",
+            corrected_file.name,
+        )
+
+        return corrected_file.name
+
+    except Exception as e:
+        log.warning(
+            "Type validation and auto-correction failed, proceeding with original "
+            "file: %s",
+            e,
+        )
+        return None
 
 
 def _plan_deferrals_and_strategies(
