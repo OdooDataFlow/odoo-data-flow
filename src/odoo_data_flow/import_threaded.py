@@ -163,9 +163,7 @@ def _setup_fail_file(
         fail_writer.writerow(header_to_write)
         return fail_writer, fail_handle
     except OSError as e:
-        log.error(
-            f"Could not open fail file for writing: {fail_file}. Error: {e}"
-        )
+        log.error(f"Could not open fail file for writing: {fail_file}. Error: {e}")
         return None, None
 
 
@@ -304,9 +302,7 @@ def _create_batches(
     if not data:
         return
     for i, (_, batch_data) in enumerate(
-        _recursive_create_batches(
-            data, split_by_cols or [], header, batch_size, o2m
-        ),
+        _recursive_create_batches(data, split_by_cols or [], header, batch_size, o2m),
         start=1,
     ):
         yield i, batch_data
@@ -460,7 +456,9 @@ def _handle_create_error(  # noqa C901
         or "too many connections" in error_str_lower
         or "poolerror" in error_str_lower
     ):
-        error_message = f"Database connection pool exhaustion in row {i + 1}: {create_error}"
+        error_message = (
+            f"Database connection pool exhaustion in row {i + 1}: {create_error}"
+        )
         if "Fell back to create" in error_summary:
             error_summary = "Database connection pool exhaustion detected"
     # Handle specific database serialization errors
@@ -468,16 +466,11 @@ def _handle_create_error(  # noqa C901
         "could not serialize access" in error_str_lower
         or "concurrent update" in error_str_lower
     ):
-        error_message = (
-            f"Database serialization error in row {i + 1}: {create_error}"
-        )
+        error_message = f"Database serialization error in row {i + 1}: {create_error}"
         if "Fell back to create" in error_summary:
-            error_summary = (
-                "Database serialization conflict detected during create"
-            )
+            error_summary = "Database serialization conflict detected during create"
     elif (
-        "tuple index out of range" in error_str_lower
-        or "indexerror" in error_str_lower
+        "tuple index out of range" in error_str_lower or "indexerror" in error_str_lower
     ):
         error_message = f"Tuple unpacking error in row {i + 1}: {create_error}"
         if "Fell back to create" in error_summary:
@@ -485,7 +478,9 @@ def _handle_create_error(  # noqa C901
     else:
         error_message = error_str.replace("\n", " | ")
         if "invalid field" in error_str_lower and "/id" in error_str_lower:
-            error_message = f"Invalid external ID field detected in row {i + 1}: {error_message}"
+            error_message = (
+                f"Invalid external ID field detected in row {i + 1}: {error_message}"
+            )
 
         if "Fell back to create" in error_summary:
             error_summary = error_message
@@ -552,9 +547,7 @@ def _create_batch_individually(
             new_record = model.create(converted_vals, context=context)
             id_map[sanitized_source_id] = new_record.id
         except IndexError as e:
-            error_message = (
-                f"Malformed row detected (row {i + 1} in batch): {e}"
-            )
+            error_message = f"Malformed row detected (row {i + 1} in batch): {e}"
             failed_lines.append([*line, error_message])
             if "Fell back to create" in error_summary:
                 error_summary = "Malformed CSV row detected"
@@ -616,8 +609,8 @@ def _create_batch_individually(
                 # - let the record be processed in next batch
                 continue
 
-            error_message, new_failed_line, error_summary = (
-                _handle_create_error(i, create_error, line, error_summary)
+            error_message, new_failed_line, error_summary = _handle_create_error(
+                i, create_error, line, error_summary
             )
             failed_lines.append(new_failed_line)
     return {
@@ -676,9 +669,7 @@ def _execute_load_batch(  # noqa: C901
 
     # Track retry attempts for serialization errors to prevent infinite retries
     serialization_retry_count = 0
-    max_serialization_retries = (
-        3  # Maximum number of retries for serialization errors
-    )
+    max_serialization_retries = 3  # Maximum number of retries for serialization errors
 
     while lines_to_process:
         current_chunk = lines_to_process[:chunk_size]
@@ -709,13 +700,9 @@ def _execute_load_batch(  # noqa: C901
             log.debug(f"Load lines count: {len(load_lines)}")
             if load_lines:
                 first_line_preview = (
-                    load_lines[0][:10]
-                    if len(load_lines[0]) > 10
-                    else load_lines[0]
+                    load_lines[0][:10] if len(load_lines[0]) > 10 else load_lines[0]
                 )
-                log.debug(
-                    f"First load line (first 10 fields): {first_line_preview}"
-                )
+                log.debug(f"First load line (first 10 fields): {first_line_preview}")
                 log.debug(f"Full header: {load_header}")
                 # Log the full header and first line for debugging
                 if len(load_header) > 10:
@@ -793,13 +780,9 @@ def _execute_load_batch(  # noqa: C901
                     msg_text = message.get("message", "")
                     log.debug(f"Load message {msg_type}: {msg_text}")
                     if msg_type in ["warning", "error"]:
-                        log.warning(
-                            f"Load operation returned {msg_type}: {msg_text}"
-                        )
+                        log.warning(f"Load operation returned {msg_type}: {msg_text}")
                     else:
-                        log.info(
-                            f"Load operation returned {msg_type}: {msg_text}"
-                        )
+                        log.info(f"Load operation returned {msg_type}: {msg_text}")
 
             # Check for any Odoo server errors in the response that should halt
             # processing
@@ -809,18 +792,12 @@ def _execute_load_batch(  # noqa: C901
                     msg_text = message.get("message", "")
                     if msg_type == "error":
                         # Only raise for actual errors, not warnings
-                        log.error(
-                            f"Load operation returned fatal error: {msg_text}"
-                        )
+                        log.error(f"Load operation returned fatal error: {msg_text}")
                         raise ValueError(msg_text)
                     elif msg_type in ["warning", "info"]:
-                        log.warning(
-                            f"Load operation returned {msg_type}: {msg_text}"
-                        )
+                        log.warning(f"Load operation returned {msg_type}: {msg_text}")
                     else:
-                        log.info(
-                            f"Load operation returned {msg_type}: {msg_text}"
-                        )
+                        log.info(f"Load operation returned {msg_type}: {msg_text}")
 
             created_ids = res.get("ids", [])
             log.debug(
@@ -847,9 +824,7 @@ def _execute_load_batch(  # noqa: C901
                     if sanitized_load_lines:
                         log.debug("First few lines being sent:")
                         for i, line in enumerate(sanitized_load_lines[:3]):
-                            log.debug(
-                                f"  Line {i}: {dict(zip(load_header, line))}"
-                            )
+                            log.debug(f"  Line {i}: {dict(zip(load_header, line))}")
                 else:
                     log.warning(
                         f"Partial record creation: {len(created_ids)}/"
@@ -865,18 +840,12 @@ def _execute_load_batch(  # noqa: C901
                     msg_text = message.get("message", "")
                     if msg_type == "error":
                         # Only raise for actual errors, not warnings
-                        log.error(
-                            f"Load operation returned fatal error: {msg_text}"
-                        )
+                        log.error(f"Load operation returned fatal error: {msg_text}")
                         raise ValueError(msg_text)
                     elif msg_type in ["warning", "info"]:
-                        log.warning(
-                            f"Load operation returned {msg_type}: {msg_text}"
-                        )
+                        log.warning(f"Load operation returned {msg_type}: {msg_text}")
                     else:
-                        log.info(
-                            f"Load operation returned {msg_type}: {msg_text}"
-                        )
+                        log.info(f"Load operation returned {msg_type}: {msg_text}")
 
             created_ids = res.get("ids", [])
             log.debug(
@@ -903,9 +872,7 @@ def _execute_load_batch(  # noqa: C901
                     if sanitized_load_lines:
                         log.debug("First few lines being sent:")
                         for i, line in enumerate(sanitized_load_lines[:3]):
-                            log.debug(
-                                f"  Line {i}: {dict(zip(load_header, line))}"
-                            )
+                            log.debug(f"  Line {i}: {dict(zip(load_header, line))}")
                 else:
                     log.warning(
                         f"Partial record creation: {len(created_ids)}/"
@@ -919,9 +886,7 @@ def _execute_load_batch(  # noqa: C901
             if res.get("messages"):
                 # Extract error information and add to failed_lines to be
                 # written to fail file
-                error_msg = res["messages"][0].get(
-                    "message", "Batch load failed."
-                )
+                error_msg = res["messages"][0].get("message", "Batch load failed.")
                 log.error(f"Capturing load failure for fail file: {error_msg}")
                 # We'll add the failed lines to aggregated_failed_lines
                 # at the end
@@ -943,13 +908,9 @@ def _execute_load_batch(  # noqa: C901
             # Log id_map information for debugging
             log.debug(f"Created {len(id_map)} records in batch {batch_number}")
             if id_map:
-                log.debug(
-                    f"Sample id_map entries: {dict(list(id_map.items())[:3])}"
-                )
+                log.debug(f"Sample id_map entries: {dict(list(id_map.items())[:3])}")
             else:
-                log.warning(
-                    f"No id_map entries created for batch {batch_number}"
-                )
+                log.warning(f"No id_map entries created for batch {batch_number}")
 
             # Capture failed lines for writing to fail file
             successful_count = len(created_ids)
@@ -957,9 +918,7 @@ def _execute_load_batch(  # noqa: C901
 
             if successful_count < total_count:
                 failed_count = total_count - successful_count
-                log.info(
-                    f"Capturing {failed_count} failed records for fail file"
-                )
+                log.info(f"Capturing {failed_count} failed records for fail file")
                 # Add error information to the lines that failed
                 for i, line in enumerate(current_chunk):
                     # Check if this line corresponds to a created record
@@ -967,9 +926,7 @@ def _execute_load_batch(  # noqa: C901
                         # This record failed, add it to failed_lines with error info
                         error_msg = "Record creation failed"
                         if res.get("messages"):
-                            error_msg = res["messages"][0].get(
-                                "message", error_msg
-                            )
+                            error_msg = res["messages"][0].get("message", error_msg)
 
                         failed_line = [*list(line), f"Load failed: {error_msg}"]
                         aggregated_failed_lines.append(failed_line)
@@ -1073,16 +1030,12 @@ def _execute_load_batch(  # noqa: C901
                             context,
                             ignore_list,
                         )
-                        aggregated_id_map.update(
-                            fallback_result.get("id_map", {})
-                        )
+                        aggregated_id_map.update(fallback_result.get("id_map", {}))
                         aggregated_failed_lines.extend(
                             fallback_result.get("failed_lines", [])
                         )
                         lines_to_process = lines_to_process[chunk_size:]
-                        serialization_retry_count = (
-                            0  # Reset counter for next batch
-                        )
+                        serialization_retry_count = 0  # Reset counter for next batch
                         continue
                 continue
 
@@ -1101,9 +1054,7 @@ def _execute_load_batch(  # noqa: C901
                 ignore_list,
             )
             aggregated_id_map.update(fallback_result.get("id_map", {}))
-            aggregated_failed_lines.extend(
-                fallback_result.get("failed_lines", [])
-            )
+            aggregated_failed_lines.extend(fallback_result.get("failed_lines", []))
             lines_to_process = lines_to_process[chunk_size:]
 
     return {
@@ -1207,9 +1158,7 @@ def _run_threaded_pass(  # noqa: C901
     }
     consecutive_failures = 0
     successful_batches = 0
-    original_description = rpc_thread.progress.tasks[
-        rpc_thread.task_id
-    ].description
+    original_description = rpc_thread.progress.tasks[rpc_thread.task_id].description
 
     try:
         for future in concurrent.futures.as_completed(futures):
@@ -1230,12 +1179,8 @@ def _run_threaded_pass(  # noqa: C901
                         rpc_thread.abort_flag = True
 
                 aggregated["id_map"].update(result.get("id_map", {}))
-                aggregated["failed_writes"].extend(
-                    result.get("failed_writes", [])
-                )
-                aggregated["successful_writes"] += result.get(
-                    "successful_writes", 0
-                )
+                aggregated["failed_writes"].extend(result.get("failed_writes", []))
+                aggregated["successful_writes"] += result.get("successful_writes", 0)
                 failed_lines = result.get("failed_lines", [])
                 if failed_lines:
                     aggregated["failed_lines"].extend(failed_lines)
@@ -1253,9 +1198,7 @@ def _run_threaded_pass(  # noqa: C901
                 rpc_thread.progress.update(rpc_thread.task_id, advance=1)
 
             except Exception as e:
-                log.error(
-                    f"A worker thread failed unexpectedly: {e}", exc_info=True
-                )
+                log.error(f"A worker thread failed unexpectedly: {e}", exc_info=True)
                 rpc_thread.abort_flag = True
                 rpc_thread.progress.console.print(
                     f"[bold red]Worker Failed: {e}[/bold red]"
@@ -1272,9 +1215,7 @@ def _run_threaded_pass(  # noqa: C901
     except KeyboardInterrupt:
         log.warning("Ctrl+C detected! Aborting import gracefully...")
         rpc_thread.abort_flag = True
-        rpc_thread.progress.console.print(
-            "[bold yellow]Aborted by user[/bold yellow]"
-        )
+        rpc_thread.progress.console.print("[bold yellow]Aborted by user[/bold yellow]")
         rpc_thread.progress.update(
             rpc_thread.task_id,
             description="[bold yellow]Aborted by user[/bold yellow]",
@@ -1361,9 +1302,7 @@ def _orchestrate_pass_1(
         return {"success": False}
 
     pass_1_batches = list(
-        _create_batches(
-            pass_1_data, split_by_cols, pass_1_header, batch_size, o2m
-        )
+        _create_batches(pass_1_data, split_by_cols, pass_1_header, batch_size, o2m)
     )
     num_batches = len(pass_1_batches)
     pass_1_task = progress.add_task(
@@ -1437,9 +1376,7 @@ def _orchestrate_pass_2(
     )
 
     if not pass_2_data_to_write:
-        log.info(
-            "No valid relations found to update in Pass 2. Import complete."
-        )
+        log.info("No valid relations found to update in Pass 2. Import complete.")
         return True, 0
 
     # --- Grouping Logic ---
@@ -1597,9 +1534,7 @@ def import_data(
         )
         _show_error_panel(title, friendly_message)
         return False, {}
-    fail_writer, fail_handle = _setup_fail_file(
-        fail_file, header, separator, encoding
-    )
+    fail_writer, fail_handle = _setup_fail_file(fail_file, header, separator, encoding)
     console = Console()
     progress = Progress(
         SpinnerColumn(),
