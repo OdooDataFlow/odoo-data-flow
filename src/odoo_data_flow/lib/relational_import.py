@@ -242,15 +242,18 @@ def _derive_relation_info(
     """
     # Hardcoded mappings for known self-referencing fields
     known_self_referencing_fields = {
-        ('product.template', 'optional_product_ids'): ('product_optional_rel', 'product_template_id'),
+        ("product.template", "optional_product_ids"): (
+            "product_optional_rel",
+            "product_template_id",
+        ),
         # Add more known self-referencing fields here as needed
     }
-    
+
     # Check if we have a known mapping for this field
     key = (model, field)
     if key in known_self_referencing_fields:
         return known_self_referencing_fields[key]
-    
+
     # Derive relation table name (typically follows pattern: model1_model2_rel)
     # with models sorted alphabetically for canonical naming
     models = sorted([model.replace(".", "_"), related_model_fk.replace(".", "_")])
@@ -716,7 +719,9 @@ def run_write_o2m_tuple_import(
         # Check if the field with /id suffix exists (common for relation fields)
         field_with_id = f"{field}/id"
         if field_with_id in source_df.columns:
-            log.debug(f"Using field '{field_with_id}' instead of '{field}' for O2M filtering")
+            log.debug(
+                f"Using field '{field_with_id}' instead of '{field}' for O2M filtering"
+            )
             actual_field = field_with_id
         else:
             log.error(
@@ -724,7 +729,7 @@ def run_write_o2m_tuple_import(
                 f"Available columns: {list(source_df.columns)}"
             )
             return False
-    
+
     o2m_df = source_df.filter(pl.col(actual_field).is_not_null())
 
     for record in o2m_df.iter_rows(named=True):
