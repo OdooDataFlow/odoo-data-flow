@@ -439,22 +439,19 @@ def _auto_correct_field_types(  # noqa: C901
                     col_data = df.get_column(clean_field_name)
                     # Check for float string values like "1.0", "2.0" in integer fields
                     non_null_values = col_data.filter(col_data.is_not_null())
-                    for val in non_null_values:
-                        str_val = str(val)
-                        if str_val and str_val != "None" and str_val.strip() != "":
-                            # Check if it looks like a float string in an integer field
-                            if "." in str_val:
-                                try:
-                                    float_val = float(str_val)
-                                    if float_val.is_integer():
-                                        # It's a whole number like "1.0" that should be
-                        # int
-                                        corrections_needed = True
-                                        break
-                                except ValueError:
-                                    # Not a valid float, will be handled by Odoo
-                                    pass
-
+                                    # Use Polars expressions to check for float-like strings in integer fields
+                                    str_series = non_null_values.cast(pl.Utf8, strict=False)
+                                    dot_mask = str_series.str.contains(r"\.", literal=True)
+                                    if dot_mask.any():
+                                        dot_values = str_series.filter(dot_mask)
+                                        # Attempt to cast to float, fill errors with null
+                                        float_series = dot_values.cast(pl.Float64, strict=False)
+                                        # Check for non-null floats that are integers
+                                        is_integer_float = float_series.is_not_null() & (
+                                            float_series.round(0) == float_series
+                                        )
+                                        if is_integer_float.any():
+                                            corrections_needed = True
                     if corrections_needed:
                         break
 
