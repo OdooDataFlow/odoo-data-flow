@@ -579,8 +579,19 @@ def _handle_create_error(
     error_str = str(create_error)
     error_str_lower = error_str.lower()
 
-    # Handle database connection pool exhaustion errors
+    # Handle constraint violation errors (e.g., XML ID space constraint)
     if (
+        "constraint" in error_str_lower
+        or "check constraint" in error_str_lower
+        or "nospaces" in error_str_lower
+        or "violation" in error_str_lower
+    ):
+        error_message = f"Constraint violation in row {i + 1}: {create_error}"
+        if "Fell back to create" in error_summary:
+            error_summary = "Database constraint violation detected"
+
+    # Handle database connection pool exhaustion errors
+    elif (
         "connection pool is full" in error_str_lower
         or "too many connections" in error_str_lower
         or "poolerror" in error_str_lower
@@ -670,13 +681,17 @@ def _create_batch_individually(  # noqa: C901
                 )
 
             source_id = line[uid_index]
+            # Sanitize source_id to ensure it's a valid XML ID
+            from .lib.internal.tools import to_xmlid
+            sanitized_source_id = to_xmlid(source_id)
+            
             # 1. SEARCH BEFORE CREATE
             existing_record = model.browse().env.ref(
-                f"__export__.{source_id}", raise_if_not_found=False
+                f"__export__.{sanitized_source_id}", raise_if_not_found=False
             )
 
             if existing_record:
-                id_map[source_id] = existing_record.id
+                id_map[sanitized_source_id] = existing_record.id
                 continue
 
             # 2. PREPARE FOR CREATE
@@ -713,7 +728,7 @@ def _create_batch_individually(  # noqa: C901
             log.debug(f"Converted vals keys: {list(converted_vals.keys())}")
 
             new_record = model.create(converted_vals, context=context)
-            id_map[source_id] = new_record.id
+            id_map[sanitized_source_id] = new_record.id
         except IndexError as e:
             error_str_lower = str(e).lower()
 
@@ -916,17 +931,120 @@ def _execute_load_batch(  # noqa: C901
             log.debug(f"Attempting `load` for chunk of batch {batch_number}...")
 
             res = model.load(load_header, load_lines, context=context)
+
             if res.get("messages"):
                 error = res["messages"][0].get("message", "Batch load failed.")
-                raise ValueError(error)
+                # Don't raise immediately, log and continue to capture in fail file
+                log.error(f"Odoo server error during load: {error}")
+                
+            created_ids = res.get("ids", [])
+            log.debug(f"Expected records: {len(sanitized_load_lines)}, Created records: {len(created_ids)}")
+            
+            # Always log detailed information about record creation
+            if len(created_ids) != len(sanitized_load_lines):
+                log.warning(
+                    f"Record creation mismatch: Expected {len(sanitized_load_lines)} records, "
+                    f"but only {len(created_ids)} were created"
+                )
+                if len(created_ids) == 0:
+                    log.error(
+                        f"No records were created in this batch of {len(sanitized_load_lines)}. "
+                        f"This may indicate silent failures in the Odoo load operation. "
+                        f"Check Odoo server logs for validation errors."
+                    )
+                    # Log the actual data being sent for debugging
+                    if sanitized_load_lines:
+                        log.debug(f"First few lines being sent:")
+                        for i, line in enumerate(sanitized_load_lines[:3]):
+                            log.debug(f"  Line {i}: {dict(zip(load_header, line))}")
+                else:
+                    log.warning(
+                        f"Partial record creation: {len(created_ids)}/{len(sanitized_load_lines)} "
+                        f"records were created. Some records may have failed validation."
+                    )
+            # Check for any Odoo server errors in the response that should halt processing
+            if res.get("messages"):
+                for message in res["messages"]:
+                    msg_type = message.get("type", "unknown")
+                    msg_text = message.get("message", "")
+                    if msg_type == "error":
+                        # Only raise for actual errors, not warnings
+                        log.error(f"Load operation returned fatal error: {msg_text}")
+                        raise ValueError(msg_text)
+                    elif msg_type in ["warning", "info"]:
+                        log.warning(f"Load operation returned {msg_type}: {msg_text}")
+                    else:
+                        log.info(f"Load operation returned {msg_type}: {msg_text}")
 
             created_ids = res.get("ids", [])
-            if len(created_ids) != len(load_lines):
-                raise ValueError("Record count mismatch after load.")
-
+            log.debug(f"Expected records: {len(sanitized_load_lines)}, Created records: {len(created_ids)}")
+            
+            # Always log detailed information about record creation
+            if len(created_ids) != len(sanitized_load_lines):
+                log.warning(
+                    f"Record creation mismatch: Expected {len(sanitized_load_lines)} records, "
+                    f"but only {len(created_ids)} were created"
+                )
+                if len(created_ids) == 0:
+                    log.error(
+                        f"No records were created in this batch of {len(sanitized_load_lines)}. "
+                        f"This may indicate silent failures in the Odoo load operation. "
+                        f"Check Odoo server logs for validation errors."
+                    )
+                    # Log the actual data being sent for debugging
+                    if sanitized_load_lines:
+                        log.debug(f"First few lines being sent:")
+                        for i, line in enumerate(sanitized_load_lines[:3]):
+                            log.debug(f"  Line {i}: {dict(zip(load_header, line))}")
+                else:
+                    log.warning(
+                        f"Partial record creation: {len(created_ids)}/{len(sanitized_load_lines)} "
+                        f"records were created. Some records may have failed validation."
+                    )
+            
+            # Instead of raising an exception, capture failures for the fail file
+            # But still create what records we can
+            if res.get("messages"):
+                # Extract error information and add to failed_lines to be written to fail file
+                error_msg = res["messages"][0].get("message", "Batch load failed.")
+                log.error(f"Capturing load failure for fail file: {error_msg}")
+                # We'll add the failed lines to aggregated_failed_lines at the end
+            
+            # Use sanitized IDs for the id_map to match what was actually sent to Odoo
             id_map = {
-                line[uid_index]: created_ids[i] for i, line in enumerate(current_chunk)
+                to_xmlid(line[uid_index]): created_ids[i] if i < len(created_ids) else None 
+                for i, line in enumerate(current_chunk)
             }
+            
+            # Remove None entries (failed creations) from id_map
+            id_map = {k: v for k, v in id_map.items() if v is not None}
+            
+            # Log id_map information for debugging
+            log.debug(f"Created {len(id_map)} records in batch {batch_number}")
+            if id_map:
+                log.debug(f"Sample id_map entries: {dict(list(id_map.items())[:3])}")
+            else:
+                log.warning(f"No id_map entries created for batch {batch_number}")
+            
+            # Capture failed lines for writing to fail file
+            successful_count = len(created_ids)
+            total_count = len(sanitized_load_lines)
+            
+            if successful_count < total_count:
+                failed_count = total_count - successful_count
+                log.info(f"Capturing {failed_count} failed records for fail file")
+                # Add error information to the lines that failed
+                for i, line in enumerate(current_chunk):
+                    # Check if this line corresponds to a created record
+                    if i >= len(created_ids) or created_ids[i] is None:
+                        # This record failed, add it to failed_lines with error info
+                        error_msg = "Record creation failed"
+                        if res.get("messages"):
+                            error_msg = res["messages"][0].get("message", error_msg)
+                        
+                        failed_line = list(line) + [f"Load failed: {error_msg}"]
+                        aggregated_failed_lines.append(failed_line)
+            
             aggregated_id_map.update(id_map)
             lines_to_process = lines_to_process[chunk_size:]
 

@@ -188,6 +188,15 @@ def _query_relation_info_from_odoo(
     Returns:
         A tuple of (relation_table, relation_field) or None if not found
     """
+    # Early return for self-referencing fields to avoid constraint errors
+    # These should be handled by the hardcoded mappings in _derive_relation_info
+    if model == related_model_fk:
+        log.debug(
+            f"Skipping ir.model.relation query for self-referencing field "
+            f"between '{model}' and '{related_model_fk}'"
+        )
+        return None
+
     try:
         # Get connection to Odoo
         if isinstance(config, dict):
@@ -201,6 +210,8 @@ def _query_relation_info_from_odoo(
 
         # Search for relations involving both models
         # We need to check both orders since the relation could be defined either way
+        # Note: The field names in ir.model.relation may vary by Odoo version
+        # Common field names are: model, comodel_id, or model_id for the related fields
         domain = [
             "|",
             "&",
@@ -235,6 +246,18 @@ def _query_relation_info_from_odoo(
             )
             return None
 
+    except ValueError as ve:
+        # Handle specific field validation errors in Odoo expressions
+        if "Invalid field" in str(ve) and "ir.model.relation" in str(ve):
+            log.warning(
+                f"Field validation error querying ir.model.relation: {ve}. "
+                f"This may be due to incorrect field names in the domain query."
+            )
+            # Fall back to derivation logic when we can't query the relation table
+            return None
+        else:
+            # Re-raise other ValueErrors
+            raise
     except Exception as e:
         log.warning(
             f"Failed to query ir.model.relation for models '{model}' and "
@@ -256,6 +279,17 @@ def _derive_relation_info(
     Returns:
         A tuple of (relation_table, relation_field)
     """
+    # Hardcoded mappings for known self-referencing fields
+    known_self_referencing_fields = {
+        ('product.template', 'optional_product_ids'): ('product_optional_rel', 'product_template_id'),
+        # Add more known self-referencing fields here as needed
+    }
+    
+    # Check if we have a known mapping for this field
+    key = (model, field)
+    if key in known_self_referencing_fields:
+        return known_self_referencing_fields[key]
+    
     # Derive relation table name (typically follows pattern: model1_model2_rel)
     # with models sorted alphabetically for canonical naming
     models = sorted([model.replace(".", "_"), related_model_fk.replace(".", "_")])
@@ -858,12 +892,22 @@ def run_write_o2m_tuple_import(
     failed_records_to_report = []
 
     # Filter for rows that actually have data in the o2m field
-    # Check if the field with /id suffix exists (common for relation fields)
-    actual_field_name = field
-    if f"{field}/id" in source_df.columns:
-        actual_field_name = f"{field}/id"
-
-    o2m_df = source_df.filter(pl.col(actual_field_name).is_not_null())
+    # Handle both direct field names and /id suffixed field names
+    actual_field = field
+    if field not in source_df.columns:
+        # Check if the field with /id suffix exists (common for relation fields)
+        field_with_id = f"{field}/id"
+        if field_with_id in source_df.columns:
+            log.debug(f"Using field '{field_with_id}' instead of '{field}' for O2M filtering")
+            actual_field = field_with_id
+        else:
+            log.error(
+                f"Field '{field}' not found in source DataFrame. "
+                f"Available columns: {list(source_df.columns)}"
+            )
+            return False
+    
+    o2m_df = source_df.filter(pl.col(actual_field).is_not_null())
 
     for record in o2m_df.iter_rows(named=True):
         parent_external_id = record["id"]
