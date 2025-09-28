@@ -503,8 +503,10 @@ def _execute_write_tuple_updates(
             try:
                 # Attempt to convert to float first to handle "123.0", then to int
                 related_db_id_int = int(float(related_db_id))
-            except (ValueError, TypeError):
-                raise ValueError(f"Invalid related_db_id format: {related_db_id}")
+            except (ValueError, TypeError) as e:
+                raise ValueError(
+                    f"Invalid related_db_id format: {related_db_id}"
+                ) from e
 
             m2m_command = [(4, related_db_id_int, 0)]  # Convert to proper tuple format
             log.debug(

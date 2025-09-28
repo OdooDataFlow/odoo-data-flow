@@ -396,7 +396,7 @@ def _validate_header(
     return True
 
 
-def _auto_correct_field_types(
+def _auto_correct_field_types(  # noqa: C901
     filename: str,
     header: list[str],
     odoo_fields: dict[str, Any],
@@ -433,7 +433,8 @@ def _auto_correct_field_types(
                 odoo_field = odoo_fields[clean_field_name]
                 odoo_field_type = odoo_field.get("type")
 
-                # Only validate for numeric fields that have known type conversion issues
+                # Only validate for numeric fields that have known type conversion
+                # issues
                 if odoo_field_type in ("integer", "positive", "negative"):
                     col_data = df.get_column(clean_field_name)
                     # Check for float string values like "1.0", "2.0" in integer fields
@@ -446,7 +447,8 @@ def _auto_correct_field_types(
                                 try:
                                     float_val = float(str_val)
                                     if float_val.is_integer():
-                                        # It's a whole number like "1.0" that should be int
+                                        # It's a whole number like "1.0" that should be
+                        # int
                                         corrections_needed = True
                                         break
                                 except ValueError:
@@ -477,7 +479,8 @@ def _auto_correct_field_types(
                 if odoo_field_type in ("integer", "positive", "negative"):
                     col_data = df.get_column(clean_field_name)
                     # Convert float strings like "1.0" to integers using Polars casting
-                    # This is the same technique you found: pl.col("sale_delay").cast(pl.Float64).cast(pl.Int64)
+                    # This is the same technique you found:
+                    # pl.col("sale_delay").cast(pl.Float64).cast(pl.Int64)
                     try:
                         corrected_df = corrected_df.with_columns(
                             pl.col(clean_field_name)
@@ -487,11 +490,14 @@ def _auto_correct_field_types(
                             .cast(pl.Int64)  # Then cast to int to get clean integers
                         )
                         log.debug(
-                            f"Applied Polars casting to field '{clean_field_name}': pl.Float64 → pl.Int64"
+                            f"Applied Polars casting to field '{clean_field_name}': "
+                            "pl.Float64 -> pl.Int64"
                         )
                     except Exception as e:
                         log.warning(
-                            f"Could not apply Polars casting to field '{clean_field_name}': {e}"
+                            "Could not apply Polars casting to field '%s': %s",
+                            clean_field_name,
+                            e,
                         )
                         # Continue with original column if casting fails
 
@@ -504,14 +510,17 @@ def _auto_correct_field_types(
         # Write corrected data to temporary file
         corrected_df.write_csv(corrected_file.name, separator=separator)
         log.info(
-            f"Type corrections applied and saved to temporary file: {corrected_file.name}"
+            "Type corrections applied and saved to temporary file: %s",
+            corrected_file.name,
         )
 
         return corrected_file.name
 
     except Exception as e:
         log.warning(
-            f"Type validation and auto-correction failed, proceeding with original file: {e}"
+            "Type validation and auto-correction failed, proceeding with original "
+            "file: %s",
+            e,
         )
         return None
 

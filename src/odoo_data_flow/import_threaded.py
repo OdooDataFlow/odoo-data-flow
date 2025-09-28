@@ -72,7 +72,7 @@ def _parse_csv_data(
     return header, all_data
 
 
-def _read_data_file(  # noqa: C901
+def _read_data_file(
     file_path: str, separator: str, encoding: str, skip: int
 ) -> tuple[list[str], list[list[Any]]]:
     """Reads a CSV file and returns its header and data.
@@ -343,7 +343,7 @@ def _create_batches(
         yield i, batch_data
 
 
-def _get_model_fields(model: Any) -> Optional[dict]:
+def _get_model_fields(model: Any) -> Optional[dict[str, Any]]:
     """Safely retrieves the fields metadata from an Odoo model.
 
     This handles cases where `_fields` can be a dictionary or a callable
@@ -377,7 +377,8 @@ def _get_model_fields(model: Any) -> Optional[dict]:
         model_fields = model_fields_attr
     else:
         log.warning(
-            f"Model `_fields` attribute is of unexpected type: {type(model_fields_attr)}"
+            "Model `_fields` attribute is of unexpected type: %s",
+            type(model_fields_attr),
         )
 
     return model_fields
@@ -460,7 +461,7 @@ def _convert_external_id_field(
     return base_field_name, converted_value
 
 
-def _safe_convert_field_value(
+def _safe_convert_field_value(  # noqa: C901
     field_name: str, field_value: Any, field_type: str
 ) -> Any:
     """Safely convert field values to prevent type-related errors.
@@ -622,7 +623,7 @@ def _handle_create_error(
     return error_message, failed_line, error_summary
 
 
-def _create_batch_individually(
+def _create_batch_individually(  # noqa: C901
     model: Any,
     batch_lines: list[list[Any]],
     batch_header: list[str],
@@ -702,16 +703,15 @@ def _create_batch_individually(
                 if progress is not None:
                     progress.console.print(
                         f"[yellow]WARN:[/] Tuple index error for record '{source_id}'. "
-                        f"This often happens when sending text values to numeric fields. "
-                        f"Check your data types."
+                        "This often happens when sending text values to numeric "
+                        "fields. Check your data types."
                     )
                 error_message = (
                     f"Tuple index out of range error for record {source_id}: "
-                    f"This is often caused by sending incorrect data types to Odoo fields. "
-                    f"Check your data types and ensure they match the Odoo field types."
+                    "This is often caused by sending incorrect data types to Odoo "
+                    "fields. Check your data types and ensure they match the Odoo "
+                    "field types."
                 )
-                failed_lines.append([*line, error_message])
-
                 continue
             else:
                 # Handle other IndexError as malformed row
@@ -734,13 +734,14 @@ def _create_batch_individually(
                 if progress is not None:
                     progress.console.print(
                         f"[yellow]WARN:[/] Tuple index error for record '{source_id}'. "
-                        f"This often happens when sending text values to numeric fields. "
-                        f"Check your data types."
+                        "This often happens when sending text values to numeric "
+                        "fields. Check your data types."
                     )
                 error_message = (
                     f"Tuple index out of range error for record {source_id}: "
-                    f"This is often caused by sending incorrect data types to Odoo fields. "
-                    f"Check your data types and ensure they match the Odoo field types."
+                    "This is often caused by sending incorrect data types to Odoo "
+                    "fields. Check your data types and ensure they match the Odoo "
+                    "field types."
                 )
                 failed_lines.append([*line, error_message])
                 continue
@@ -940,10 +941,12 @@ def _execute_load_batch(  # noqa: C901
         except IndexError:
             # Handle tuple index out of range errors specifically in load operations
             log.warning(
-                "Tuple index out of range error detected, falling back to individual record processing"
+                "Tuple index out of range error detected, falling back to individual "
+                "record processing"
             )
             progress.console.print(
-                "[yellow]WARN:[/] Tuple index out of range error, falling back to individual record processing"
+                "[yellow]WARN:[/] Tuple index out of range error, falling back to "
+                "individual record processing"
             )
             fallback_result = _create_batch_individually(
                 model,
@@ -1005,7 +1008,8 @@ def _execute_load_batch(  # noqa: C901
                         f"Falling back to `create` for {len(current_chunk)} records "
                         f"to prevent further server errors."
                     )
-                # Fall back to individual record processing when bulk processing fails due to type errors
+                # Fall back to individual record processing when bulk processing fails
+                # due to type errors
                 fallback_result = _create_batch_individually(
                     model,
                     current_chunk,
