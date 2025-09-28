@@ -11,7 +11,7 @@ from odoo_data_flow.lib.internal.tools import (
 
 def test_to_xmlid() -> None:
     """Test the to_xmlid function."""
-    assert to_xmlid("A.B,C\nD|E F") == "A_B_C_D_E_F"
+    assert to_xmlid("A.B,C\nD|E F") == "A.B_C_D_E_F"
     assert (
         to_xmlid("  leading and trailing spaces  ") == "__leading_and_trailing_spaces__"
     )

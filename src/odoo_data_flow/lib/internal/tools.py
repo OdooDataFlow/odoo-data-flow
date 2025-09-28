@@ -44,9 +44,12 @@ def to_xmlid(name: str) -> str:
     characters with underscores.
     """
     # A mapping of characters to replace.
-    replacements = {".": "_", ",": "_", "\n": "_", "|": "_", " ": "_"}
-    for old, new in replacements.items():
-        name = name.replace(old, new)
+    # NOTE: Do NOT replace '.' as it's required to separate module.name in Odoo XML IDs
+    # Only replace characters that are actually invalid in XML IDs:
+    # - Spaces, commas, newlines, and pipe characters are invalid
+    # - Keep dots as they are required for module.identifier format
+    translation_table = str.maketrans({",": "_", "\n": "_", "|": "_", " ": "_"})
+    name = name.translate(translation_table)
     return name.strip()
 
 
