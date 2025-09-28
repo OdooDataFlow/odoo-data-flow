@@ -425,43 +425,45 @@ def _convert_external_id_field(
     return base_field_name, converted_value
 
 
-def _safe_convert_field_value(field_name: str, field_value: Any, field_type: str) -> Any:
+def _safe_convert_field_value(
+    field_name: str, field_value: Any, field_type: str
+) -> Any:
     """Safely convert field values to prevent type-related errors.
-    
+
     Args:
         field_name: Name of the field being converted
         field_value: Raw field value to convert
         field_type: Target Odoo field type (integer, float, etc.)
-        
+
     Returns:
         Safely converted field value, or original value if conversion unsafe
     """
     if field_value is None or field_value == "":
         # Handle empty values appropriately by field type
-        if field_type in ('integer', 'float', 'positive', 'negative'):
+        if field_type in ("integer", "float", "positive", "negative"):
             return 0  # Use 0 for empty numeric fields
         else:
             return field_value  # Keep original for other field types
-    
+
     # Convert to string for processing
     str_value = str(field_value).strip()
-    
+
     # Handle external ID fields specially (they should remain as strings)
-    if field_name.endswith('/id'):
+    if field_name.endswith("/id"):
         return str_value
-    
+
     # Handle numeric field conversions
-    if field_type in ('integer', 'positive', 'negative'):
+    if field_type in ("integer", "positive", "negative"):
         try:
             # Handle float strings like "1.0", "2.0" by converting to int
-            if '.' in str_value:
+            if "." in str_value:
                 float_val = float(str_value)
                 if float_val.is_integer():
                     return int(float_val)
                 else:
                     # Non-integer float - leave as-is to let Odoo handle it
                     return str_value
-            elif str_value.lstrip('-').isdigit():
+            elif str_value.lstrip("-").isdigit():
                 # Integer string like "1", "-5"
                 return int(str_value)
             else:
@@ -470,11 +472,11 @@ def _safe_convert_field_value(field_name: str, field_value: Any, field_type: str
         except (ValueError, TypeError):
             # Conversion failed - leave as original string to let Odoo handle it
             return field_value
-    
-    elif field_type == 'float':
+
+    elif field_type == "float":
         try:
             # Convert numeric strings to float
-            if str_value.replace('.', '').replace('-', '').isdigit():
+            if str_value.replace(".", "").replace("-", "").isdigit():
                 return float(str_value)
             else:
                 # Non-numeric string - leave as-is
@@ -482,7 +484,7 @@ def _safe_convert_field_value(field_name: str, field_value: Any, field_type: str
         except (ValueError, TypeError):
             # Conversion failed - leave as original string
             return field_value
-    
+
     # For all other field types, return original value
     return field_value
 
@@ -526,11 +528,11 @@ def _convert_field_types(
     clean_vals: dict[str, Any],
 ) -> dict[str, Any]:
     """Skip field type conversion - let Odoo handle it internally.
-    
+
     Args:
         model: The Odoo model object
         clean_vals: Dictionary of clean field values
-        
+
     Returns:
         Dictionary with original values (no type conversion applied)
     """
@@ -580,9 +582,12 @@ def _handle_create_error(
         if "Fell back to create" in error_summary:
             error_summary = "Database serialization conflict detected during create"
     elif (
-        "tuple index out of range" in error_str_lower or 
-        "indexerror" in error_str_lower or
-        ("does not seem to be an integer" in error_str_lower and "for field" in error_str_lower)
+        "tuple index out of range" in error_str_lower
+        or "indexerror" in error_str_lower
+        or (
+            "does not seem to be an integer" in error_str_lower
+            and "for field" in error_str_lower
+        )
     ):
         error_message = f"Tuple unpacking error in row {i + 1}: {create_error}"
         if "Fell back to create" in error_summary:
@@ -636,7 +641,7 @@ def _create_batch_individually(
 
             # 2. PREPARE FOR CREATE
             vals = dict(zip(batch_header, line))
-            
+
             # Apply safe field value conversion to prevent type errors
             safe_vals = {}
             for field_name, field_value in vals.items():
@@ -645,24 +650,31 @@ def _create_batch_individually(
                 field_type = None
                 # Check if model has _fields attribute and get field metadata properly
                 model_fields = None
-                if hasattr(model, '_fields'):
-                    model_fields_attr = getattr(model, '_fields')
+                if hasattr(model, "_fields"):
+                    model_fields_attr = model._fields
                     if callable(model_fields_attr):
                         # It's a method, call it to get the fields
                         model_fields = model_fields_attr()
                     else:
                         # It's a property/dictionary, use it directly
-                        model_fields = model_fields_attr if (hasattr(model_fields_attr, "__iter__") and not callable(model_fields_attr)) else None
+                        model_fields = (
+                            model_fields_attr
+                            if (
+                                hasattr(model_fields_attr, "__iter__")
+                                and not callable(model_fields_attr)
+                            )
+                            else None
+                        )
 
                 if model_fields and clean_field_name in model_fields:
                     field_info = model_fields[clean_field_name]
-                    field_type = field_info.get('type')
-                
+                    field_type = field_info.get("type")
+
                 # Apply safe conversion based on field type
                 safe_vals[field_name] = _safe_convert_field_value(
-                    field_name, field_value, field_type or 'unknown'
+                    field_name, field_value, field_type or "unknown"
                 )
-            
+
             clean_vals = {
                 k: v
                 for k, v in safe_vals.items()
@@ -683,7 +695,7 @@ def _create_batch_individually(
             id_map[source_id] = new_record.id
         except IndexError as e:
             error_str_lower = str(e).lower()
-            
+
             # Special handling for tuple index out of range errors
             # These can occur when sending wrong types to Odoo fields
             if "tuple index out of range" in error_str_lower:
@@ -701,7 +713,7 @@ def _create_batch_individually(
                     f"Check your data types and ensure they match the Odoo field types."
                 )
                 failed_lines.append([*line, error_message])
-                
+
                 # Also display warning to user console
                 # Only if progress object is available
                 if progress is not None:
@@ -710,7 +722,7 @@ def _create_batch_individually(
                         f"This often happens when sending text values to numeric fields. "
                         f"Check your data types."
                     )
-                
+
                 continue
             else:
                 # Handle other IndexError as malformed row
@@ -724,8 +736,10 @@ def _create_batch_individually(
 
             # Special handling for tuple index out of range errors
             # These can occur when sending wrong types to Odoo fields
-            if ("tuple index out of range" in error_str_lower or 
-                ("does not seem to be an integer" in error_str_lower and "for field" in error_str_lower)):
+            if "tuple index out of range" in error_str_lower or (
+                "does not seem to be an integer" in error_str_lower
+                and "for field" in error_str_lower
+            ):
                 # Use progress console for user-facing messages to avoid flooding logs
                 # Only if progress object is available
                 if progress is not None:
@@ -869,7 +883,9 @@ def _execute_load_batch(  # noqa: C901
         # Skip type conversion for the load method - let Odoo handle it internally
         # The load method expects raw values and handles type conversion on its own
         # Converting types here can cause bulk import failures when there are type inconsistencies
-        log.debug(f"Skipping type conversion for batch {batch_number}, using raw values for load method")
+        log.debug(
+            f"Skipping type conversion for batch {batch_number}, using raw values for load method"
+        )
 
         # PRE-PROCESSING: Clean up field values to prevent type errors
         # Convert float string values like "1.0" to integers for integer fields
@@ -877,8 +893,8 @@ def _execute_load_batch(  # noqa: C901
         try:
             # Get field metadata - _fields might be a property that needs to be called
             model_fields = None
-            if hasattr(model, '_fields'):
-                model_fields_attr = getattr(model, '_fields')
+            if hasattr(model, "_fields"):
+                model_fields_attr = model._fields
                 # Check if it's callable first, but be careful about the result
                 if callable(model_fields_attr):
                     try:
@@ -886,11 +902,25 @@ def _execute_load_batch(  # noqa: C901
                         model_fields = model_fields_attr()
                     except Exception:
                         # If calling fails, treat it as a dictionary anyway
-                        model_fields = model_fields_attr if (hasattr(model_fields_attr, "__iter__") and not callable(model_fields_attr)) else None
+                        model_fields = (
+                            model_fields_attr
+                            if (
+                                hasattr(model_fields_attr, "__iter__")
+                                and not callable(model_fields_attr)
+                            )
+                            else None
+                        )
                 else:
                     # It's a property/dictionary, use it directly
-                    model_fields = model_fields_attr if (hasattr(model_fields_attr, "__iter__") and not callable(model_fields_attr)) else None
-            
+                    model_fields = (
+                        model_fields_attr
+                        if (
+                            hasattr(model_fields_attr, "__iter__")
+                            and not callable(model_fields_attr)
+                        )
+                        else None
+                    )
+
             if model_fields:
                 cleaned_load_lines = []
                 for row in load_lines:
@@ -898,16 +928,22 @@ def _execute_load_batch(  # noqa: C901
                     for i, value in enumerate(row):
                         if i < len(load_header):
                             field_name = load_header[i]
-                            clean_field_name = field_name.split("/")[0]  # Handle external ID fields like 'parent_id/id'
+                            clean_field_name = field_name.split("/")[
+                                0
+                            ]  # Handle external ID fields like 'parent_id/id'
                             # Only attempt cleanup if we have field metadata and this field exists
                             if clean_field_name in model_fields:
                                 field_info = model_fields[clean_field_name]
-                                field_type = field_info.get("type") if hasattr(field_info, 'get') else None
+                                field_type = (
+                                    field_info.get("type")
+                                    if hasattr(field_info, "get")
+                                    else None
+                                )
                                 # Only clean up for integer fields
-                                if field_type in ('integer', 'positive', 'negative'):
+                                if field_type in ("integer", "positive", "negative"):
                                     str_value = str(value) if value is not None else ""
                                     # Convert float string values like "1.0", "2.0" to integers
-                                    if '.' in str_value:
+                                    if "." in str_value:
                                         try:
                                             float_val = float(str_value)
                                             if float_val.is_integer():
@@ -919,7 +955,7 @@ def _execute_load_batch(  # noqa: C901
                                         except ValueError:
                                             # Not a valid float - keep original to let Odoo handle
                                             cleaned_row.append(value)
-                                    elif str_value.lstrip('-').isdigit():
+                                    elif str_value.lstrip("-").isdigit():
                                         # It's an integer string like "1", "-5" - convert to int
                                         try:
                                             cleaned_row.append(int(str_value))
@@ -941,7 +977,9 @@ def _execute_load_batch(  # noqa: C901
                     cleaned_load_lines.append(cleaned_row)
                 load_lines = cleaned_load_lines
         except Exception as e:
-            log.warning(f"Pre-processing for type conversion failed, proceeding without conversion: {e}")
+            log.warning(
+                f"Pre-processing for type conversion failed, proceeding without conversion: {e}"
+            )
             # Continue with original values if pre-processing fails
 
         # DEBUG: Log what we're sending to Odoo
@@ -961,16 +999,18 @@ def _execute_load_batch(  # noqa: C901
                 log.debug(f"Full load_header: {load_header}")
             if len(load_lines[0]) > 10:
                 log.debug(f"Full first load_line: {load_lines[0]}")
-            
+
             # EXTRA DEBUGGING: Check for problematic values in integer fields
             # Look for float string values like "1.0" in fields that should be integers
             for i, field_name in enumerate(load_header):
-                clean_field_name = field_name.split("/")[0]  # Handle external ID fields like 'parent_id/id'
+                clean_field_name = field_name.split("/")[
+                    0
+                ]  # Handle external ID fields like 'parent_id/id'
                 # Check if we have field metadata and this is an integer field
                 # Check if model has _fields attribute and get field metadata properly
                 model_fields = None
-                if hasattr(model, '_fields'):
-                    model_fields_attr = getattr(model, '_fields')
+                if hasattr(model, "_fields"):
+                    model_fields_attr = model._fields
                     # Check if it's callable first, but be careful about the result
                     if callable(model_fields_attr):
                         try:
@@ -978,47 +1018,68 @@ def _execute_load_batch(  # noqa: C901
                             model_fields = model_fields_attr()
                         except Exception:
                             # If calling fails, treat it as a dictionary anyway
-                            model_fields = model_fields_attr if (hasattr(model_fields_attr, "__iter__") and not callable(model_fields_attr)) else None
+                            model_fields = (
+                                model_fields_attr
+                                if (
+                                    hasattr(model_fields_attr, "__iter__")
+                                    and not callable(model_fields_attr)
+                                )
+                                else None
+                            )
                     else:
                         # It's a property/dictionary, use it directly
-                        model_fields = model_fields_attr if (hasattr(model_fields_attr, "__iter__") and not callable(model_fields_attr)) else None
+                        model_fields = (
+                            model_fields_attr
+                            if (
+                                hasattr(model_fields_attr, "__iter__")
+                                and not callable(model_fields_attr)
+                            )
+                            else None
+                        )
 
                 if model_fields and clean_field_name in model_fields:
                     field_info = model_fields[clean_field_name]
                     field_type = field_info.get("type")
                     # Ensure it's iterable for the 'in' check later
-                    if not hasattr(model_fields, '__iter__') or callable(model_fields):
+                    if not hasattr(model_fields, "__iter__") or callable(model_fields):
                         # If it's not iterable or it's a callable, set to None
                         model_fields = None
-                    if field_type in ('integer', 'positive', 'negative'):
+                    if field_type in ("integer", "positive", "negative"):
                         # Check first few rows for float-like values in integer fields
                         for j, row in enumerate(load_lines[:5]):  # Check first 5 rows
                             if i < len(row):
                                 value = row[i]
                                 str_value = str(value) if value is not None else ""
-                                if "." in str_value and str_value.replace('.', '').replace('-', '').isdigit():
+                                if (
+                                    "." in str_value
+                                    and str_value.replace(".", "")
+                                    .replace("-", "")
+                                    .isdigit()
+                                ):
                                     log.warning(
                                         f"Potentially problematic float value '{str_value}' "
-                                        f"found in integer field '{field_name}' (row {j+1}). "
+                                        f"found in integer field '{field_name}' (row {j + 1}). "
                                         f"This might cause 'tuple index out of range' errors."
                                     )
         try:
             log.debug(f"Attempting `load` for chunk of batch {batch_number}...")
-            
+
             # PRE-PROCESSING: Clean up field values to prevent type errors
             # Convert float string values like "1.0" to integers for integer fields
             # This prevents "tuple index out of range" errors in Odoo server processing
             processed_load_lines = []
-            if hasattr(model, '_fields'):
+            if hasattr(model, "_fields"):
                 for row in load_lines:
                     processed_row = []
                     for i, value in enumerate(row):
                         if i < len(load_header):
-                            field_name = load_header[i].split("/")[0]  # Handle external ID fields like 'parent_id/id'
+                            field_name = load_header[i].split("/")[
+                                0
+                            ]  # Handle external ID fields like 'parent_id/id'
                             # Check if model has _fields attribute and get field metadata properly
                             model_fields = None
-                            if hasattr(model, '_fields'):
-                                model_fields_attr = getattr(model, '_fields')
+                            if hasattr(model, "_fields"):
+                                model_fields_attr = model._fields
                                 # Check if it's callable first
                                 if callable(model_fields_attr):
                                     try:
@@ -1039,16 +1100,16 @@ def _execute_load_batch(  # noqa: C901
                                         model_fields = model_fields_attr
                                     else:
                                         model_fields = None
-                            
+
                             # Only process if we have valid field metadata and the field exists
                             if model_fields and field_name in model_fields:
                                 field_info = model_fields[field_name]
                                 field_type = field_info.get("type")
                                 # Only convert for integer fields
-                                if field_type in ('integer', 'positive', 'negative'):
+                                if field_type in ("integer", "positive", "negative"):
                                     str_value = str(value) if value is not None else ""
                                     # Convert float string values like "1.0", "2.0" to integers
-                                    if '.' in str_value:
+                                    if "." in str_value:
                                         try:
                                             float_val = float(str_value)
                                             if float_val.is_integer():
@@ -1060,7 +1121,7 @@ def _execute_load_batch(  # noqa: C901
                                         except ValueError:
                                             # Not a valid float - keep original to let Odoo handle
                                             processed_row.append(value)
-                                    elif str_value.lstrip('-').isdigit():
+                                    elif str_value.lstrip("-").isdigit():
                                         # It's an integer string like "1", "-5" - convert to int
                                         try:
                                             processed_row.append(int(str_value))
@@ -1083,8 +1144,10 @@ def _execute_load_batch(  # noqa: C901
                 load_lines = processed_load_lines
             else:
                 # If model has no _fields, use original values
-                log.debug("Model has no _fields attribute, using raw values for load method")
-            
+                log.debug(
+                    "Model has no _fields attribute, using raw values for load method"
+                )
+
             res = model.load(load_header, load_lines, context=context)
             if res.get("messages"):
                 error = res["messages"][0].get("message", "Batch load failed.")
@@ -1105,8 +1168,12 @@ def _execute_load_batch(  # noqa: C901
 
         except IndexError:
             # Handle tuple index out of range errors specifically in load operations
-            log.warning("Tuple index out of range error detected, falling back to individual record processing")
-            progress.console.print("[yellow]WARN:[/] Tuple index out of range error, falling back to individual record processing")
+            log.warning(
+                "Tuple index out of range error detected, falling back to individual record processing"
+            )
+            progress.console.print(
+                "[yellow]WARN:[/] Tuple index out of range error, falling back to individual record processing"
+            )
             fallback_result = _create_batch_individually(
                 model,
                 current_chunk,
@@ -1120,7 +1187,7 @@ def _execute_load_batch(  # noqa: C901
             aggregated_failed_lines.extend(fallback_result.get("failed_lines", []))
             lines_to_process = lines_to_process[chunk_size:]
             continue
-            
+
         except Exception as e:
             error_str = str(e).lower()
 
@@ -1154,8 +1221,10 @@ def _execute_load_batch(  # noqa: C901
             # SPECIAL CASE: Tuple index out of range errors
             # These can occur when sending wrong types to Odoo fields
             # Should trigger immediate fallback to individual record processing
-            elif ("tuple index out of range" in error_str or 
-                  ("does not seem to be an integer" in error_str and "for field" in error_str)):
+            elif "tuple index out of range" in error_str or (
+                "does not seem to be an integer" in error_str
+                and "for field" in error_str
+            ):
                 # Use progress console for user-facing messages to avoid flooding logs
                 # Only if progress object is available
                 if progress is not None:
