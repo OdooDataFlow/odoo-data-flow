@@ -419,8 +419,6 @@ def run_import(  # noqa: C901
                                 "Check logs for details."
                             )
 
-
-
                     progress.update(task_id, advance=1)
 
         log.info(

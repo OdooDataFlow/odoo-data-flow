@@ -437,21 +437,22 @@ def _auto_correct_field_types(  # noqa: C901
                 # issues
                 if odoo_field_type in ("integer", "positive", "negative"):
                     col_data = df.get_column(clean_field_name)
-                    # Check for float string values like "1.0", "2.0" in integer fields
-                    non_null_values = col_data.filter(col_data.is_not_null())
-                                    # Use Polars expressions to check for float-like strings in integer fields
-                                    str_series = non_null_values.cast(pl.Utf8, strict=False)
-                                    dot_mask = str_series.str.contains(r"\.", literal=True)
-                                    if dot_mask.any():
-                                        dot_values = str_series.filter(dot_mask)
-                                        # Attempt to cast to float, fill errors with null
-                                        float_series = dot_values.cast(pl.Float64, strict=False)
-                                        # Check for non-null floats that are integers
-                                        is_integer_float = float_series.is_not_null() & (
-                                            float_series.round(0) == float_series
-                                        )
-                                        if is_integer_float.any():
-                                            corrections_needed = True
+                    non_null_values = col_data.drop_nulls()
+
+                    if not non_null_values.is_empty():
+                        # Use Polars expressions to check for float-like strings
+                        str_series = non_null_values.cast(pl.Utf8, strict=False)
+                        dot_mask = str_series.str.contains(r"\.", literal=True)
+                        if dot_mask.any():
+                            dot_values = str_series.filter(dot_mask)
+                            # Attempt to cast to float, fill errors with null
+                            float_series = dot_values.cast(pl.Float64, strict=False)
+                            # Check for non-null floats that are integers
+                            is_integer_float = float_series.is_not_null() & (
+                                float_series.round(0) == float_series
+                            )
+                            if is_integer_float.any():
+                                corrections_needed = True
                     if corrections_needed:
                         break
 

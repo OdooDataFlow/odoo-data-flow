@@ -81,7 +81,8 @@ def _parse_csv_data(
 
 
 def _read_data_file(
-    file_path: str, separator: str, encoding: str, ) -> tuple[list[str], Generator[list[Any], None, None]]:
+    file_path: str, separator: str, encoding: str, skip: int
+) -> tuple[list[str], Generator[list[Any], None, None]]:
     """Reads a CSV file and returns its header and data.
 
     This function handles opening and parsing a CSV file, skipping any
@@ -630,6 +631,28 @@ def _handle_create_error(
     return error_message, failed_line, error_summary
 
 
+def _handle_tuple_index_error(
+    progress: Optional[Any],
+    source_id: str,
+    line: list[Any],
+    failed_lines: list[list[Any]],
+) -> None:
+    """Handles tuple index out of range errors by logging and recording failure."""
+    if progress is not None:
+        progress.console.print(
+            f"[yellow]WARN:[/] Tuple index error for record '{source_id}'. "
+            "This often happens when sending text values to numeric "
+            "fields. Check your data types."
+        )
+    error_message = (
+        f"Tuple index out of range error for record {source_id}: "
+        "This is often caused by sending incorrect data types to Odoo "
+        "fields. Check your data types and ensure they match the Odoo "
+        "field types."
+    )
+    failed_lines.append([*line, error_message])
+
+
 def _create_batch_individually(  # noqa: C901
     model: Any,
     batch_lines: list[list[Any]],
@@ -705,20 +728,7 @@ def _create_batch_individually(  # noqa: C901
             # Special handling for tuple index out of range errors
             # These can occur when sending wrong types to Odoo fields
             if "tuple index out of range" in error_str_lower:
-                # Use progress console for user-facing messages to avoid flooding logs
-                # Only if progress object is available
-                if progress is not None:
-                    progress.console.print(
-                        f"[yellow]WARN:[/] Tuple index error for record '{source_id}'. "
-                        "This often happens when sending text values to numeric "
-                        "fields. Check your data types."
-                    )
-                error_message = (
-                    f"Tuple index out of range error for record {source_id}: "
-                    "This is often caused by sending incorrect data types to Odoo "
-                    "fields. Check your data types and ensure they match the Odoo "
-                    "field types."
-                )
+                _handle_tuple_index_error(progress, source_id, line, failed_lines)
                 continue
             else:
                 # Handle other IndexError as malformed row
@@ -736,21 +746,7 @@ def _create_batch_individually(  # noqa: C901
                 "does not seem to be an integer" in error_str_lower
                 and "for field" in error_str_lower
             ):
-                # Use progress console for user-facing messages to avoid flooding logs
-                # Only if progress object is available
-                if progress is not None:
-                    progress.console.print(
-                        f"[yellow]WARN:[/] Tuple index error for record '{source_id}'. "
-                        "This often happens when sending text values to numeric "
-                        "fields. Check your data types."
-                    )
-                error_message = (
-                    f"Tuple index out of range error for record {source_id}: "
-                    "This is often caused by sending incorrect data types to Odoo "
-                    "fields. Check your data types and ensure they match the Odoo "
-                    "field types."
-                )
-                failed_lines.append([*line, error_message])
+                _handle_tuple_index_error(progress, source_id, line, failed_lines)
                 continue
 
             # Special handling for database connection pool exhaustion errors
