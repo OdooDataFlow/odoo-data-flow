@@ -214,7 +214,7 @@ def run_import(  # noqa: C901
     try:
         # Use corrected file if preflight validation created one
         file_to_import = import_plan.get("_corrected_file", file_to_process)
-        
+
         success, stats = import_threaded.import_data(
             config=config,
             model=model,
