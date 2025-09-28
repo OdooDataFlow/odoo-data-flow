@@ -212,11 +212,14 @@ def run_import(  # noqa: C901
 
     start_time = time.time()
     try:
+        # Use corrected file if preflight validation created one
+        file_to_import = import_plan.get("_corrected_file", file_to_process)
+
         success, stats = import_threaded.import_data(
             config=config,
             model=model,
             unique_id_field=final_uid_field,
-            file_csv=file_to_process,
+            file_csv=file_to_import,
             deferred_fields=final_deferred,
             context=parsed_context,
             fail_file=fail_output_file,
@@ -243,24 +246,101 @@ def run_import(  # noqa: C901
     fail_file_was_created = _count_lines(fail_output_file) > 1
     is_truly_successful = success and not fail_file_was_created
 
-    if is_truly_successful:
-        id_map = cast(dict[str, int], stats.get("id_map", {}))
-        if id_map:
-            if isinstance(config, str):
-                cache.save_id_map(config, model, id_map)
+    # Initialize id_map early to avoid UnboundLocalError
+    id_map = (
+        cast(dict[str, int], stats.get("id_map", {})) if is_truly_successful else {}
+    )
+    if is_truly_successful and id_map:
+        if isinstance(config, str):
+            cache.save_id_map(config, model, id_map)
 
-        # --- Pass 2: Relational Strategies ---
-        if import_plan.get("strategies") and not fail:
-            source_df = pl.read_csv(
-                filename, separator=separator, truncate_ragged_lines=True
+        # --- Main Import Process ---
+    log.info("*** STARTING MAIN IMPORT PROCESS ***")
+    log.info(f"*** MODEL: {model} ***")
+    log.info(f"*** FILENAME: {filename} ***")
+    log.info(f"*** IMPORT PLAN KEYS: {list(import_plan.keys())} ***")
+    if "strategies" in import_plan:
+        log.info(f"*** IMPORT PLAN STRATEGIES: {import_plan['strategies']} ***")
+        log.info(
+            f"*** IMPORT PLAN STRATEGIES COUNT: {len(import_plan['strategies'])} ***"
+        )
+    else:
+        log.info("*** NO STRATEGIES FOUND IN IMPORT PLAN ***")
+
+    # --- Pass 1: Standard Fields ---
+    if not fail:
+        log.info("*** PASS 2: STARTING RELATIONAL IMPORT PROCESS ***")
+        log.info(f"*** DETECTED STRATEGIES: {import_plan.get('strategies', {})} ***")
+        log.info(f"*** STRATEGIES COUNT: {len(import_plan.get('strategies', {}))} ***")
+
+        # Check if file exists and is not empty before reading
+        if not os.path.exists(filename):
+            log.warning(f"File does not exist: {filename}")
+            return
+        if os.path.getsize(filename) == 0:
+            log.warning(f"File is empty: {filename}, skipping relational import")
+            return
+
+        # Read the CSV file with explicit schema for /id suffixed columns
+        # Override automatic type inference to ensure all /id suffixed
+        # columns are strings
+        # Handle potential encoding issues when reading the CSV
+        try:
+            df = pl.read_csv(filename, separator=separator, truncate_ragged_lines=True)
+        except Exception as e:
+            log.warning(f"Error reading CSV with default settings: {e}")
+            # If there are encoding issues, we may need to handle the file differently
+            # This could be a character encoding issue in the file
+            log.warning("Attempting to read CSV with UTF-8 encoding explicitly...")
+            # Note: polars doesn't expose encoding parameter directly in read_csv
+            # The encoding issue should be handled at the file system level
+            df = pl.read_csv(
+                filename,
+                separator=separator,
+                encoding=encoding,
+                truncate_ragged_lines=True,
             )
+
+        # Identify columns that end with /id suffix
+        id_columns = [col for col in df.columns if col.endswith("/id")]
+
+        # If we have /id suffixed columns, re-read with explicit schema
+        if id_columns:
+            log.debug(f"Found /id suffixed columns: {id_columns}")
+            # Create schema override to force /id columns to be strings
+            schema_overrides = {col: pl.Utf8 for col in id_columns}
+            log.debug(f"Schema overrides for /id columns: {schema_overrides}")
+            # Re-read with explicit schema
+            source_df = pl.read_csv(
+                filename,
+                separator=separator,
+                truncate_ragged_lines=True,
+                schema_overrides=schema_overrides,
+            )
+            log.debug(
+                f"Re-read DataFrame with schema overrides. /id column types: "
+                f"{[f'{col}: {source_df[col].dtype}' for col in id_columns]}"
+            )
+        else:
+            source_df = df
+        # Only proceed with relational import if there are strategies defined
+        strategies = import_plan.get("strategies", {})
+        if strategies:
             with Progress() as progress:
                 task_id = progress.add_task(
-                    "Pass 2/2: Relational fields",
-                    total=len(import_plan["strategies"]),
+                    "Pass 2/2: Updating relations",
+                    total=len(strategies),
                 )
-                for field, strategy_info in import_plan["strategies"].items():
+                for field, strategy_info in strategies.items():
+                    log.info(
+                        f"*** PROCESSING FIELD '{field}' WITH "
+                        f"STRATEGY '{strategy_info['strategy']}' ***"
+                    )
                     if strategy_info["strategy"] == "direct_relational_import":
+                        log.info(
+                            f"*** CALLING run_direct_relational_import "
+                            f"for field '{field}' ***"
+                        )
                         import_details = relational_import.run_direct_relational_import(
                             config,
                             model,
@@ -275,6 +355,10 @@ def run_import(  # noqa: C901
                             filename,
                         )
                         if import_details:
+                            log.info(
+                                f"*** DIRECT RELATIONAL IMPORT RETURNED "
+                                f"DETAILS FOR FIELD '{field}' ***"
+                            )
                             import_threaded.import_data(
                                 config=config,
                                 model=import_details["model"],
@@ -284,7 +368,15 @@ def run_import(  # noqa: C901
                                 batch_size=batch_size_run,
                             )
                             Path(import_details["file_csv"]).unlink()
+                        else:
+                            log.info(
+                                f"*** DIRECT RELATIONAL IMPORT RETURNED "
+                                f"NONE FOR FIELD '{field}' ***"
+                            )
                     elif strategy_info["strategy"] == "write_tuple":
+                        log.info(
+                            f"** CALLING run_write_tuple_import FOR FIELD '{field}' **"
+                        )
                         result = relational_import.run_write_tuple_import(
                             config,
                             model,
@@ -304,6 +396,10 @@ def run_import(  # noqa: C901
                                 "Check logs for details."
                             )
                     elif strategy_info["strategy"] == "write_o2m_tuple":
+                        log.info(
+                            f"*** CALLING run_write_o2m_tuple_import "
+                            f"FOR FIELD '{field}' ***"
+                        )
                         result = relational_import.run_write_o2m_tuple_import(
                             config,
                             model,
@@ -322,6 +418,7 @@ def run_import(  # noqa: C901
                                 f"Write O2M tuple import failed for field '{field}'. "
                                 "Check logs for details."
                             )
+
                     progress.update(task_id, advance=1)
 
         log.info(
