@@ -52,6 +52,26 @@ def _format_odoo_error(error: Any) -> str:
     return str(error).strip().replace("\n", " ")
 
 
+def _parse_csv_data(
+    f: TextIO, separator: str, skip: int
+) -> tuple[list[str], list[list[Any]]]:
+    """Parses CSV data from a file handle, handling headers and skipping rows."""
+    reader = csv.reader(f, delimiter=separator)
+    all_rows = list(reader)
+
+    if len(all_rows) <= skip:
+        return [], []
+
+    header = all_rows[skip]
+    all_data = all_rows[skip + 1 :]
+
+    # Validate that the 'id' column is present in the header
+    if "id" not in header:
+        raise ValueError("Source file must contain an 'id' column.")
+
+    return header, all_data
+
+
 def _read_data_file(  # noqa: C901
     file_path: str, separator: str, encoding: str, skip: int
 ) -> tuple[list[str], list[list[Any]]]:
@@ -74,20 +94,7 @@ def _read_data_file(  # noqa: C901
     # First try with the specified encoding
     try:
         with open(file_path, encoding=encoding, newline="") as f:
-            reader = csv.reader(f, delimiter=separator)
-            all_rows = list(reader)
-
-        if len(all_rows) <= skip:
-            return [], []
-
-        header = all_rows[skip]
-        all_data = all_rows[skip + 1 :]
-
-        # Validate that the 'id' column is present in the header
-        if "id" not in header:
-            raise ValueError("Source file must contain an 'id' column.")
-
-        return header, all_data
+            return _parse_csv_data(f, separator, skip)
     except UnicodeDecodeError:
         # If UnicodeDecodeError occurs, try fallback encodings
         log.warning(
@@ -99,19 +106,7 @@ def _read_data_file(  # noqa: C901
         for enc in encodings_to_try:
             try:
                 with open(file_path, encoding=enc, newline="") as f:
-                    reader = csv.reader(f, delimiter=separator)
-                    all_rows = list(reader)
-
-                if len(all_rows) <= skip:
-                    return [], []
-
-                header = all_rows[skip]
-                all_data = all_rows[skip + 1 :]
-
-                # Validate that the 'id' column is present in the header
-                if "id" not in header:
-                    raise ValueError("Source file must contain an 'id' column.")
-
+                    header, all_data = _parse_csv_data(f, separator, skip)
                 log.warning(
                     f"File {file_path} was read successfully with encoding '{enc}' "
                     f"instead of '{encoding}'"
