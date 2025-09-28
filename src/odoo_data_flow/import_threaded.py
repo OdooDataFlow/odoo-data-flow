@@ -701,7 +701,52 @@ def _execute_load_batch(  # noqa: C901
                 if len(load_lines[0]) > 10:
                     log.debug(f"Full first load_line: {load_lines[0]}")
             
+            # Sanitize the id column values to prevent XML ID constraint violations
+            from .lib.internal.tools import to_xmlid
+            sanitized_load_lines = []
+            for i, line in enumerate(load_lines):
+                sanitized_line = list(line)
+                if uid_index < len(sanitized_line):
+                    # Sanitize the source_id (which is in the id column)
+                    original_id = sanitized_line[uid_index]
+                    sanitized_id = to_xmlid(original_id)
+                    sanitized_line[uid_index] = sanitized_id
+                    if i < 3:  # Only log first 3 lines for debugging
+                        log.debug(
+                            f"Sanitized ID for line {i}: '{original_id}' -> '{sanitized_id}'"
+                        )
+                else:
+                    if i < 3:  # Only log first 3 lines for debugging
+                        log.warning(
+                            f"Line {i} does not have enough columns for uid_index {uid_index}. "
+                            f"Line has {len(line)} columns."
+                        )
+                sanitized_load_lines.append(sanitized_line)
+            
+            # Log sample of sanitized data without large base64 content
+            log.debug(f"Load header: {load_header}")
+            log.debug(f"Load lines count: {len(sanitized_load_lines)}")
+            if sanitized_load_lines and len(sanitized_load_lines) > 0:
+                # Show first line but truncate large base64 data
+                preview_line = []
+                for i, field_value in enumerate(sanitized_load_lines[0][:10] if len(sanitized_load_lines[0]) > 10 else sanitized_load_lines[0]):
+                    if isinstance(field_value, str) and len(field_value) > 100:
+                        # Truncate large strings (likely base64 data)
+                        preview_line.append(f"{field_value[:50]}...[{len(field_value)-100} chars truncated]...{field_value[-50:]}")
+                    else:
+                        preview_line.append(field_value)
+                log.debug(f"First load line (first 10 fields, truncated if large): {preview_line}")
+            
             res = model.load(load_header, sanitized_load_lines, context=context)
+            
+            # DEBUG: Log detailed information about what we got back from Odoo
+            log.debug(f"Load response type: {type(res)}")
+            log.debug(f"Load response keys: {list(res.keys()) if hasattr(res, 'keys') else 'Not a dict'}")
+            log.debug(f"Load response full content: {res}")
+            
+            # Extract the created IDs from the response
+            created_ids = res.get("ids", [])
+            log.debug(f"Expected records: {len(sanitized_load_lines)}, Created records: {len(created_ids)}")
             
             # DEBUG: Log what we got back from Odoo
             log.debug(
@@ -719,37 +764,6 @@ def _execute_load_batch(  # noqa: C901
                     else:
                         log.info(f"Load operation returned {msg_type}: {msg_text}")
             
-            # Check for any Odoo server errors in the response
-            if res.get("messages"):
-                error = res["messages"][0].get("message", "Batch load failed.")
-                # Don't raise immediately, log and continue to capture in fail file
-                log.error(f"Odoo server error during load: {error}")
-                
-            created_ids = res.get("ids", [])
-            log.debug(f"Expected records: {len(sanitized_load_lines)}, Created records: {len(created_ids)}")
-            
-            # Always log detailed information about record creation
-            if len(created_ids) != len(sanitized_load_lines):
-                log.warning(
-                    f"Record creation mismatch: Expected {len(sanitized_load_lines)} records, "
-                    f"but only {len(created_ids)} were created"
-                )
-                if len(created_ids) == 0:
-                    log.error(
-                        f"No records were created in this batch of {len(sanitized_load_lines)}. "
-                        f"This may indicate silent failures in the Odoo load operation. "
-                        f"Check Odoo server logs for validation errors."
-                    )
-                    # Log the actual data being sent for debugging
-                    if sanitized_load_lines:
-                        log.debug(f"First few lines being sent:")
-                        for i, line in enumerate(sanitized_load_lines[:3]):
-                            log.debug(f"  Line {i}: {dict(zip(load_header, line))}")
-                else:
-                    log.warning(
-                        f"Partial record creation: {len(created_ids)}/{len(sanitized_load_lines)} "
-                        f"records were created. Some records may have failed validation."
-                    )
             # Check for any Odoo server errors in the response that should halt processing
             if res.get("messages"):
                 for message in res["messages"]:
@@ -763,9 +777,6 @@ def _execute_load_batch(  # noqa: C901
                         log.warning(f"Load operation returned {msg_type}: {msg_text}")
                     else:
                         log.info(f"Load operation returned {msg_type}: {msg_text}")
-
-            created_ids = res.get("ids", [])
-            log.debug(f"Expected records: {len(sanitized_load_lines)}, Created records: {len(created_ids)}")
             
             # Always log detailed information about record creation
             if len(created_ids) != len(sanitized_load_lines):
@@ -841,6 +852,11 @@ def _execute_load_batch(  # noqa: C901
 
         except Exception as e:
             error_str = str(e).lower()
+            
+            # Log the full exception for debugging
+            import traceback
+            log.error(f"Exception during batch load: {type(e).__name__}: {e}")
+            log.error(f"Full traceback: {traceback.format_exc()}")
 
             # SPECIAL CASE: Client-side timeouts for local processing
             # These should be IGNORED entirely to allow long server processing
