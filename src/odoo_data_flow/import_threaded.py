@@ -712,15 +712,6 @@ def _create_batch_individually(
                 )
                 failed_lines.append([*line, error_message])
 
-                # Also display warning to user console
-                # Only if progress object is available
-                if progress is not None:
-                    progress.console.print(
-                        f"[yellow]WARN:[/] Tuple index error for record '{source_id}'. "
-                        f"This often happens when sending text values to numeric fields. "
-                        f"Check your data types."
-                    )
-
                 continue
             else:
                 # Handle other IndexError as malformed row
