@@ -523,25 +523,6 @@ def _process_external_id_fields(
     return converted_vals, external_id_fields
 
 
-def _convert_field_types(
-    model: Any,
-    clean_vals: dict[str, Any],
-) -> dict[str, Any]:
-    """Skip field type conversion - let Odoo handle it internally.
-
-    Args:
-        model: The Odoo model object
-        clean_vals: Dictionary of clean field values
-
-    Returns:
-        Dictionary with original values (no type conversion applied)
-    """
-    # Skip type conversion entirely - let Odoo handle it internally
-    # This prevents the "tuple index out of range" error that can occur
-    # when pre-converted types confuse Odoo's internal processing
-    return clean_vals
-
-
 def _handle_create_error(
     i: int,
     create_error: Exception,
@@ -879,108 +860,6 @@ def _execute_load_batch(  # noqa: C901
         if not load_lines:
             lines_to_process = lines_to_process[chunk_size:]
             continue
-
-        # Skip type conversion for the load method - let Odoo handle it internally
-        # The load method expects raw values and handles type conversion on its own
-        # Converting types here can cause bulk import failures when there are type inconsistencies
-        log.debug(
-            f"Skipping type conversion for batch {batch_number}, using raw values for load method"
-        )
-
-        # PRE-PROCESSING: Clean up field values to prevent type errors
-        # Convert float string values like "1.0" to integers for integer fields
-        # This prevents "tuple index out of range" errors in Odoo server processing
-        try:
-            # Get field metadata - _fields might be a property that needs to be called
-            model_fields = None
-            if hasattr(model, "_fields"):
-                model_fields_attr = model._fields
-                # Check if it's callable first, but be careful about the result
-                if callable(model_fields_attr):
-                    try:
-                        # It's a method, call it to get the fields
-                        model_fields = model_fields_attr()
-                    except Exception:
-                        # If calling fails, treat it as a dictionary anyway
-                        model_fields = (
-                            model_fields_attr
-                            if (
-                                hasattr(model_fields_attr, "__iter__")
-                                and not callable(model_fields_attr)
-                            )
-                            else None
-                        )
-                else:
-                    # It's a property/dictionary, use it directly
-                    model_fields = (
-                        model_fields_attr
-                        if (
-                            hasattr(model_fields_attr, "__iter__")
-                            and not callable(model_fields_attr)
-                        )
-                        else None
-                    )
-
-            if model_fields:
-                cleaned_load_lines = []
-                for row in load_lines:
-                    cleaned_row = []
-                    for i, value in enumerate(row):
-                        if i < len(load_header):
-                            field_name = load_header[i]
-                            clean_field_name = field_name.split("/")[
-                                0
-                            ]  # Handle external ID fields like 'parent_id/id'
-                            # Only attempt cleanup if we have field metadata and this field exists
-                            if clean_field_name in model_fields:
-                                field_info = model_fields[clean_field_name]
-                                field_type = (
-                                    field_info.get("type")
-                                    if hasattr(field_info, "get")
-                                    else None
-                                )
-                                # Only clean up for integer fields
-                                if field_type in ("integer", "positive", "negative"):
-                                    str_value = str(value) if value is not None else ""
-                                    # Convert float string values like "1.0", "2.0" to integers
-                                    if "." in str_value:
-                                        try:
-                                            float_val = float(str_value)
-                                            if float_val.is_integer():
-                                                # It's a whole number like 1.0, 2.0 - convert to int
-                                                cleaned_row.append(int(float_val))
-                                            else:
-                                                # It's a non-integer float like 1.5 - keep original to let Odoo handle
-                                                cleaned_row.append(value)
-                                        except ValueError:
-                                            # Not a valid float - keep original to let Odoo handle
-                                            cleaned_row.append(value)
-                                    elif str_value.lstrip("-").isdigit():
-                                        # It's an integer string like "1", "-5" - convert to int
-                                        try:
-                                            cleaned_row.append(int(str_value))
-                                        except ValueError:
-                                            # Not a valid integer - keep original to let Odoo handle
-                                            cleaned_row.append(value)
-                                    else:
-                                        # Not a numeric string - keep original to let Odoo handle
-                                        cleaned_row.append(value)
-                                else:
-                                    # For all other field types, keep original value
-                                    cleaned_row.append(value)
-                            else:
-                                # If field doesn't exist in model, pass original value
-                                cleaned_row.append(value)
-                        else:
-                            # Safety check: if index doesn't match, keep original value
-                            cleaned_row.append(value)
-                    cleaned_load_lines.append(cleaned_row)
-                load_lines = cleaned_load_lines
-        except Exception as e:
-            log.warning(
-                f"Pre-processing for type conversion failed, proceeding without conversion: {e}"
-            )
-            # Continue with original values if pre-processing fails
 
         # DEBUG: Log what we're sending to Odoo
         log.debug(
