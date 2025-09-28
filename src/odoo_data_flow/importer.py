@@ -285,16 +285,7 @@ def run_import(  # noqa: C901
         # Override automatic type inference to ensure all /id suffixed
         # columns are strings
         # Handle potential encoding issues when reading the CSV
-        try:
-            df = pl.read_csv(filename, separator=separator, truncate_ragged_lines=True)
-        except Exception as e:
-            log.warning(f"Error reading CSV with default settings: {e}")
-            # If there are encoding issues, we may need to handle the file differently
-            # This could be a character encoding issue in the file
-            log.warning("Attempting to read CSV with UTF-8 encoding explicitly...")
-            # Note: polars doesn't expose encoding parameter directly in read_csv
-            # The encoding issue should be handled at the file system level
-            df = pl.read_csv(filename, separator=separator, truncate_ragged_lines=True)
+            df = pl.read_csv(filename, separator=separator, encoding=encoding, truncate_ragged_lines=True)
 
         # Identify columns that end with /id suffix
         id_columns = [col for col in df.columns if col.endswith("/id")]
