@@ -446,10 +446,98 @@ def _prepare_link_dataframe(
     return link_df
 
 
-def _execute_write_tuple_updates(*args: Any, **kwargs: Any) -> bool:
-    """Placeholder for the missing _execute_write_tuple_updates function."""
-    log.warning("_execute_write_tuple_updates is not implemented")
-    return False
+def _execute_write_tuple_updates(
+    config: Union[str, dict[str, Any]],
+    model: str,
+    field: str,
+    link_df: pl.DataFrame,
+    id_map: dict[str, int],
+    related_model_fk: str,
+    original_filename: str,
+) -> bool:
+    """Execute the actual updates for write_tuple strategy."""
+    if isinstance(config, dict):
+        connection = conf_lib.get_connection_from_dict(config)
+    else:
+        connection = conf_lib.get_connection_from_config(config_file=config)
+
+    try:
+        owning_model = connection.get_model(model)
+    except Exception as e:
+        log.error(f"Failed to access model '{model}' in Odoo. Error: {e}")
+        return False
+
+    successful_updates = 0
+    failed_records_to_report = []
+
+    from collections import defaultdict
+
+    # Group commands by parent DB ID to reduce RPC calls
+    updates_by_parent = defaultdict(list)
+    for row in link_df.iter_rows(named=True):
+        parent_external_id = row["external_id"]
+        parent_db_id = id_map.get(parent_external_id)
+        related_db_id = row[f"{related_model_fk}/id"]
+
+        if not parent_db_id:
+            log.debug(
+                f"No database ID found for parent external ID "
+                f"'{parent_external_id}', skipping"
+            )
+            continue
+
+        try:
+            related_db_id_int = int(float(related_db_id))
+            # For many2many fields, we use the (4, ID) command to link an existing
+            # record
+            m2m_command = (4, related_db_id_int, 0)
+            updates_by_parent[parent_db_id].append(m2m_command)
+        except (ValueError, TypeError):
+            log.error(
+                f"Invalid related_db_id format: {related_db_id} for parent "
+                f"{parent_external_id}"
+            )
+            failed_records_to_report.append(
+                {
+                    "model": model,
+                    "field": field,
+                    "parent_external_id": parent_external_id,
+                    "related_external_id": str(related_db_id),
+                    "error_reason": f"Invalid related_db_id format: {related_db_id}",
+                }
+            )
+
+    # Now, execute the grouped updates
+    for parent_db_id, commands in updates_by_parent.items():
+        try:
+            log.debug(
+                f"Writing {len(commands)} m2m commands for parent ID {parent_db_id} "
+                f"with field '{field}': {commands}"
+            )
+            owning_model.write([parent_db_id], {field: commands})
+            successful_updates += 1
+        except Exception as write_error:
+            log.error(
+                f"Failed to update record with DB ID {parent_db_id} "
+                f"with related IDs: {write_error}"
+            )
+            # This error reporting is less granular but avoids another loop
+            failed_records_to_report.append(
+                {
+                    "model": model,
+                    "field": field,
+                    "parent_external_id": f"(DB ID: {parent_db_id})",
+                    "related_external_id": "Multiple",
+                    "error_reason": str(write_error),
+                }
+            )
+
+    if failed_records_to_report:
+        writer.write_relational_failures_to_csv(
+            model, field, original_filename, failed_records_to_report
+        )
+
+    return successful_updates > 0
 
 
 def run_write_tuple_import(

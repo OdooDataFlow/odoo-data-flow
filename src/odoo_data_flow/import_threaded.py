@@ -54,35 +54,27 @@ def _format_odoo_error(error: Any) -> str:
 
 def _parse_csv_data(
     f: TextIO, separator: str, skip: int
-) -> tuple[list[str], Generator[list[Any], None, None]]:
-    """Parses CSV data from a file handle, yielding rows."""
+) -> tuple[list[str], list[list[Any]]]:
+    """Parses CSV data from a file handle, handling headers and skipping rows."""
     reader = csv.reader(f, delimiter=separator)
+    all_rows = list(reader)
 
-    # Skip initial rows
-    for _ in range(skip):
-        try:
-            next(reader)
-        except StopIteration:
-            # Return empty header and empty generator
-            return [], (row for row in [])
+    if len(all_rows) <= skip:
+        return [], []
 
-    # Read header
-    try:
-        header = next(reader)
-    except StopIteration:
-        # Return empty header and empty generator
-        return [], (row for row in [])
+    header = all_rows[skip]
+    all_data = all_rows[skip + 1 :]
 
     # Validate that the 'id' column is present in the header
     if "id" not in header:
         raise ValueError("Source file must contain an 'id' column.")
 
-    return header, reader
+    return header, all_data
 
 
 def _read_data_file(
     file_path: str, separator: str, encoding: str, skip: int
-) -> tuple[list[str], Generator[list[Any], None, None]]:
+) -> tuple[list[str], list[list[Any]]]:
     """Reads a CSV file and returns its header and data.
 
     This function handles opening and parsing a CSV file, skipping any
@@ -1567,16 +1559,11 @@ def import_data(
         deferred_fields or [],
         ignore or [],
     )
-    header, data_iterator = _read_data_file(file_csv, separator, encoding, skip)
+    header, all_data = _read_data_file(file_csv, separator, encoding, skip)
+    record_count = len(all_data)
 
     if not header:
         return False, {}
-
-    # The CSV data is read into a list to allow for sorting and getting the
-    # total record count. A more memory-efficient streaming approach would
-    # require a larger refactoring of the downstream processing logic.
-    all_data = list(data_iterator)
-    record_count = len(all_data)
 
     try:
         if isinstance(config, dict):
