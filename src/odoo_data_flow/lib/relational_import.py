@@ -500,11 +500,11 @@ def _execute_write_tuple_updates(
                 "to link an existing record"
             )
             # Ensure related_db_id is an integer
-            if isinstance(related_db_id, str) and related_db_id.isdigit():
-                related_db_id_int = int(related_db_id)
-            elif isinstance(related_db_id, (int, float)):
-                related_db_id_int = int(related_db_id)
-            else:
+            try:
+                # Attempt to convert to float first to handle "123.0", then to int
+                related_db_id_int = int(float(related_db_id))
+            except (ValueError, TypeError):
+
                 raise ValueError(f"Invalid related_db_id format: {related_db_id}")
 
             m2m_command = [(4, related_db_id_int, 0)]  # Convert to proper tuple format
