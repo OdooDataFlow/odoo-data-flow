@@ -103,7 +103,7 @@ class TestReadDataFile:
 
         # This should raise ValueError, catch it and check
         with pytest.raises(ValueError, match="Source file must contain an 'id' column"):
-            header, data = _read_data_file(filepath, ";", "utf-8", 0)
+            header, _data = _read_data_file(filepath, ";", "utf-8", 0)
         import os
 
         os.unlink(filepath)
@@ -256,7 +256,7 @@ class TestConvertExternalIdField:
             model=mock_model, field_name="parent_id/id", field_value="module.ref1"
         )
         # The function returns a tuple (base_field_name, converted_value)
-        base_field_name, converted_value = result
+        base_field_name, _converted_value = result
         assert base_field_name == "parent_id"
         # Since we're mocking, the converted value will depend on the mock behavior
 
@@ -270,7 +270,7 @@ class TestConvertExternalIdField:
             field_value="module.name-with.special/chars",
         )
         # The function returns a tuple (base_field_name, converted_value)
-        base_field_name, converted_value = result
+        base_field_name, _converted_value = result
         assert base_field_name == "parent_id"
         # Since we're mocking, the converted value will depend on the mock behavior
 
@@ -291,7 +291,7 @@ class TestHandleCreateError:
 
         # This function has complex signature, test by calling it
         with patch("odoo_data_flow.import_threaded.log"):
-            error_message, failed_line, new_error_summary = _handle_create_error(
+            error_message, failed_line, _new_error_summary = _handle_create_error(
                 i, create_error, line, error_summary
             )
             assert isinstance(error_message, str)
