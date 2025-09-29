@@ -1184,7 +1184,6 @@ def _execute_load_batch(  # noqa: C901
             )
 
             if is_scalable_error and chunk_size > 1:
-                original_chunk_size = chunk_size
                 chunk_size = max(1, chunk_size // 2)
                 progress.console.print(
                     f"[yellow]WARN:[/] Batch {batch_number} hit scalable error. "
@@ -1237,7 +1236,7 @@ def _execute_load_batch(  # noqa: C901
                             batch_number,
                             error_message=clean_error,
                         )
-                        lines_to_process = lines_to_process[original_chunk_size:]
+                        lines_to_process = lines_to_process[chunk_size:]
                         serialization_retry_count = 0  # Reset counter for next batch
                         continue
                 continue
