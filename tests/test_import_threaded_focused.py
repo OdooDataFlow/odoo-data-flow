@@ -1,6 +1,7 @@
 """Focused tests for import_threaded to improve coverage."""
 
 import io
+import os
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -57,7 +58,7 @@ class TestParseCSVData:
         # Create a string buffer to simulate a file
         csv_content = "id;name\n1;Test\n2;Another"
         f = io.StringIO(csv_content)
-        header, data = _parse_csv_data(f, ";", 0)
+        _header, data = _parse_csv_data(f, ";", 0)
         assert len(data) == 2
         assert data[0][0] == "1"  # id
         assert data[0][1] == "Test"  # name
@@ -80,11 +81,10 @@ class TestReadDataFile:
             f.flush()
             filepath = f.name
 
-        header, data = _read_data_file(filepath, ";", "utf-8", 0)
+        _header, data = _read_data_file(filepath, ";", "utf-8", 0)
         assert len(data) == 2
         assert data[0][0] == "1"  # id
         assert data[0][1] == "Test"  # name
-        import os
 
         os.unlink(filepath)
 
@@ -103,8 +103,7 @@ class TestReadDataFile:
 
         # This should raise ValueError, catch it and check
         with pytest.raises(ValueError, match="Source file must contain an 'id' column"):
-            header, _data = _read_data_file(filepath, ";", "utf-8", 0)
-        import os
+            _header, _data = _read_data_file(filepath, ";", "utf-8", 0)
 
         os.unlink(filepath)
 
