@@ -178,6 +178,25 @@ class TestSelfReferencingCheck:
         assert "strategy" not in import_plan
         mock_sort.assert_not_called()
 
+    @patch("odoo_data_flow.lib.preflight.sort.sort_for_self_referencing")
+    def test_check_handles_sort_function_error(self, mock_sort: MagicMock) -> None:
+        """Verify the check handles errors from sort_for_self_referencing gracefully."""
+        # Mock sort function to return False indicating an error
+        mock_sort.return_value = False
+        import_plan: dict[str, Any] = {}
+
+        result = preflight.self_referencing_check(
+            preflight_mode=PreflightMode.NORMAL,
+            filename="file.csv",
+            import_plan=import_plan,
+        )
+
+        # Should return False when sort function encounters an error
+        assert result is False
+        # Should not modify import plan when there's an error
+        assert "strategy" not in import_plan
+        mock_sort.assert_called_once()
+
 
 class TestInternalHelpers:
     """Tests for internal helper functions in the preflight module."""
@@ -310,6 +329,28 @@ class TestLanguageCheck:
         assert result is True
         mock_confirm.assert_called_once()
         mock_installer.assert_called_once_with("", ["fr_FR"])
+
+    @patch("odoo_data_flow.lib.preflight._get_installed_languages", return_value=None)
+    def test_language_check_handles_get_installed_languages_failure(
+        self, mock_get_langs: MagicMock, mock_polars_read_csv: MagicMock
+    ) -> None:
+        """Tests that language_check handles when _get_installed_languages fails."""
+        # Setup CSV data with languages that would require checking
+        (
+            mock_polars_read_csv.return_value.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value
+        ) = ["fr_FR"]
+
+        result = preflight.language_check(
+            preflight_mode=PreflightMode.NORMAL,
+            model="res.partner",
+            filename="file.csv",
+            config="",
+            headless=False,
+        )
+        
+        # Should return False when _get_installed_languages fails
+        assert result is False
+        mock_get_langs.assert_called_once_with("")
 
     @patch("odoo_data_flow.lib.preflight.Confirm.ask", return_value=True)
     @patch(
@@ -944,7 +985,7 @@ def test_type_correction_check_odoo_error_handling(tmp_path: Path) -> None:
 def test_type_correction_check_empty_file(tmp_path: Path) -> None:
     """Test type correction check handles empty file gracefully."""
     csv_file = tmp_path / "empty.csv"
-    with open(csv_file, "w", newline="", encoding="utf-8") as f:
+    with open(csv_file, "w", newline="", encoding="utf-8"):
         pass  # Create empty file
 
     config = {"test": "config"}
@@ -1114,7 +1155,8 @@ def test_type_correction_check_main_exception_handler(tmp_path: Path) -> None:
             "price": {"type": "integer"},
         }
 
-        # Mock polars.read_csv to raise an exception to trigger the main exception handler
+        # Mock polars.read_csv to raise an exception to trigger the main
+        # exception handler
         with patch("odoo_data_flow.lib.preflight.pl.read_csv") as mock_read_csv:
             mock_read_csv.side_effect = Exception("Simulated Polars read error")
 
@@ -1181,7 +1223,8 @@ def test_type_correction_check_casting_exception_handler(tmp_path: Path) -> None
 
             # Should still return True even when casting raises exception
             assert result is True
-            # Should still proceed and may or may not create corrected file depending on flow
+            # Should still proceed and may or may not create corrected file depending
+            # on flow
     # Mock _get_odoo_fields to return integer fields to trigger correction logic
     with patch("odoo_data_flow.lib.preflight._get_odoo_fields") as mock_get_fields:
         mock_get_fields.return_value = {
@@ -1211,4 +1254,5 @@ def test_type_correction_check_casting_exception_handler(tmp_path: Path) -> None
 
             # Should still return True even when casting raises exception
             assert result is True
-            # Should still proceed and may or may not create corrected file depending on flow
+            # Should still proceed and may or may not create corrected file depending
+            # on flow
