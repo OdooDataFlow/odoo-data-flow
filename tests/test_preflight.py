@@ -359,7 +359,7 @@ class TestLanguageCheck:
             config="",
             headless=False,
         )
-        
+
         # Should return False when _get_installed_languages fails
         assert result is False
         mock_get_langs.assert_called_once_with("")
@@ -492,11 +492,14 @@ class TestLanguageCheck:
         mock_install.assert_not_called()
         mock_confirm.assert_not_called()
 
-
-
     @patch("odoo_data_flow.lib.preflight.Confirm.ask", return_value=True)
-    def test_language_check_dict_config_installation_not_supported(
+    @patch(
+        "odoo_data_flow.lib.preflight._get_installed_languages",
+        return_value={"en_US"},
+    )
+    def test_language_check_dict_config_installation_not_supported_v2(
         self,
+        mock_get_langs: MagicMock,
         mock_confirm: MagicMock,
         mock_polars_read_csv: MagicMock,
         mock_conf_lib: MagicMock,
@@ -529,6 +532,7 @@ class TestLanguageCheck:
             "Language installation from a dict config is not supported"
             in mock_show_error_panel.call_args[0][0]
         )
+
 
 class TestDeferralAndStrategyCheck:
     """Tests for the deferral_and_strategy_check pre-flight checker."""

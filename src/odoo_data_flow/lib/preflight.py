@@ -16,6 +16,23 @@ from rich.prompt import Confirm
 
 from odoo_data_flow.enums import PreflightMode
 
+__all__ = [
+    "PREFLIGHT_CHECKS",
+    "PreflightMode",
+    "_get_csv_header",
+    "_get_installed_languages",
+    "_get_odoo_fields",
+    "_get_required_languages",
+    "_handle_missing_languages",
+    "_validate_header",
+    "connection_check",
+    "deferral_and_strategy_check",
+    "language_check",
+    "register_check",
+    "self_referencing_check",
+    "type_correction_check",
+]
+
 from ..logging_config import log
 from . import cache, conf_lib, sort
 from .actions import language_installer
@@ -221,6 +238,10 @@ def _handle_missing_languages(
         log.info("--headless mode detected. Auto-confirming language installation.")
         if isinstance(config, dict):
             log.error("Language installation from a dict config is not supported.")
+            _show_error_panel(
+                "Language installation from a dict config is not supported",
+                "Please use a configuration file instead.",
+            )
             return False
         return language_installer.run_language_installation(
             config, list(missing_languages)
@@ -232,6 +253,10 @@ def _handle_missing_languages(
 
     if isinstance(config, dict):
         log.error("Language installation from a dict config is not supported.")
+        _show_error_panel(
+            "Language installation from a dict config is not supported",
+            "Please use a configuration file instead.",
+        )
         return False
     return language_installer.run_language_installation(config, list(missing_languages))
 
