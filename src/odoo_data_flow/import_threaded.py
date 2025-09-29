@@ -1152,28 +1152,21 @@ def _execute_load_batch(  # noqa: C901
             ):
                 # Use progress console for user-facing messages to avoid flooding logs
                 # Only if progress object is available
-                if progress is not None:
-                    progress.console.print(
-                        f"[yellow]WARN:[/] Batch {batch_number} failed `load` "
-                        f"due to type conversion error. "
-                        f"Falling back to `create` for {len(current_chunk)} records "
-                        f"to prevent further server errors."
-                    )
-                # Fall back to individual record processing when bulk processing fails
-                # due to type errors
-                fallback_result = _create_batch_individually(
+                _handle_fallback_create(
                     model,
                     current_chunk,
                     batch_header,
                     uid_index,
                     context,
                     ignore_list,
-                    progress,  # Pass progress for user-facing messages
+                    progress,
+                    aggregated_id_map,
+                    aggregated_failed_lines,
+                    batch_number,
+                    error_message="type conversion error",
                 )
-                aggregated_id_map.update(fallback_result.get("id_map", {}))
-                aggregated_failed_lines.extend(fallback_result.get("failed_lines", []))
                 lines_to_process = lines_to_process[chunk_size:]
-                # Do not continue here, let the loop re-evaluate with the new chunk_size
+                continue
 
             # For all other exceptions, use the original scalable error detection
             is_scalable_error = (

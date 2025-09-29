@@ -467,7 +467,7 @@ def type_correction_check(  # noqa: C901
                     if not non_null_values.is_empty():
                         # Use Polars expressions to check for float-like strings
                         str_series = non_null_values.cast(pl.Utf8, strict=False)
-                        dot_mask = str_series.str.contains(r"\.", literal=True)
+                        dot_mask = str_series.str.contains(r"\.")
                         if dot_mask.any():
                             dot_values = str_series.filter(dot_mask)
                             # Attempt to cast to float, fill errors with null

@@ -699,3 +699,47 @@ class TestRecursiveBatching:
             )
         )
         assert len(batches) == 3
+
+
+def test_execute_load_batch_successfully_aggregates_all_records() -> None:
+    """Test proper aggregation of successful records even when no failures occur.
+
+    This is a regression test for the bug where successful records were only aggregated
+    when there were also failures in the batch,
+    causing empty id_map when all records succeed.
+    """
+    mock_model = MagicMock()
+    # Mock successful load responses - all records succeed on first try
+    mock_model.load.side_effect = [
+        {"ids": [1, 2, 3, 4]},  # All 4 records created successfully
+    ]
+    mock_progress = MagicMock()
+    thread_state = {
+        "model": mock_model,
+        "progress": mock_progress,
+        "unique_id_field_index": 0,
+        "ignore_list": [],
+    }
+    batch_header = ["id", "name"]
+    batch_lines = [
+        ["rec1", "A"],
+        ["rec2", "B"],
+        ["rec3", "C"],
+        ["rec4", "D"],
+    ]
+
+    # This should work correctly now with the fix
+    from odoo_data_flow.import_threaded import _execute_load_batch
+
+    result = _execute_load_batch(thread_state, batch_lines, batch_header, 1)
+
+    # Should succeed
+    assert result["success"] is True
+    # Should properly aggregate all successful records
+    assert len(result["id_map"]) == 4
+    assert result["id_map"]["rec1"] == 1
+    assert result["id_map"]["rec2"] == 2
+    assert result["id_map"]["rec3"] == 3
+    assert result["id_map"]["rec4"] == 4
+    # Should have no failed lines
+    assert len(result["failed_lines"]) == 0
