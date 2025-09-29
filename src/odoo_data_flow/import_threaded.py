@@ -960,9 +960,13 @@ def _execute_load_batch(  # noqa: C901
                                 field_info = model_fields[clean_field_name]
                                 field_type = field_info.get("type", "unknown")
 
-                            converted_value = _safe_convert_field_value(
-                                field_name, value, field_type
-                            )
+                            # Sanitize unique ID field values to prevent XML ID constraint violations
+                            if i == uid_index and value is not None:
+                                converted_value = to_xmlid(str(value))
+                            else:
+                                converted_value = _safe_convert_field_value(
+                                    field_name, value, field_type
+                                )
                             processed_row.append(converted_value)
                         else:
                             processed_row.append(value)
@@ -970,6 +974,8 @@ def _execute_load_batch(  # noqa: C901
                 load_lines = processed_load_lines
             else:
                 log.debug(
+                    f"First load line (first 10 fields, truncated if large): "
+                    f"{load_lines[0][:10] if load_lines and load_lines[0] else []}"
                     "Model has no _fields attribute, using raw values for load method"
                 )
         try:
