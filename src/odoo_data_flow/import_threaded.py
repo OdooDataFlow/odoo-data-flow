@@ -1071,13 +1071,6 @@ def _execute_load_batch(  # noqa: C901
                         failed_line = [*list(line), f"Load failed: {error_msg}"]
                         aggregated_failed_lines.append(failed_line)
 
-                        # Create a new dictionary containing only the items with
-                        # integer values
-                        filtered_id_map = {
-                            key: value
-                            for key, value in id_map.items()
-                            if isinstance(value, int)
-                        }
             # Always update the aggregated map with successful records
             # Create a new dictionary containing only the items with integer values
             filtered_id_map = {
