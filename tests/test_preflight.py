@@ -300,35 +300,47 @@ class TestLanguageCheck:
         )
         assert result is True
 
-    @patch("odoo_data_flow.lib.preflight.language_installer.run_language_installation")
     @patch("odoo_data_flow.lib.preflight.Confirm.ask", return_value=True)
     @patch(
         "odoo_data_flow.lib.preflight._get_installed_languages",
         return_value={"en_US"},
     )
-    def test_missing_languages_user_confirms_install_success(
+    def test_language_check_dict_config_installation_not_supported(
         self,
         mock_get_langs: MagicMock,
         mock_confirm: MagicMock,
-        mock_installer: MagicMock,
         mock_polars_read_csv: MagicMock,
+        mock_conf_lib: MagicMock,
+        mock_show_error_panel: MagicMock,
     ) -> None:
-        """Tests missing languages where user confirms and install succeeds."""
+        """Tests that language installation fails gracefully with dict config."""
+        # Setup data with missing languages
+        mock_df = MagicMock()
         (
-            mock_polars_read_csv.return_value.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value
-        ) = ["fr_FR"]
-        mock_installer.return_value = True
+            mock_df.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value
+        ) = [
+            "fr_FR",
+        ]
+        mock_polars_read_csv.return_value = mock_df
 
+        # Use dict config (not supported for installation)
+        config = {"hostname": "localhost", "database": "test_db"}
         result = preflight.language_check(
             preflight_mode=PreflightMode.NORMAL,
             model="res.partner",
             filename="file.csv",
-            config="",
+            config=config,
             headless=False,
         )
-        assert result is True
+
+        # Should fail when installation is attempted with dict config
+        assert result is False
         mock_confirm.assert_called_once()
-        mock_installer.assert_called_once_with("", ["fr_FR"])
+        mock_show_error_panel.assert_called_once()
+        assert (
+            "Language installation from a dict config is not supported"
+            in mock_show_error_panel.call_args[0][0]
+        )
 
     @patch("odoo_data_flow.lib.preflight._get_installed_languages", return_value=None)
     def test_language_check_handles_get_installed_languages_failure(
@@ -480,6 +492,43 @@ class TestLanguageCheck:
         mock_install.assert_not_called()
         mock_confirm.assert_not_called()
 
+
+
+    @patch("odoo_data_flow.lib.preflight.Confirm.ask", return_value=True)
+    def test_language_check_dict_config_installation_not_supported(
+        self,
+        mock_confirm: MagicMock,
+        mock_polars_read_csv: MagicMock,
+        mock_conf_lib: MagicMock,
+        mock_show_error_panel: MagicMock,
+    ) -> None:
+        """Tests that language installation fails gracefully with dict config."""
+        # Setup data with missing languages
+        (
+            mock_polars_read_csv.return_value.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value
+        ) = ["fr_FR"]
+        mock_conf_lib.return_value.get_model.return_value.search_read.return_value = [
+            {"code": "en_US"}
+        ]
+
+        # Use dict config (not supported for installation)
+        config = {"hostname": "localhost", "database": "test_db"}
+        result = preflight.language_check(
+            preflight_mode=PreflightMode.NORMAL,
+            model="res.partner",
+            filename="file.csv",
+            config=config,
+            headless=False,
+        )
+
+        # Should fail when installation is attempted with dict config
+        assert result is False
+        mock_confirm.assert_called_once()
+        mock_show_error_panel.assert_called_once()
+        assert (
+            "Language installation from a dict config is not supported"
+            in mock_show_error_panel.call_args[0][0]
+        )
 
 class TestDeferralAndStrategyCheck:
     """Tests for the deferral_and_strategy_check pre-flight checker."""
