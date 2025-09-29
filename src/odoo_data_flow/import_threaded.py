@@ -505,8 +505,8 @@ def _safe_convert_field_value(  # noqa: C901
                 else:
                     # Non-integer float - leave as-is to let Odoo handle it
                     return str_value
-            elif str_value.lstrip("-").isdigit():
-                # Integer string like "1", "-5"
+            elif str_value.lstrip("+-").isdigit():
+                # Integer string like "1", "-5", or "+5"
                 return int(str_value)
             else:
                 # Non-numeric string - leave as-is
@@ -960,7 +960,8 @@ def _execute_load_batch(  # noqa: C901
                                 field_info = model_fields[clean_field_name]
                                 field_type = field_info.get("type", "unknown")
 
-                            # Sanitize unique ID field values to prevent XML ID constraint violations
+                            # Sanitize unique ID field values to prevent
+                            # XML ID constraint violations
                             if i == uid_index and value is not None:
                                 converted_value = to_xmlid(str(value))
                             else:
