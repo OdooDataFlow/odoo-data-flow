@@ -1,6 +1,5 @@
 """Focused tests for import_threaded to improve coverage."""
 
-import csv
 import io
 import tempfile
 from pathlib import Path
@@ -12,7 +11,6 @@ import pytest
 from odoo_data_flow.import_threaded import (
     _convert_external_id_field,
     _create_batch_individually,
-    _execute_load_batch,
     _filter_ignored_columns,
     _format_odoo_error,
     _get_model_fields,
@@ -22,10 +20,7 @@ from odoo_data_flow.import_threaded import (
     _read_data_file,
     _recursive_create_batches,
     _setup_fail_file,
-    RPCThreadImport,
-    import_data,
 )
-from odoo_data_flow.enums import PreflightMode
 
 
 class TestFormatOdooError:
@@ -90,6 +85,7 @@ class TestReadDataFile:
         assert data[0][0] == "1"  # id
         assert data[0][1] == "Test"  # name
         import os
+
         os.unlink(filepath)
 
     def test_read_data_file_not_found(self) -> None:
@@ -109,6 +105,7 @@ class TestReadDataFile:
         with pytest.raises(ValueError, match="Source file must contain an 'id' column"):
             header, data = _read_data_file(filepath, ";", "utf-8", 0)
         import os
+
         os.unlink(filepath)
 
 
@@ -120,7 +117,7 @@ class TestFilterIgnoredColumns:
         header = ["id", "name", "to_ignore", "value"]
         data = [
             ["1", "Test", "ignore_value", "val1"],
-            ["2", "Test2", "ignore_value2", "val2"]
+            ["2", "Test2", "ignore_value2", "val2"],
         ]
         ignore_list = ["to_ignore"]
         new_header, new_data = _filter_ignored_columns(ignore_list, header, data)
@@ -133,10 +130,7 @@ class TestFilterIgnoredColumns:
     def test_filter_ignored_columns_none(self) -> None:
         """Test filtering with empty ignored list."""
         header = ["id", "name", "value"]
-        data = [
-            ["1", "Test", "val1"],
-            ["2", "Test2", "val2"]
-        ]
+        data = [["1", "Test", "val1"], ["2", "Test2", "val2"]]
         ignore_list: list[str] = []
         new_header, new_data = _filter_ignored_columns(ignore_list, header, data)
         assert new_header == header
@@ -150,14 +144,18 @@ class TestSetupFailFile:
         """Test setting up fail file."""
         with tempfile.TemporaryDirectory() as tmpdir:
             fail_filename = Path(tmpdir) / "fail.csv"
-            writer, handle = _setup_fail_file(str(fail_filename), ["id", "name"], ";", "utf-8")
+            writer, handle = _setup_fail_file(
+                str(fail_filename), ["id", "name"], ";", "utf-8"
+            )
             assert writer is not None
             assert handle is not None
             handle.close()
 
     def test_setup_fail_file_os_error(self) -> None:
         """Test setting up fail file with OS error."""
-        writer, handle = _setup_fail_file("/root/nonexistent/fail.csv", ["id", "name"], ";", "utf-8")
+        writer, handle = _setup_fail_file(
+            "/root/nonexistent/fail.csv", ["id", "name"], ";", "utf-8"
+        )
         assert writer is None
         assert handle is None
 
@@ -178,7 +176,7 @@ class TestPreparePass2Data:
         result = _prepare_pass_2_data(
             all_data, header, unique_id_field_index, id_map, deferred_fields
         )
-        
+
         # Should return list of (db_id, update_vals) tuples
         assert isinstance(result, list)
         if result:
@@ -200,7 +198,9 @@ class TestRecursiveCreateBatches:
         group_cols: list[str] = []
         batch_size = 2
         o2m = False
-        result = list(_recursive_create_batches(current_data, group_cols, header, batch_size, o2m))
+        result = list(
+            _recursive_create_batches(current_data, group_cols, header, batch_size, o2m)
+        )
         assert len(result) >= 1
 
     def test_recursive_create_batches_multiple_columns(self) -> None:
@@ -214,7 +214,9 @@ class TestRecursiveCreateBatches:
         group_cols = ["tags"]
         batch_size = 1  # Small batch size to force multiple chunks
         o2m = False
-        result = list(_recursive_create_batches(current_data, group_cols, header, batch_size, o2m))
+        result = list(
+            _recursive_create_batches(current_data, group_cols, header, batch_size, o2m)
+        )
         assert len(result) >= 1
 
 
@@ -226,7 +228,7 @@ class TestGetModelFields:
         """Test getting model fields successfully."""
         mock_model = Mock()
         mock_model._fields = {"id": {"type": "integer"}}
-        
+
         result = _get_model_fields(mock_model)
         assert result is not None
         assert "id" in result
@@ -235,8 +237,10 @@ class TestGetModelFields:
     def test_get_model_fields_exception(self, mock_conf_lib: Mock) -> None:
         """Test getting model fields with exception."""
         mock_model = Mock()
-        del mock_model._fields  # Remove the _fields attribute to trigger the exception path
-        
+        del (
+            mock_model._fields
+        )  # Remove the _fields attribute to trigger the exception path
+
         result = _get_model_fields(mock_model)
         assert result is None
 
@@ -249,9 +253,7 @@ class TestConvertExternalIdField:
         # Create a mock model
         mock_model = Mock()
         result = _convert_external_id_field(
-            model=mock_model,
-            field_name="parent_id/id",
-            field_value="module.ref1"
+            model=mock_model, field_name="parent_id/id", field_value="module.ref1"
         )
         # The function returns a tuple (base_field_name, converted_value)
         base_field_name, converted_value = result
@@ -265,7 +267,7 @@ class TestConvertExternalIdField:
         result = _convert_external_id_field(
             model=mock_model,
             field_name="parent_id/id",
-            field_value="module.name-with.special/chars"
+            field_value="module.name-with.special/chars",
         )
         # The function returns a tuple (base_field_name, converted_value)
         base_field_name, converted_value = result
@@ -279,19 +281,16 @@ class TestHandleCreateError:
     def test_handle_create_error_connection(self) -> None:
         """Test handling create error with connection error."""
         # Mock a connection object and batch
-        mock_connection = Mock()
-        batch = [["1", "test"]]
-        context: dict[str, Any] = {}
-        fail_file = "test.csv.fail"
-        
+        Mock()
+
         # Test the function with correct signature
         i = 0
         create_error = Exception("Connection error")
         line = ["1", "test"]
         error_summary = "Initial error"
-        
+
         # This function has complex signature, test by calling it
-        with patch("odoo_data_flow.import_threaded.log") as mock_log:
+        with patch("odoo_data_flow.import_threaded.log"):
             error_message, failed_line, new_error_summary = _handle_create_error(
                 i, create_error, line, error_summary
             )
@@ -311,13 +310,19 @@ class TestCreateBatchIndividually:
         uid_index = 0
         context: dict[str, Any] = {}
         ignore_list: list[str] = []
-        
+
         # Mock the load method to return success
         mock_model.load.return_value = [[1], []]  # Success IDs, errors
-        
-        with patch("odoo_data_flow.import_threaded._handle_create_error") as mock_handle_error:
-            mock_handle_error.return_value = {"id_map": {}, "failed_lines": [], "connection_failure": False}
-            
+
+        with patch(
+            "odoo_data_flow.import_threaded._handle_create_error"
+        ) as mock_handle_error:
+            mock_handle_error.return_value = {
+                "id_map": {},
+                "failed_lines": [],
+                "connection_failure": False,
+            }
+
             result = _create_batch_individually(
                 mock_model, batch_lines, batch_header, uid_index, context, ignore_list
             )
