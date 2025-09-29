@@ -1,4 +1,4 @@
-shibuya==2025.8.16
+shibuya==2025.9.25
 sphinx==7.4.7
 sphinx-click==6.0.0
 myst_parser==4.0.1
