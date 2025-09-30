@@ -980,14 +980,12 @@ def _execute_load_batch(  # noqa: C901
                     "Model has no _fields attribute, using raw values for load method"
                 )
                 # Even when model has no _fields, we still need to sanitize the unique ID field
-                # to prevent XML ID constraint violations
-                load_lines = [
-                    [
-                        to_xmlid(str(value)) if i == uid_index and value is not None else value
-                        for i, value in enumerate(row)
-                    ]
-                    for row in load_lines
-                ]
+                # to prevent XML ID constraint violations.
+                for row in load_lines:
+                    # This is more efficient than a nested list comprehension as it modifies
+                    # the list in-place and only targets the required cell.
+                    if uid_index < len(row) and row[uid_index] is not None:
+                        row[uid_index] = to_xmlid(str(row[uid_index]))
         try:
             log.debug(f"Attempting `load` for chunk of batch {batch_number}...")
 
