@@ -1006,3 +1006,157 @@ class TestExportData:
 
         # Sort by name to ensure consistent order for comparison
         assert_frame_equal(result_df.sort("name"), expected_df.sort("name"))
+
+    def test_execute_batch_single_record_failure(self) -> None:
+        """Test _execute_batch_with_retry handling when single record fails permanently."""
+        from odoo_data_flow.export_threaded import RPCThreadExport
+        import httpx
+        
+        mock_model = MagicMock()
+        mock_connection = MagicMock()
+        fields_info = {"id": {"type": "integer"}}
+        thread = RPCThreadExport(
+            1,
+            mock_connection,
+            mock_model,
+            ["id"],
+            fields_info,
+            technical_names=True,
+        )
+        
+        # Test the else branch: when there"s only 1 ID and it fails permanently
+        # This should set has_failures = True and return empty lists
+        with patch.object(thread, "_execute_batch") as mock_execute_batch:
+            # Configure to raise an exception that will cause permanent failure
+            error = httpx.ReadTimeout("Network timeout", request=None)
+            mock_execute_batch.side_effect = error
+            
+            result_data, processed_ids = thread._execute_batch_with_retry(
+                [42], "single_batch", error
+            )
+            
+            # Should return empty lists
+            assert result_data == []
+            assert processed_ids == []
+            # has_failures should be set to True
+            assert thread.has_failures is True
+
+    def test_resume_existing_session_missing_all_ids(self, tmp_path: Path) -> None:
+        """Test _resume_existing_session when all_ids.json is missing."""
+        from odoo_data_flow.export_threaded import _resume_existing_session
+        
+        # Create session directory without all_ids.json
+        session_dir = tmp_path / "session_dir"
+        session_dir.mkdir()
+        
+        # Don"t create all_ids.json file
+        
+        session_id = "test_session"
+        
+        ids_to_export, total_count = _resume_existing_session(session_dir, session_id)
+        
+        # Should return empty list since all_ids.json is missing
+        assert ids_to_export == []
+        assert total_count == 0
+
+    def test_resume_existing_session_with_completed_ids(self, tmp_path: Path) -> None:
+        """Test _resume_existing_session with existing completed IDs."""
+        from odoo_data_flow.export_threaded import _resume_existing_session
+        import json
+        
+        # Create session directory with both files
+        session_dir = tmp_path / "session_dir"
+        session_dir.mkdir()
+        
+        # Create all_ids.json with all record IDs
+        all_ids = [1, 2, 3, 4, 5]
+        all_ids_file = session_dir / "all_ids.json"
+        with open(all_ids_file, "w") as f:
+            json.dump(all_ids, f)
+        
+        # Create completed_ids.txt with some completed records
+        completed_ids_file = session_dir / "completed_ids.txt"
+        with open(completed_ids_file, "w") as f:
+            f.write("1\n")
+            f.write("3\n")
+            f.write("5\n")
+        
+        session_id = "test_session"
+        
+        ids_to_export, total_count = _resume_existing_session(session_dir, session_id)
+        
+        # Should return only uncompleted IDs (2, 4)
+        assert sorted(ids_to_export) == [2, 4]
+        assert total_count == 5  # Total was 5
+
+    def test_execute_batch_successful_split_retry(self) -> None:
+        """Test _execute_batch_with_retry with successful batch split and retry."""
+        from odoo_data_flow.export_threaded import RPCThreadExport
+        import httpx
+        
+        mock_model = MagicMock()
+        mock_connection = MagicMock()
+        fields_info = {"id": {"type": "integer"}}
+        thread = RPCThreadExport(
+            1,
+            mock_connection,
+            mock_model,
+            ["id"],
+            fields_info,
+            technical_names=True,
+        )
+        
+        # Mock _execute_batch to simulate successful batch split processing
+        # When called with [1, 2, 3, 4], it returns two successful halves
+        with patch.object(thread, "_execute_batch") as mock_execute_batch:
+            # First call for first half [1, 2] returns success
+            # Second call for second half [3, 4] returns success
+            mock_execute_batch.side_effect = [
+                ([{"id": 1}, {"id": 2}], [1, 2]),  # First half results
+                ([{"id": 3}, {"id": 4}], [3, 4]),  # Second half results
+            ]
+            
+            # Call _execute_batch_with_retry with a batch that will be split
+            result_data, processed_ids = thread._execute_batch_with_retry(
+                [1, 2, 3, 4], "test_batch", httpx.ReadTimeout("Network timeout", request=None)
+            )
+            
+            # Should have been called twice (once for each half)
+            assert mock_execute_batch.call_count == 2
+            
+            # Check the calls
+            calls = mock_execute_batch.call_args_list
+            first_call_args = calls[0][0]  # First call args
+            second_call_args = calls[1][0]  # Second call args
+            
+            # Should split [1,2,3,4] into [1,2] and [3,4]
+            assert first_call_args[0] == [1, 2]      # First half
+            assert first_call_args[1] == "test_batch-a"  # First half batch number
+            assert second_call_args[0] == [3, 4]    # Second half
+            assert second_call_args[1] == "test_batch-b"  # Second half batch number
+            
+            # Results should be combined
+            expected_data = [{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}]
+            expected_ids = [1, 2, 3, 4]
+            
+            assert result_data == expected_data
+            assert processed_ids == expected_ids
+
+    def test_enrich_main_df_with_xml_ids_missing_id_column(self) -> None:
+        """Test _enrich_main_df_with_xml_ids when ".id" column is missing."""
+        from odoo_data_flow.export_threaded import _enrich_main_df_with_xml_ids
+        import polars as pl
+        
+        # Create DataFrame without ".id" column
+        df_without_id = pl.DataFrame({
+            "name": ["Test", "Another"],
+            "value": [100, 200],
+        })
+        
+        mock_connection = MagicMock()
+        model_name = "res.partner"
+        
+        result_df = _enrich_main_df_with_xml_ids(df_without_id, mock_connection, model_name)
+        
+        # DataFrame should remain unchanged if ".id" column is missing
+        assert result_df.equals(df_without_id)
