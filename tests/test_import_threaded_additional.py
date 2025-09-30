@@ -175,7 +175,7 @@ def test_process_external_id_fields() -> None:
 def test_handle_create_error_check_constraint() -> None:
     """Test _handle_create_error with check constraint exception."""
     error = Exception("check constraint error")
-    error_str, failed_line, error_summary = _handle_create_error(
+    error_str, _failed_line, _error_summary = _handle_create_error(
         5, error, ["test", "data"], "initial summary"
     )
 
@@ -185,7 +185,7 @@ def test_handle_create_error_check_constraint() -> None:
 def test_handle_create_error_pool_error() -> None:
     """Test _handle_create_error with pool error."""
     error = Exception("poolerror occurred")
-    error_str, failed_line, error_summary = _handle_create_error(
+    error_str, _failed_line, _error_summary = _handle_create_error(
         5, error, ["test", "data"], "initial summary"
     )
 
@@ -346,7 +346,7 @@ def test_setup_fail_file_with_error_reason_column() -> None:
         mock_open.return_value.__enter__.return_value = mock_file
 
         header = ["id", "_ERROR_REASON", "name"]
-        writer, handle = _setup_fail_file("fail.csv", header, ",", "utf-8")
+        writer, _handle = _setup_fail_file("fail.csv", header, ",", "utf-8")
 
         # Should not add _ERROR_REASON again since it's already in header
         if writer:

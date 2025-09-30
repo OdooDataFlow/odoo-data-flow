@@ -101,7 +101,7 @@ def test_handle_create_error_various_errors() -> None:
 
     # Test tuple index out of range errors
     error = Exception("tuple index out of range")
-    error_str, failed_line, summary = _handle_create_error(
+    error_str, _failed_line, _summary = _handle_create_error(
         0, error, ["test", "data"], "test summary"
     )
     assert "Tuple unpacking error" in error_str

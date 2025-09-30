@@ -71,7 +71,7 @@ def test_safe_convert_field_value_float_invalid() -> None:
 def test_handle_create_error_constraint_violation() -> None:
     """Test _handle_create_error with constraint violation error."""
     error = Exception("constraint violation")
-    error_str, failed_line, summary = _handle_create_error(
+    error_str, _failed_line, _summary = _handle_create_error(
         0, error, ["test", "data"], "test summary"
     )
     assert "Constraint violation" in error_str
@@ -80,7 +80,7 @@ def test_handle_create_error_constraint_violation() -> None:
 def test_handle_create_error_database_pool() -> None:
     """Test _handle_create_error with database connection pool error."""
     error = Exception("connection pool is full")
-    error_str, failed_line, summary = _handle_create_error(
+    error_str, _failed_line, _summary = _handle_create_error(
         0, error, ["test", "data"], "test summary"
     )
     assert "Database connection pool exhaustion" in error_str
@@ -89,7 +89,7 @@ def test_handle_create_error_database_pool() -> None:
 def test_handle_create_error_serialization() -> None:
     """Test _handle_create_error with serialization error."""
     error = Exception("could not serialize access")
-    error_str, failed_line, summary = _handle_create_error(
+    error_str, _failed_line, _summary = _handle_create_error(
         0, error, ["test", "data"], "test summary"
     )
     assert "Database serialization error" in error_str
@@ -132,7 +132,7 @@ def test_read_data_file_unicode_decode_error() -> None:
             "odoo_data_flow.import_threaded._parse_csv_data",
             return_value=(["id"], [["test"]]),
         ):
-            header, data = _read_data_file("dummy.csv", ",", "utf-8", 0)
+            header, _data = _read_data_file("dummy.csv", ",", "utf-8", 0)
             # Should have processed with fallback encoding
             assert header == ["id"]
 
@@ -337,7 +337,7 @@ def test_import_data_connection_dict() -> None:
                     False,  # aborted = False
                 )
 
-                result, stats = import_data(
+                result, _stats = import_data(
                     config={"host": "localhost"},  # Dict config instead of file
                     model="res.partner",
                     unique_id_field="id",
