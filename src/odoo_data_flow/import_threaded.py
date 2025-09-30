@@ -1129,6 +1129,7 @@ def _execute_load_batch(  # noqa: C901
                     "to continue"
                 )
                 lines_to_process = lines_to_process[chunk_size:]
+                continue
 
             # SPECIAL CASE: Database connection pool exhaustion
             # These should be treated as scalable errors to reduce load on the server
