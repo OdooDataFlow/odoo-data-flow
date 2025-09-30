@@ -602,8 +602,9 @@ def _handle_create_error(  # noqa: C901
         or "too many connections" in error_str_lower
         or "poolerror" in error_str_lower
     ):
-        error_message = "Database connection pool exhaustion in row "
-        f"{i + 1}: {create_error}"
+error_message = (
+            f"Database connection pool exhaustion in row {i + 1}: {create_error}"
+        )
         if "Fell back to create" in error_summary:
             error_summary = "Database connection pool exhaustion detected"
     # Handle specific database serialization errors
