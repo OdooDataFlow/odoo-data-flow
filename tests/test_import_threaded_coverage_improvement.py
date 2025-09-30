@@ -94,7 +94,7 @@ def test_handle_create_error_various_errors() -> None:
 
     # Test database serialization errors
     error = Exception("could not serialize access")
-    error_str, failed_line, summary = _handle_create_error(
+    error_str, _failed_line, _summary = _handle_create_error(
         0, error, ["test", "data"], "test summary"
     )
     assert "Database serialization error" in error_str
@@ -332,7 +332,7 @@ def test_import_data_connection_dict() -> None:
                     False,  # aborted = False
                 )
 
-                result, stats = import_data(
+                result, _stats = import_data(
                     config={"host": "localhost"},  # Dict config instead of file
                     model="res.partner",
                     unique_id_field="id",

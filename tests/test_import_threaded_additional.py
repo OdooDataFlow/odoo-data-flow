@@ -62,7 +62,7 @@ def test_parse_csv_data_missing_id_column() -> None:
     csv_content = "name,age\nAlice,25\nBob,30\n"
     f = StringIO(csv_content)
 
-    with pytest.raises(ValueError, match="Source file must contain an 'id' column."):
+    with pytest.raises(ValueError, match=r"Source file must contain an 'id' column."):
         _parse_csv_data(f, ",", 0)
 
 
