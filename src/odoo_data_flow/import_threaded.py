@@ -602,7 +602,7 @@ def _handle_create_error(  # noqa: C901
         or "too many connections" in error_str_lower
         or "poolerror" in error_str_lower
     ):
-error_message = (
+        error_message = (
             f"Database connection pool exhaustion in row {i + 1}: {create_error}"
         )
         if "Fell back to create" in error_summary:
@@ -1053,7 +1053,8 @@ def _execute_load_batch(  # noqa: C901
                 # to fail file
                 error_msg = res["messages"][0].get("message", "Batch load failed.")
                 log.error(f"Capturing load failure for fail file: {error_msg}")
-                # Add all current chunk records to failed lines since there are error messages
+                # Add all current chunk records to failed lines since there are
+                # error messages
                 for line in current_chunk:
                     failed_line = [*line, f"Load failed: {error_msg}"]
                     aggregated_failed_lines.append(failed_line)
@@ -1080,19 +1081,25 @@ def _execute_load_batch(  # noqa: C901
             successful_count = len(created_ids)
             total_count = len(load_lines)
 
-            # If there are error messages from Odoo, all records in chunk should be marked as failed
+            # If there are error messages from Odoo, all records in chunk
+            # should be marked as failed
             if res.get("messages"):
-                # All records in the chunk are considered failed due to error messages
-            successful_count = len(created_ids)
-            total_count = len(load_lines)
+                # All records in the chunk are considered failed due to
+                # error messages
+                successful_count = len(created_ids)
+                total_count = len(load_lines)
 
-            # If there are error messages from Odoo, all records in chunk should be marked as failed
+            # If there are error messages from Odoo, all records in chunk should
+            # be marked as failed
             if res.get("messages"):
-                # All records in the chunk are considered failed due to error messages
+                # All records in the chunk are considered failed due to
+                # error messages
                 log.info(
-                    f"All {len(current_chunk)} records in chunk marked as failed due to error messages"
+                    f"All {len(current_chunk)} records in chunk marked as "
+                    f"failed due to error messages"
                 )
-                # Don't add them again since they were already added in the earlier block
+                # Don't add them again since they were already added in the
+                #  earlier block
             elif successful_count < total_count:
                 failed_count = total_count - successful_count
                 log.info(f"Capturing {failed_count} failed records for fail file")
@@ -1198,7 +1205,8 @@ def _execute_load_batch(  # noqa: C901
                 continue
 
             # For all other exceptions, use the original scalable error detection
-            # Also check for constraint violations which should be treated as non-scalable
+            # Also check for constraint violations which should be treated as
+            # non-scalable
             is_constraint_violation = (
                 "constraint" in error_str
                 or "violation" in error_str
@@ -1219,9 +1227,11 @@ def _execute_load_batch(  # noqa: C901
                 or "poolerror" in error_str.lower()
             )
 
-            # Handle constraint violations separately - these are data issues, not scalable issues
+            # Handle constraint violations separately - these are data issues,
+            #  not scalable issues
             if is_constraint_violation:
-                # Constraint violations are data problems, add all records to failed lines
+                # Constraint violations are data problems, add all records to
+                # failed lines
                 clean_error = str(e).strip().replace("\\n", " ")
                 log.error(
                     f"Constraint violation in batch {batch_number}: {clean_error}"
