@@ -981,18 +981,13 @@ def _execute_load_batch(  # noqa: C901
                 )
                 # Even when model has no _fields, we still need to sanitize the unique ID field
                 # to prevent XML ID constraint violations
-                processed_load_lines = []
-                for row in load_lines:
-                    processed_row = []
-                    for i, value in enumerate(row):
-                        if i == uid_index and value is not None:
-                            # Sanitize unique ID field values to prevent XML ID constraint violations
-                            converted_value = to_xmlid(str(value))
-                        else:
-                            converted_value = value
-                        processed_row.append(converted_value)
-                    processed_load_lines.append(processed_row)
-                load_lines = processed_load_lines
+                load_lines = [
+                    [
+                        to_xmlid(str(value)) if i == uid_index and value is not None else value
+                        for i, value in enumerate(row)
+                    ]
+                    for row in load_lines
+                ]
         try:
             log.debug(f"Attempting `load` for chunk of batch {batch_number}...")
 
