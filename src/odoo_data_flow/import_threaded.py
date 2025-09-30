@@ -1069,7 +1069,12 @@ def _execute_load_batch(  # noqa: C901
             # If there are error messages from Odoo, all records in chunk should be marked as failed
             if res.get("messages"):
                 # All records in the chunk are considered failed due to error messages
-                error_msg = res["messages"][0].get("message", "Batch load failed.")
+            successful_count = len(created_ids)
+            total_count = len(load_lines)
+
+            # If there are error messages from Odoo, all records in chunk should be marked as failed
+            if res.get("messages"):
+                # All records in the chunk are considered failed due to error messages
                 log.info(
                     f"All {len(current_chunk)} records in chunk marked as failed due to error messages"
                 )
