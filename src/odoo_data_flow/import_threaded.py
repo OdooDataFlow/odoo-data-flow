@@ -629,8 +629,9 @@ error_message = (
     else:
         error_message = error_str.replace("\n", " | ")
         if "invalid field" in error_str_lower and "/id" in error_str_lower:
-            error_message = "Invalid external ID field detected in row "
-            f"{i + 1}: {error_message}"
+            error_message = (
+                f"Invalid external ID field detected in row {i + 1}: {error_message}"
+            )
 
         if "Fell back to create" in error_summary:
             error_summary = error_message
