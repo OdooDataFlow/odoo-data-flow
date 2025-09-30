@@ -17,6 +17,7 @@ from odoo_data_flow.import_threaded import (
     _setup_fail_file,
     import_data,
 )
+from odoo_data_flow.lib.internal.tools import to_xmlid
 
 
 class TestImportData:
@@ -220,7 +221,12 @@ class TestExecuteLoadBatch:
             "ignore_list": [],
         }
         batch_header = ["id", "name"]
-        batch_lines = [["rec1", "A"], ["rec2", "B"], ["rec3", "C"], ["rec4", "D"]]
+        batch_lines = [
+            ["rec1", "A"],
+            ["rec2", "B"],
+            ["rec3", "C"],
+            ["rec4", "D"],
+        ]
 
         # Set up the return value for the mocked function before the call
         mock_create_individually.return_value = {
@@ -415,7 +421,10 @@ class TestPass2Batching:
                 (2, {"parent_id": 101}, "Access Error"),
             ],
         }
-        mock_run_pass.return_value = (failed_write_result, False)  # result, aborted
+        mock_run_pass.return_value = (
+            failed_write_result,
+            False,
+        )  # result, aborted
 
         # Act
         with Progress() as progress:
@@ -538,7 +547,10 @@ class TestImportThreadedEdgeCases:
         self, mock_as_completed: MagicMock
     ) -> None:
         """Test that a KeyboardInterrupt is handled gracefully."""
-        from odoo_data_flow.import_threaded import RPCThreadImport, _run_threaded_pass
+        from odoo_data_flow.import_threaded import (
+            RPCThreadImport,
+            _run_threaded_pass,
+        )
 
         rpc_thread = RPCThreadImport(1, Progress(), MagicMock())
         rpc_thread.task_id = rpc_thread.progress.add_task("test")
@@ -743,3 +755,94 @@ def test_execute_load_batch_successfully_aggregates_all_records() -> None:
     assert result["id_map"]["rec4"] == 4
     # Should have no failed lines
     assert len(result["failed_lines"]) == 0
+
+
+def test_execute_load_batch_sanitizes_ids_when_model_has_no_fields() -> None:
+    """Test that unique ID field values are sanitized."""
+    mock_model = MagicMock()
+    # Model has no _fields attribute
+    mock_model._fields = None
+    mock_model.load.return_value = {"ids": [1, 2]}
+    mock_progress = MagicMock()
+    thread_state = {
+        "model": mock_model,
+        "progress": mock_progress,
+        "unique_id_field_index": 0,  # Index of the ID column
+        "ignore_list": [],
+    }
+    batch_header = ["id", "name"]
+    # IDs with spaces that should be sanitized
+    batch_lines = [
+        ["product_template_2023_02_08 09_45_32_0001", "Product 1"],
+        ["another id with spaces", "Product 2"],
+    ]
+
+    from odoo_data_flow.import_threaded import _execute_load_batch
+    from odoo_data_flow.lib.internal.tools import to_xmlid
+
+    # Call the function
+    result = _execute_load_batch(thread_state, batch_lines, batch_header, 1)
+
+    # Verify that model.load was called with properly sanitized IDs
+    # The call_args should show that the IDs were sanitized
+    # (spaces replaced with underscores)
+    call_args = mock_model.load.call_args
+    sent_header, sent_data = call_args[0]  # Get the positional arguments
+
+    # Verify header is unchanged
+    assert sent_header == batch_header
+    # Verify that the IDs in the data have been sanitized
+    assert sent_data[0][0] == to_xmlid(
+        "product_template_2023_02_08 09_45_32_0001"
+    )  # Should be sanitized
+    assert sent_data[1][0] == to_xmlid("another id with spaces")  # Should be sanitized
+
+    # Verify the id_map uses the sanitized IDs
+    expected_id1 = to_xmlid("product_template_2023_02_08 09_45_32_0001")
+    expected_id2 = to_xmlid("another id with spaces")
+    assert result["id_map"][expected_id1] == 1
+    assert result["id_map"][expected_id2] == 2
+
+
+def test_execute_load_batch_sanitizes_ids_in_model_fields_case() -> None:
+    """Test that unique ID field values are sanitized."""
+    mock_model = MagicMock()
+    # Model has _fields attribute (like normal Odoo models)
+    mock_model._fields = {"id": {"type": "char"}, "name": {"type": "char"}}
+    mock_model.load.return_value = {"ids": [1, 2]}
+    mock_progress = MagicMock()
+    thread_state = {
+        "model": mock_model,
+        "progress": mock_progress,
+        "unique_id_field_index": 0,  # Index of the ID column
+        "ignore_list": [],
+    }
+    batch_header = ["id", "name"]
+    # IDs with spaces that should be sanitized
+    batch_lines = [
+        ["product_template_2023_02_08 09_45_32_0003", "Product 1"],
+        ["different id with spaces", "Product 2"],
+    ]
+
+    # Call the function
+    result = _execute_load_batch(thread_state, batch_lines, batch_header, 1)
+
+    # Verify that model.load was called with properly sanitized IDs
+    call_args = mock_model.load.call_args
+    sent_header, sent_data = call_args[0]  # Get the positional arguments
+
+    # Verify header is unchanged
+    assert sent_header == batch_header
+    # Verify that the IDs in the data have been sanitized
+    assert sent_data[0][0] == to_xmlid(
+        "product_template_2023_02_08 09_45_32_0003"
+    )  # Should be sanitized
+    assert sent_data[1][0] == to_xmlid(
+        "different id with spaces"
+    )  # Should be sanitized
+
+    # Verify the id_map uses the sanitized IDs
+    expected_id1 = to_xmlid("product_template_2023_02_08 09_45_32_0003")
+    expected_id2 = to_xmlid("different id with spaces")
+    assert result["id_map"][expected_id1] == 1
+    assert result["id_map"][expected_id2] == 2
