@@ -1,6 +1,7 @@
 """Additional tests to cover missing functionality in importer.py."""
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from odoo_data_flow.importer import run_import
@@ -181,7 +182,7 @@ def test_run_import_with_polars_encoding_error(
     # Mock first call to fail, second to succeed
     call_count = 0
 
-    def side_effect_func(*args, **kwargs):
+    def side_effect_func(*args: Any, **kwargs: Any) -> Any:
         nonlocal call_count
         call_count += 1
         if call_count == 1:

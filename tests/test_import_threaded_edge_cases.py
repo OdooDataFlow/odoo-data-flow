@@ -1,5 +1,6 @@
 """Additional tests to cover missing functionality in import_threaded.py."""
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from rich.progress import Progress
@@ -115,7 +116,7 @@ def test_read_data_file_unicode_decode_error() -> None:
 
         # The _read_data_file function first tries with the provided encoding,
         # then falls back to other encodings. We'll mock this process.
-        def open_side_effect(*args, **kwargs):
+        def open_side_effect(*args: Any, **kwargs: Any) -> Any:
             encoding = kwargs.get("encoding", "utf-8")
             if encoding == "utf-8":
                 raise UnicodeDecodeError("utf-8", b"test", 0, 1, "fake error")
