@@ -1,9 +1,7 @@
 """Additional tests to cover missing functionality in import_threaded.py."""
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 from rich.progress import Progress
 
 from odoo_data_flow.import_threaded import (
@@ -106,29 +104,34 @@ def test_parse_csv_data_insufficient_lines() -> None:
     assert data == []
 
 
-@patch("builtins.open")
-def test_read_data_file_unicode_decode_error(mock_open: MagicMock) -> None:
+def test_read_data_file_unicode_decode_error() -> None:
     """Test _read_data_file with UnicodeDecodeError followed by success."""
-    # Simulate the first open raising UnicodeDecodeError, second succeeding
-    def side_effect(*args, **kwargs):
-        if side_effect.call_count == 1:
-            side_effect.call_count += 1
-            raise UnicodeDecodeError("codec", b"", 0, 1, "fake error")
-        return MagicMock()
+    with patch("builtins.open") as mock_open:
+        # Set up the side effect to raise UnicodeDecodeError for the first attempt with the specified encoding
+        # then succeed on a fallback encoding
+        file_obj = MagicMock()
+        file_obj.__enter__.return_value = MagicMock()  # This would be the file object
+        file_obj.__exit__.return_value = False
 
-    side_effect.call_count = 1
-    mock_open.side_effect = side_effect
+        # The _read_data_file function first tries with the provided encoding,
+        # then falls back to other encodings. We'll mock this process.
+        def open_side_effect(*args, **kwargs):
+            encoding = kwargs.get("encoding", "utf-8")
+            if encoding == "utf-8":
+                raise UnicodeDecodeError("utf-8", b"test", 0, 1, "fake error")
+            else:
+                # For fallback encodings, return the file object
+                return file_obj
 
-    # Also need to mock the file object itself
-    file_mock = MagicMock()
-    file_mock.__enter__ = MagicMock(return_value=file_mock)
-    file_mock.__exit__ = MagicMock(return_value=False)
-    file_mock.read = MagicMock(return_value="")
-    
-    # We'll use a different approach - mock the context manager behavior
-    with patch("odoo_data_flow.import_threaded._parse_csv_data", return_value=(["id"], [["1"]])):
-        with patch("builtins.open", side_effect=[UnicodeDecodeError("codec", b"", 0, 1, "fake error"), file_mock]):
+        mock_open.side_effect = open_side_effect
+
+        # Mock _parse_csv_data to return valid data
+        with patch(
+            "odoo_data_flow.import_threaded._parse_csv_data",
+            return_value=(["id"], [["test"]]),
+        ):
             header, data = _read_data_file("dummy.csv", ",", "utf-8", 0)
+            # Should have processed with fallback encoding
             assert header == ["id"]
 
 
@@ -136,7 +139,7 @@ def test_read_data_file_unicode_decode_error(mock_open: MagicMock) -> None:
 def test_setup_fail_file_os_error(mock_csv_writer: MagicMock) -> None:
     """Test _setup_fail_file with OSError."""
     mock_csv_writer.side_effect = OSError("Permission denied")
-    
+
     with patch("builtins.open", side_effect=OSError("Permission denied")):
         writer, handle = _setup_fail_file("fail.csv", ["id"], ",", "utf-8")
         assert writer is None
@@ -147,17 +150,17 @@ def test_create_batch_individually_tuple_index_error() -> None:
     """Test _create_batch_individually with tuple index out of range error."""
     mock_model = MagicMock()
     mock_model.browse().env.ref.return_value = None  # No existing record
-    
+
     # Mock the create method to raise tuple index error
     mock_model.create.side_effect = IndexError("tuple index out of range")
-    
+
     batch_header = ["id", "name"]
     batch_lines = [["test1", "Test Name"]]
-    
+
     result = _create_batch_individually(
         mock_model, batch_lines, batch_header, 0, {}, []
     )
-    
+
     # Should handle the error and return failed lines
     assert len(result["failed_lines"]) == 1
     error_msg = result["failed_lines"][0][-1].lower()
@@ -169,7 +172,9 @@ class TestExecuteLoadBatchEdgeCases:
     """Additional tests for _execute_load_batch edge cases."""
 
     @patch("odoo_data_flow.import_threaded._create_batch_individually")
-    def test_execute_load_batch_force_create(self, mock_create_individually: MagicMock) -> None:
+    def test_execute_load_batch_force_create(
+        self, mock_create_individually: MagicMock
+    ) -> None:
         """Test _execute_load_batch with force_create enabled."""
         mock_model = MagicMock()
         mock_progress = MagicMock()
@@ -186,7 +191,7 @@ class TestExecuteLoadBatchEdgeCases:
         mock_create_individually.return_value = {
             "id_map": {"rec1": 1, "rec2": 2},
             "failed_lines": [],
-            "error_summary": "test"
+            "error_summary": "test",
         }
 
         result = _execute_load_batch(thread_state, batch_lines, batch_header, 1)
@@ -195,9 +200,10 @@ class TestExecuteLoadBatchEdgeCases:
         assert result["id_map"] == {"rec1": 1, "rec2": 2}
         mock_create_individually.assert_called_once()
 
-
     @patch("odoo_data_flow.import_threaded._create_batch_individually")
-    def test_execute_load_batch_serialization_retry_limit(self, mock_create_individually: MagicMock) -> None:
+    def test_execute_load_batch_serialization_retry_limit(
+        self, mock_create_individually: MagicMock
+    ) -> None:
         """Test _execute_load_batch with serialization retry limit."""
         mock_model = MagicMock()
         mock_model.load.side_effect = Exception("could not serialize access")
@@ -214,7 +220,7 @@ class TestExecuteLoadBatchEdgeCases:
         mock_create_individually.return_value = {
             "id_map": {"rec1": 1, "rec2": 2},
             "failed_lines": [],
-            "error_summary": "test"
+            "error_summary": "test",
         }
 
         result = _execute_load_batch(thread_state, batch_lines, batch_header, 1)
@@ -230,21 +236,23 @@ def test_handle_fallback_create() -> None:
     current_chunk = [["rec1", "A"], ["rec2", "B"]]
     batch_header = ["id", "name"]
     uid_index = 0
-    context = {}
-    ignore_list = []
+    context: dict[str, Any] = {}
+    ignore_list: list[str] = []
     progress = MagicMock()
-    aggregated_id_map = {}
-    aggregated_failed_lines = []
+    aggregated_id_map: dict[str, int] = {}
+    aggregated_failed_lines: list[list[Any]] = []
     batch_number = 1
 
     # Mock the _create_batch_individually function
-    with patch("odoo_data_flow.import_threaded._create_batch_individually") as mock_individual:
+    with patch(
+        "odoo_data_flow.import_threaded._create_batch_individually"
+    ) as mock_individual:
         mock_individual.return_value = {
             "id_map": {"rec1": 1, "rec2": 2},
             "failed_lines": [],
-            "error_summary": "test"
+            "error_summary": "test",
         }
-        
+
         _handle_fallback_create(
             mock_model,
             current_chunk,
@@ -256,9 +264,9 @@ def test_handle_fallback_create() -> None:
             aggregated_id_map,
             aggregated_failed_lines,
             batch_number,
-            error_message="test error"
+            error_message="test error",
         )
-        
+
         # Should update the aggregated results
         assert aggregated_id_map == {"rec1": 1, "rec2": 2}
 
@@ -269,16 +277,16 @@ def test_orchestrate_pass_1_force_create() -> None:
     header = ["id", "name"]
     all_data = [["rec1", "A"], ["rec2", "B"]]
     unique_id_field = "id"
-    deferred_fields = []
-    ignore = []
-    context = {}
+    deferred_fields: list[str] = []
+    ignore: list[str] = []
+    context: dict[str, Any] = {}
     fail_writer = None
     fail_handle = None
     max_connection = 1
     batch_size = 10
     o2m = False
     split_by_cols = None
-    
+
     with Progress() as progress:
         result = _orchestrate_pass_1(
             progress,
@@ -296,9 +304,9 @@ def test_orchestrate_pass_1_force_create() -> None:
             batch_size,
             o2m,
             split_by_cols,
-            force_create=True  # Enable force create
+            force_create=True,  # Enable force create
         )
-        
+
         # Should return a result dict
         assert isinstance(result, dict)
 
@@ -307,24 +315,31 @@ def test_import_data_connection_dict() -> None:
     """Test import_data with connection config as dict."""
     mock_connection = MagicMock()
     mock_model = MagicMock()
-    
-    with patch("odoo_data_flow.import_threaded._read_data_file", return_value=(["id"], [["1"]])):
-        with patch("odoo_data_flow.import_threaded.conf_lib.get_connection_from_dict", return_value=mock_connection):
+
+    with patch(
+        "odoo_data_flow.import_threaded._read_data_file", return_value=(["id"], [["1"]])
+    ):
+        with patch(
+            "odoo_data_flow.import_threaded.conf_lib.get_connection_from_dict",
+            return_value=mock_connection,
+        ):
             mock_connection.get_model.return_value = mock_model
-            
+
             # Mock the _run_threaded_pass function
-            with patch("odoo_data_flow.import_threaded._run_threaded_pass") as mock_run_pass:
+            with patch(
+                "odoo_data_flow.import_threaded._run_threaded_pass"
+            ) as mock_run_pass:
                 mock_run_pass.return_value = (
                     {"id_map": {"1": 1}, "failed_lines": []},  # results dict
                     False,  # aborted = False
                 )
-                
+
                 result, stats = import_data(
                     config={"host": "localhost"},  # Dict config instead of file
                     model="res.partner",
                     unique_id_field="id",
                     file_csv="dummy.csv",
                 )
-                
+
                 # Should succeed
                 assert result is True
