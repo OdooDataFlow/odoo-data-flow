@@ -1039,7 +1039,10 @@ def _execute_load_batch(  # noqa: C901
                 # to fail file
                 error_msg = res["messages"][0].get("message", "Batch load failed.")
                 log.error(f"Capturing load failure for fail file: {error_msg}")
-                # We'll add the failed lines to aggregated_failed_lines at the end
+                # Add all current chunk records to failed lines since there are error messages
+                for line in current_chunk:
+                    failed_line = [*list(line), f"Load failed: {error_msg}"]
+                    aggregated_failed_lines.append(failed_line)
 
             # Use sanitized IDs for the id_map to match what was actually sent to Odoo
             id_map = {
@@ -1063,7 +1066,15 @@ def _execute_load_batch(  # noqa: C901
             successful_count = len(created_ids)
             total_count = len(load_lines)
 
-            if successful_count < total_count:
+            # If there are error messages from Odoo, all records in chunk should be marked as failed
+            if res.get("messages"):
+                # All records in the chunk are considered failed due to error messages
+                error_msg = res["messages"][0].get("message", "Batch load failed.")
+                log.info(
+                    f"All {len(current_chunk)} records in chunk marked as failed due to error messages"
+                )
+                # Don't add them again since they were already added in the earlier block
+            elif successful_count < total_count:
                 failed_count = total_count - successful_count
                 log.info(f"Capturing {failed_count} failed records for fail file")
                 # Add error information to the lines that failed
@@ -1072,8 +1083,6 @@ def _execute_load_batch(  # noqa: C901
                     if i >= len(created_ids) or created_ids[i] is None:
                         # This record failed, add it to failed_lines with error info
                         error_msg = "Record creation failed"
-                        if res.get("messages"):
-                            error_msg = res["messages"][0].get("message", error_msg)
 
                         failed_line = [*list(line), f"Load failed: {error_msg}"]
                         aggregated_failed_lines.append(failed_line)
@@ -1170,6 +1179,13 @@ def _execute_load_batch(  # noqa: C901
                 continue
 
             # For all other exceptions, use the original scalable error detection
+            # Also check for constraint violations which should be treated as non-scalable
+            is_constraint_violation = (
+                "constraint" in error_str
+                or "violation" in error_str
+                or "not-null constraint" in error_str
+                or "mandatory field" in error_str
+            )
             is_scalable_error = (
                 "memory" in error_str
                 or "out of memory" in error_str
@@ -1183,6 +1199,22 @@ def _execute_load_batch(  # noqa: C901
                 or "too many connections" in error_str.lower()
                 or "poolerror" in error_str.lower()
             )
+
+            # Handle constraint violations separately - these are data issues, not scalable issues
+            if is_constraint_violation:
+                # Constraint violations are data problems, add all records to failed lines
+                clean_error = str(e).strip().replace("\\n", " ")
+                log.error(
+                    f"Constraint violation in batch {batch_number}: {clean_error}"
+                )
+                error_msg = f"Constraint violation: {clean_error}"
+
+                for line in current_chunk:
+                    failed_line = [*list(line), error_msg]
+                    aggregated_failed_lines.append(failed_line)
+
+                lines_to_process = lines_to_process[chunk_size:]
+                continue
 
             if is_scalable_error and chunk_size > 1:
                 chunk_size = max(1, chunk_size // 2)
