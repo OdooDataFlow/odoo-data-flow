@@ -113,8 +113,6 @@ def test_handle_tuple_index_error() -> None:
     failed_lines: list[list[Any]] = []
 
     # Test the function with progress=None to avoid rich console issues in tests
-    from typing import Any
-
     progress_console: Any = None
 
     _handle_tuple_index_error(
