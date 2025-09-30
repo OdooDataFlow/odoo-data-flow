@@ -108,7 +108,8 @@ def test_parse_csv_data_insufficient_lines() -> None:
 def test_read_data_file_unicode_decode_error() -> None:
     """Test _read_data_file with UnicodeDecodeError followed by success."""
     with patch("builtins.open") as mock_open:
-        # Set up the side effect to raise UnicodeDecodeError for the first attempt with the specified encoding
+        # Set up the side effect to raise UnicodeDecodeError for the
+        # first attempt with the specified encoding
         # then succeed on a fallback encoding
         file_obj = MagicMock()
         file_obj.__enter__.return_value = MagicMock()  # This would be the file object
@@ -226,7 +227,8 @@ class TestExecuteLoadBatchEdgeCases:
 
         result = _execute_load_batch(thread_state, batch_lines, batch_header, 1)
 
-        # Should eventually fall back to create individual - called once per record if load fails
+        # Should eventually fall back to create individual -
+        # called once per record if load fails
         assert result["success"] is True
         assert mock_create_individually.call_count >= 1
 
