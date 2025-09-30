@@ -925,13 +925,23 @@ def _execute_load_batch(  # noqa: C901
             ]
             load_header = [batch_header[i] for i in indices_to_keep]
             max_index = max(indices_to_keep) if indices_to_keep else 0
-            load_lines = [
-                [row[i] for i in indices_to_keep]
-                for row in current_chunk
-                if len(row) > max_index
-            ]
+            load_lines = []
+            # Process all rows and handle those with insufficient columns
+            for row in current_chunk:
+                if len(row) > max_index:
+                    # Row has enough columns, process normally
+                    processed_row = [row[i] for i in indices_to_keep]
+                    load_lines.append(processed_row)
+                else:
+                    # Row doesn't have enough columns, add to failed lines
+                    error_msg = f"Row has {len(row)} columns but requires at least {max_index + 1} columns based on header"
+                    failed_line = [*list(row), f"Load failed: {error_msg}"]
+                    aggregated_failed_lines.append(failed_line)
 
         if not load_lines:
+            # If all records were filtered out due to insufficient columns,
+            # lines_to_process will be updated below to move to next chunk
+            # and the failed records have already been added to aggregated_failed_lines
             lines_to_process = lines_to_process[chunk_size:]
             continue
 
