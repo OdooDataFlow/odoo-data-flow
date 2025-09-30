@@ -80,14 +80,14 @@ def test_handle_create_error_various_errors() -> None:
     """Test _handle_create_error with various error types."""
     # Test constraint violation error
     error = Exception("constraint violation")
-    error_str, failed_line, summary = _handle_create_error(
+    error_str, failed_line, _summary = _handle_create_error(
         0, error, ["test", "data"], "test summary"
     )
     assert "Constraint violation" in error_str
 
     # Test database connection pool exhaustion errors
     error = Exception("connection pool is full")
-    error_str, failed_line, summary = _handle_create_error(
+    error_str, _failed_line, summary = _handle_create_error(
         0, error, ["test", "data"], "test summary"
     )
     assert "Database connection pool exhaustion" in error_str
