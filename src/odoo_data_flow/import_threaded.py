@@ -1210,7 +1210,7 @@ def _execute_load_batch(  # noqa: C901
                 error_msg = f"Constraint violation: {clean_error}"
 
                 for line in current_chunk:
-                    failed_line = [*list(line), error_msg]
+                    failed_line = [*line, error_msg]
                     aggregated_failed_lines.append(failed_line)
 
                 lines_to_process = lines_to_process[chunk_size:]
