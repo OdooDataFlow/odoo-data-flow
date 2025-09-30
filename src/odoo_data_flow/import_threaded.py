@@ -979,6 +979,20 @@ def _execute_load_batch(  # noqa: C901
                     f"{load_lines[0][:10] if load_lines and load_lines[0] else []}"
                     "Model has no _fields attribute, using raw values for load method"
                 )
+                # Even when model has no _fields, we still need to sanitize the unique ID field
+                # to prevent XML ID constraint violations
+                processed_load_lines = []
+                for row in load_lines:
+                    processed_row = []
+                    for i, value in enumerate(row):
+                        if i == uid_index and value is not None:
+                            # Sanitize unique ID field values to prevent XML ID constraint violations
+                            converted_value = to_xmlid(str(value))
+                        else:
+                            converted_value = value
+                        processed_row.append(converted_value)
+                    processed_load_lines.append(processed_row)
+                load_lines = processed_load_lines
         try:
             log.debug(f"Attempting `load` for chunk of batch {batch_number}...")
 
