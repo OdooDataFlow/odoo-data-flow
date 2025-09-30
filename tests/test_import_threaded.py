@@ -17,6 +17,7 @@ from odoo_data_flow.import_threaded import (
     _setup_fail_file,
     import_data,
 )
+from odoo_data_flow.lib.internal.tools import to_xmlid
 
 
 class TestImportData:
@@ -220,7 +221,12 @@ class TestExecuteLoadBatch:
             "ignore_list": [],
         }
         batch_header = ["id", "name"]
-        batch_lines = [["rec1", "A"], ["rec2", "B"], ["rec3", "C"], ["rec4", "D"]]
+        batch_lines = [
+            ["rec1", "A"],
+            ["rec2", "B"],
+            ["rec3", "C"],
+            ["rec4", "D"],
+        ]
 
         # Set up the return value for the mocked function before the call
         mock_create_individually.return_value = {
@@ -415,7 +421,10 @@ class TestPass2Batching:
                 (2, {"parent_id": 101}, "Access Error"),
             ],
         }
-        mock_run_pass.return_value = (failed_write_result, False)  # result, aborted
+        mock_run_pass.return_value = (
+            failed_write_result,
+            False,
+        )  # result, aborted
 
         # Act
         with Progress() as progress:
@@ -538,7 +547,10 @@ class TestImportThreadedEdgeCases:
         self, mock_as_completed: MagicMock
     ) -> None:
         """Test that a KeyboardInterrupt is handled gracefully."""
-        from odoo_data_flow.import_threaded import RPCThreadImport, _run_threaded_pass
+        from odoo_data_flow.import_threaded import (
+            RPCThreadImport,
+            _run_threaded_pass,
+        )
 
         rpc_thread = RPCThreadImport(1, Progress(), MagicMock())
         rpc_thread.task_id = rpc_thread.progress.add_task("test")
@@ -746,7 +758,7 @@ def test_execute_load_batch_successfully_aggregates_all_records() -> None:
 
 
 def test_execute_load_batch_sanitizes_ids_when_model_has_no_fields() -> None:
-    """Test that unique ID field values are sanitized even when model has no _fields attribute."""
+    """Test that unique ID field values are sanitized."""
     mock_model = MagicMock()
     # Model has no _fields attribute
     mock_model._fields = None
@@ -772,7 +784,8 @@ def test_execute_load_batch_sanitizes_ids_when_model_has_no_fields() -> None:
     result = _execute_load_batch(thread_state, batch_lines, batch_header, 1)
 
     # Verify that model.load was called with properly sanitized IDs
-    # The call_args should show that the IDs were sanitized (spaces replaced with underscores)
+    # The call_args should show that the IDs were sanitized
+    # (spaces replaced with underscores)
     call_args = mock_model.load.call_args
     sent_header, sent_data = call_args[0]  # Get the positional arguments
 
@@ -792,7 +805,7 @@ def test_execute_load_batch_sanitizes_ids_when_model_has_no_fields() -> None:
 
 
 def test_execute_load_batch_sanitizes_ids_in_model_fields_case() -> None:
-    """Test that unique ID field values are sanitized when model has _fields attribute."""
+    """Test that unique ID field values are sanitized."""
     mock_model = MagicMock()
     # Model has _fields attribute (like normal Odoo models)
     mock_model._fields = {"id": {"type": "char"}, "name": {"type": "char"}}
@@ -810,9 +823,6 @@ def test_execute_load_batch_sanitizes_ids_in_model_fields_case() -> None:
         ["product_template_2023_02_08 09_45_32_0003", "Product 1"],
         ["different id with spaces", "Product 2"],
     ]
-
-    from odoo_data_flow.import_threaded import _execute_load_batch
-    from odoo_data_flow.lib.internal.tools import to_xmlid
 
     # Call the function
     result = _execute_load_batch(thread_state, batch_lines, batch_header, 1)

@@ -602,9 +602,8 @@ def _handle_create_error(  # noqa: C901
         or "too many connections" in error_str_lower
         or "poolerror" in error_str_lower
     ):
-        error_message = (
-            f"Database connection pool exhaustion in row {i + 1}: {create_error}"
-        )
+        error_message = "Database connection pool exhaustion in row "
+        f"{i + 1}: {create_error}"
         if "Fell back to create" in error_summary:
             error_summary = "Database connection pool exhaustion detected"
     # Handle specific database serialization errors
@@ -629,9 +628,8 @@ def _handle_create_error(  # noqa: C901
     else:
         error_message = error_str.replace("\n", " | ")
         if "invalid field" in error_str_lower and "/id" in error_str_lower:
-            error_message = (
-                f"Invalid external ID field detected in row {i + 1}: {error_message}"
-            )
+            error_message = "Invalid external ID field detected in row "
+            f"{i + 1}: {error_message}"
 
         if "Fell back to create" in error_summary:
             error_summary = error_message
@@ -888,7 +886,13 @@ def _execute_load_batch(  # noqa: C901
                 f"Batch {batch_number}: Fail mode active, using `create` method."
             )
         result = _create_batch_individually(
-            model, batch_lines, batch_header, uid_index, context, ignore_list, progress
+            model,
+            batch_lines,
+            batch_header,
+            uid_index,
+            context,
+            ignore_list,
+            progress,
         )
         result["success"] = bool(result.get("id_map"))
         return result
@@ -979,11 +983,12 @@ def _execute_load_batch(  # noqa: C901
                     f"{load_lines[0][:10] if load_lines and load_lines[0] else []}"
                     "Model has no _fields attribute, using raw values for load method"
                 )
-                # Even when model has no _fields, we still need to sanitize the unique ID field
-                # to prevent XML ID constraint violations.
+                # Even when model has no _fields, we still need to sanitize the
+                # unique ID field to prevent XML ID constraint violations.
                 for row in load_lines:
-                    # This is more efficient than a nested list comprehension as it modifies
-                    # the list in-place and only targets the required cell.
+                    # This is more efficient than a nested list comprehension as
+                    # it modifies the list in-place and only targets the
+                    # required cell.
                     if uid_index < len(row) and row[uid_index] is not None:
                         row[uid_index] = to_xmlid(str(row[uid_index]))
         try:
