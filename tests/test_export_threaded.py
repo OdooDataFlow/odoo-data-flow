@@ -161,9 +161,7 @@ class TestRPCThreadExport:
         )
 
         # 2. Action
-        with patch(
-            "odoo_data_flow.export_threaded.log.error"
-        ) as mock_log_error:
+        with patch("odoo_data_flow.export_threaded.log.error") as mock_log_error:
             result = thread._execute_batch([1], 1)
 
             # 3. Assert
@@ -456,9 +454,7 @@ class TestExportData:
 
         # Verify the final file has all data from the successful retries
         on_disk_df = pl.read_csv(output_file, separator=";")
-        expected_df = pl.DataFrame(
-            {"id": [1, 2, 3, 4], "name": ["A", "B", "C", "D"]}
-        )
+        expected_df = pl.DataFrame({"id": [1, 2, 3, 4], "name": ["A", "B", "C", "D"]})
         assert_frame_equal(on_disk_df.sort("id"), expected_df.sort("id"))
 
     def test_export_handles_empty_batch_result(
@@ -528,9 +524,7 @@ class TestExportData:
         on_disk_df = pl.read_csv(output_file, separator=";")
         assert len(on_disk_df) == 1
 
-    def test_initialize_export_connection_error(
-        self, mock_conf_lib: MagicMock
-    ) -> None:
+    def test_initialize_export_connection_error(self, mock_conf_lib: MagicMock) -> None:
         """Tests that the function handles connection errors gracefully."""
         mock_conf_lib.side_effect = Exception("Connection Refused")
 
@@ -620,9 +614,7 @@ class TestExportData:
         if result is not None:
             assert result.is_empty()
 
-    def test_process_export_batches_no_dfs_with_output(
-        self, tmp_path: Path
-    ) -> None:
+    def test_process_export_batches_no_dfs_with_output(self, tmp_path: Path) -> None:
         """Test _process_export_batches with no dataframes and an output file."""
         mock_rpc_thread = MagicMock()
         mock_rpc_thread.futures = []
@@ -648,9 +640,7 @@ class TestExportData:
         assert result.is_empty()
         mock_write_csv.assert_called_once()
 
-    def test_export_relational_raw_id_success(
-        self, mock_conf_lib: MagicMock
-    ) -> None:
+    def test_export_relational_raw_id_success(self, mock_conf_lib: MagicMock) -> None:
         """Test Relational Raw id.
 
         Tests that requesting a relational field with '/.id' triggers read mode
@@ -718,9 +708,7 @@ class TestExportData:
         }
 
         # 2. Mock the primary read() call
-        mock_model.read.return_value = [
-            {"id": 10, "parent_id": (5, "Parent Category")}
-        ]
+        mock_model.read.return_value = [{"id": 10, "parent_id": (5, "Parent Category")}]
 
         # 3. Mock the secondary XML ID lookup on 'ir.model.data'
         mock_ir_model_data = MagicMock()
@@ -749,9 +737,7 @@ class TestExportData:
         )
         assert_frame_equal(result_df, expected_df)
 
-    def test_export_id_in_export_data_mode(
-        self, mock_conf_lib: MagicMock
-    ) -> None:
+    def test_export_id_in_export_data_mode(self, mock_conf_lib: MagicMock) -> None:
         """Test export id in export data.
 
         Tests that in export_data mode, the 'id' field correctly resolves
@@ -838,9 +824,7 @@ class TestExportData:
 
         # --- Assert ---
         _init_args, init_kwargs = mock_rpc_thread_class.call_args
-        assert init_kwargs.get("technical_names") is True, (
-            "Read mode was not triggered"
-        )
+        assert init_kwargs.get("technical_names") is True, "Read mode was not triggered"
 
         assert result_df is not None
         expected_df = pl.DataFrame({"name": ["Test Record"], "state": ["done"]})
@@ -890,14 +874,10 @@ class TestExportData:
 
         # --- Assert ---
         _init_args, init_kwargs = mock_rpc_thread_class.call_args
-        assert init_kwargs.get("technical_names") is True, (
-            "Read mode was not triggered"
-        )
+        assert init_kwargs.get("technical_names") is True, "Read mode was not triggered"
 
         assert result_df is not None
-        expected_df = pl.DataFrame(
-            {"name": ["test.zip"], "datas": ["UEsDBAoAAAAA..."]}
-        )
+        expected_df = pl.DataFrame({"name": ["test.zip"], "datas": ["UEsDBAoAAAAA..."]})
         assert_frame_equal(result_df, expected_df)
 
     @patch("odoo_data_flow.export_threaded.concurrent.futures.as_completed")
@@ -1058,9 +1038,7 @@ class TestExportData:
             # has_failures should be set to True
             assert thread.has_failures is True
 
-    def test_resume_existing_session_missing_all_ids(
-        self, tmp_path: Path
-    ) -> None:
+    def test_resume_existing_session_missing_all_ids(self, tmp_path: Path) -> None:
         """Test _resume_existing_session when all_ids.json is missing."""
         from odoo_data_flow.export_threaded import _resume_existing_session
 
@@ -1072,17 +1050,13 @@ class TestExportData:
 
         session_id = "test_session"
 
-        ids_to_export, total_count = _resume_existing_session(
-            session_dir, session_id
-        )
+        ids_to_export, total_count = _resume_existing_session(session_dir, session_id)
 
         # Should return empty list since all_ids.json is missing
         assert ids_to_export == []
         assert total_count == 0
 
-    def test_resume_existing_session_with_completed_ids(
-        self, tmp_path: Path
-    ) -> None:
+    def test_resume_existing_session_with_completed_ids(self, tmp_path: Path) -> None:
         """Test _resume_existing_session with existing completed IDs."""
         import json
 
@@ -1107,9 +1081,7 @@ class TestExportData:
 
         session_id = "test_session"
 
-        ids_to_export, total_count = _resume_existing_session(
-            session_dir, session_id
-        )
+        ids_to_export, total_count = _resume_existing_session(session_dir, session_id)
 
         # Should return only uncompleted IDs (2, 4)
         assert sorted(ids_to_export) == [2, 4]
@@ -1160,13 +1132,9 @@ class TestExportData:
 
             # Should split [1,2,3,4] into [1,2] and [3,4]
             assert first_call_args[0] == [1, 2]  # First half
-            assert (
-                first_call_args[1] == "test_batch-a"
-            )  # First half batch number
+            assert first_call_args[1] == "test_batch-a"  # First half batch number
             assert second_call_args[0] == [3, 4]  # Second half
-            assert (
-                second_call_args[1] == "test_batch-b"
-            )  # Second half batch number
+            assert second_call_args[1] == "test_batch-b"  # Second half batch number
 
             # Results should be combined
             expected_data = [{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}]
