@@ -27,6 +27,46 @@ from .lib.internal.ui import _show_error_panel
 from .logging_config import log
 
 
+def _map_encoding_to_polars(encoding: str) -> str:
+    """Map common encoding names to polars-supported encoding values.
+
+    Polars supports: 'utf8', 'utf8-lossy', 'windows-1252', 'windows-1252-lossy'
+    This function maps common encoding names to these supported values.
+
+    Args:
+        encoding: The encoding name to map
+
+    Returns:
+        A polars-supported encoding name
+    """
+    # Normalize encoding names to lowercase
+    encoding = encoding.lower().strip()
+
+    # Mapping for common encoding names to polars-supported values
+    encoding_map = {
+        # UTF variants
+        "utf-8": "utf8",
+        "utf8": "utf8",
+        "utf-8-sig": "utf8",  # UTF-8 with BOM
+        # Latin variants commonly used in Western Europe
+        "latin-1": "windows-1252",
+        "iso-8859-1": "windows-1252",
+        "cp1252": "windows-1252",
+        "windows-1252": "windows-1252",
+        # Lossy variants - when we want to preserve as much data as possible
+        "utf-8-lossy": "utf8-lossy",
+        "utf8-lossy": "utf8-lossy",
+        "latin-1-lossy": "windows-1252-lossy",
+        "iso-8859-1-lossy": "windows-1252-lossy",
+        "cp1252-lossy": "windows-1252-lossy",
+        "windows-1252-lossy": "windows-1252-lossy",
+    }
+
+    # Return mapped encoding if available, otherwise return the original
+    # (will be validated by polars)
+    return encoding_map.get(encoding, encoding)
+
+
 def _count_lines(filepath: str) -> int:
     """Counts the number of lines in a file, returning 0 if it doesn't exist."""
     try:
@@ -292,15 +332,34 @@ def run_import(  # noqa: C901
             log.warning(f"Error reading CSV with default settings: {e}")
             # If there are encoding issues, we may need to handle the file differently
             # This could be a character encoding issue in the file
-            log.warning("Attempting to read CSV with UTF-8 encoding explicitly...")
-            # Note: polars doesn't expose encoding parameter directly in read_csv
-            # The encoding issue should be handled at the file system level
-            df = pl.read_csv(
-                filename,
-                separator=separator,
-                encoding=encoding,
-                truncate_ragged_lines=True,
-            )
+            log.warning("Attempting to read CSV with explicit encoding...")
+            # Note: polars.read_csv accepts encoding parameter but only supports
+            # specific values ('utf8', 'utf8-lossy', 'windows-1252',
+            # 'windows-1252-lossy')
+            # Map common encodings to supported polars values or fallback to utf8
+            polars_encoding = _map_encoding_to_polars(encoding)
+            try:
+                df = pl.read_csv(
+                    filename,
+                    separator=separator,
+                    encoding=polars_encoding,
+                    truncate_ragged_lines=True,
+                )
+            except ValueError as ve:
+                # If the encoding is not supported by polars, fallback to utf8
+                if "encoding" in str(ve).lower():
+                    log.warning(
+                        f"Unsupported encoding '{encoding}' for polars, "
+                        f"falling back to utf8: {ve}"
+                    )
+                    df = pl.read_csv(
+                        filename,
+                        separator=separator,
+                        encoding="utf8",
+                        truncate_ragged_lines=True,
+                    )
+                else:
+                    raise
 
         # Identify columns that end with /id suffix
         id_columns = [col for col in df.columns if col.endswith("/id")]
