@@ -1041,7 +1041,7 @@ def _execute_load_batch(  # noqa: C901
                 log.error(f"Capturing load failure for fail file: {error_msg}")
                 # Add all current chunk records to failed lines since there are error messages
                 for line in current_chunk:
-                    failed_line = [*list(line), f"Load failed: {error_msg}"]
+                    failed_line = [*line, f"Load failed: {error_msg}"]
                     aggregated_failed_lines.append(failed_line)
 
             # Use sanitized IDs for the id_map to match what was actually sent to Odoo
