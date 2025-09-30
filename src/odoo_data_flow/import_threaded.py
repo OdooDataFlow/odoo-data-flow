@@ -934,8 +934,11 @@ def _execute_load_batch(  # noqa: C901
                     load_lines.append(processed_row)
                 else:
                     # Row doesn't have enough columns, add to failed lines
+                    # Pad the row to match the original header length before adding error message
+                    # This ensures the fail file has consistent column counts
+                    padded_row = list(row) + [""] * (len(batch_header) - len(row))
                     error_msg = f"Row has {len(row)} columns but requires at least {max_index + 1} columns based on header"
-                    failed_line = [*list(row), f"Load failed: {error_msg}"]
+                    failed_line = padded_row + [f"Load failed: {error_msg}"]
                     aggregated_failed_lines.append(failed_line)
 
         if not load_lines:
