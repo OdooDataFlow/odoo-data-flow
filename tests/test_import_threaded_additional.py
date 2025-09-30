@@ -194,13 +194,11 @@ def test_handle_create_error_pool_error() -> None:
 
 def test_handle_tuple_index_error() -> None:
     """Test _handle_tuple_index_error function."""
-    from typing import Any
-
     # Use None as progress to avoid console issues
-    failed_lines: list[list[Any]] = []
+    failed_lines: list[list[Any]] = []  # type: ignore[name-defined]
 
     # Test the function with progress=None to avoid rich console issues in tests
-    progress_console: Any = None
+    progress_console: Any = None  # type: ignore[name-defined]
 
     _handle_tuple_index_error(
         progress_console, "source_id_123", ["id", "name"], failed_lines
