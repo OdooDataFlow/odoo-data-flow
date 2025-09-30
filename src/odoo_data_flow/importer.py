@@ -323,66 +323,65 @@ def run_import(  # noqa: C901
             return
 
         # Read the CSV file with explicit schema for /id suffixed columns
-        # Override automatic type inference to ensure all /id suffixed
-        # columns are strings
-        # Handle potential encoding issues when reading the CSV
         try:
-            df = pl.read_csv(filename, separator=separator, truncate_ragged_lines=True)
-        except Exception as e:
-            log.warning(f"Error reading CSV with default settings: {e}")
-            # If there are encoding issues, we may need to handle the file differently
-            # This could be a character encoding issue in the file
-            log.warning("Attempting to read CSV with explicit encoding...")
-            # Note: polars.read_csv accepts encoding parameter but only supports
-            # specific values ('utf8', 'utf8-lossy', 'windows-1252',
-            # 'windows-1252-lossy')
-            # Map common encodings to supported polars values or fallback to utf8
+            # First, get the header to determine if schema overrides are needed.
+            header = pl.read_csv(
+                filename, separator=separator, n_rows=0, truncate_ragged_lines=True
+            ).columns
+            id_columns = [col for col in header if col.endswith("/id")]
+            schema_overrides = (
+                {col: pl.Utf8 for col in id_columns} if id_columns else None
+            )
+
+            # Now, read the full file once with the correct schema and
+            # encoding fallbacks.
             polars_encoding = _map_encoding_to_polars(encoding)
             try:
-                df = pl.read_csv(
+                source_df = pl.read_csv(
                     filename,
                     separator=separator,
                     encoding=polars_encoding,
                     truncate_ragged_lines=True,
+                    schema_overrides=schema_overrides,
                 )
-            except ValueError as ve:
-                # If the encoding is not supported by polars, fallback to utf8
-                if "encoding" in str(ve).lower():
-                    log.warning(
-                        f"Unsupported encoding '{encoding}' for polars, "
-                        f"falling back to utf8: {ve}"
-                    )
-                    df = pl.read_csv(
-                        filename,
-                        separator=separator,
-                        encoding="utf8",
-                        truncate_ragged_lines=True,
-                    )
-                else:
-                    raise
+            except (pl.exceptions.ComputeError, ValueError) as e:
+                if "encoding" not in str(e).lower():
+                    raise  # Not an encoding error, re-raise.
 
-        # Identify columns that end with /id suffix
-        id_columns = [col for col in df.columns if col.endswith("/id")]
+                log.warning(
+                    f"Read failed with encoding '{encoding}', trying fallbacks..."
+                )
+                source_df = None
+                for enc in ["utf8", "windows-1252", "latin-1", "iso-8859-1", "cp1252"]:
+                    try:
+                        source_df = pl.read_csv(
+                            filename,
+                            separator=separator,
+                            encoding=_map_encoding_to_polars(enc),
+                            truncate_ragged_lines=True,
+                            schema_overrides=schema_overrides,
+                        )
+                        log.warning(
+                            f"Successfully read with fallback encoding '{enc}'."
+                        )
+                        break
+                    except (pl.exceptions.ComputeError, ValueError):
+                        continue
+                if source_df is None:
+                    raise ValueError(
+                        "Could not read CSV with any of the tried encodings."
+                    ) from e
+        except Exception as e:
+            log.error(
+                f"Failed to read source file '{filename}' for relational import: {e}"
+            )
+            return
+        # At this point, source_df is guaranteed to be a DataFrame since
+        # we would have returned early if there was an error.
+        if source_df is None:
+            # This should never happen due to the logic above, but as a safety check
+            raise RuntimeError("source_df is unexpectedly None after CSV reading")
 
-        # If we have /id suffixed columns, re-read with explicit schema
-        if id_columns:
-            log.debug(f"Found /id suffixed columns: {id_columns}")
-            # Create schema override to force /id columns to be strings
-            schema_overrides = {col: pl.Utf8 for col in id_columns}
-            log.debug(f"Schema overrides for /id columns: {schema_overrides}")
-            # Re-read with explicit schema
-            source_df = pl.read_csv(
-                filename,
-                separator=separator,
-                truncate_ragged_lines=True,
-                schema_overrides=schema_overrides,
-            )
-            log.debug(
-                f"Re-read DataFrame with schema overrides. /id column types: "
-                f"{[f'{col}: {source_df[col].dtype}' for col in id_columns]}"
-            )
-        else:
-            source_df = df
         # Only proceed with relational import if there are strategies defined
         strategies = import_plan.get("strategies", {})
         if strategies:
