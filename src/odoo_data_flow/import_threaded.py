@@ -352,9 +352,8 @@ def _create_batches(
 def _get_model_fields(model: Any) -> Optional[dict[str, Any]]:
     """Safely retrieves the fields metadata from an Odoo model.
 
-    This handles cases where `_fields` should be a dictionary attribute.
-    In normal Odoo usage, `_fields` is an attribute, not a method.
-    Some customizations may make it callable, so we handle both cases.
+    This uses the proper fields_get() method instead of accessing _fields
+    directly to avoid RPC issues with proxy model objects.
 
     Args:
         model: The Odoo model object.
@@ -362,36 +361,25 @@ def _get_model_fields(model: Any) -> Optional[dict[str, Any]]:
     Returns:
         A dictionary of field metadata, or None if it cannot be retrieved.
     """
-    if not hasattr(model, "_fields"):
-        return None
-
-    model_fields_attr = model._fields
-    model_fields = None
-
-    if isinstance(model_fields_attr, dict):
-        # It's a property/dictionary, use it directly
-        model_fields = model_fields_attr
-    elif callable(model_fields_attr):
-        # In rare cases, some customizations might make _fields a callable
-        # that returns the fields dictionary. This shouldn't happen in normal usage.
+    try:
+        # Use the proper Odoo method instead of accessing _fields attribute
+        # which can cause issues with RPC proxy objects
+        return model.fields_get()
+    except Exception as e:
+        log.warning(f"Could not retrieve model fields via fields_get(): {e}")
+        # Fallback to attribute access only if fields_get fails
+        # But be very careful with RPC proxy objects
         try:
-            model_fields_result = model_fields_attr()
-            # Only use the result if it's a dictionary/mapping
-            if isinstance(model_fields_result, dict):
-                model_fields = model_fields_result
+            # Use getattr with a default to avoid issues with hasattr on RPC proxies
+            model_fields = getattr(model, '_fields', None)
+            if model_fields is not None and isinstance(model_fields, dict):
+                return model_fields
+            else:
+                return None
         except Exception:
-            # If calling fails, fall back to None
-            log.warning(
-                "Could not retrieve model fields by calling _fields method. This is not standard Odoo behavior."
-            )
-            model_fields = None
-    else:
-        log.warning(
-            "Model `_fields` attribute is of unexpected type: %s",
-            type(model_fields_attr),
-        )
-
-    return model_fields
+            # If both methods fail, return None
+            log.warning("Could not retrieve model fields via _fields attribute either.")
+            return None
 
 
 class RPCThreadImport(RpcThread):
