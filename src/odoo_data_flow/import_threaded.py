@@ -1466,11 +1466,12 @@ def _run_threaded_pass(  # noqa: C901
                     consecutive_failures = 0
                 else:
                     consecutive_failures += 1
-                    if consecutive_failures >= 50:
-                        log.error(
-                            f"Aborting import: Multiple "
-                            f"({consecutive_failures}) consecutive batches have"
-                            f" failed."
+                    # Only abort after a very large number of consecutive failures
+                    # to allow processing of datasets with many validation errors
+                    if consecutive_failures >= 500:  # Increased from 50 to 500
+                        log.warning(
+                            f"Stopping import: {consecutive_failures} consecutive batches have failed. "
+                            f"This indicates a persistent systemic issue that needs investigation."
                         )
                         rpc_thread.abort_flag = True
 
@@ -1518,9 +1519,10 @@ def _run_threaded_pass(  # noqa: C901
             refresh=True,
         )
     finally:
+        # Don't abort the import if all batches failed - this just means all records had errors
+        # which should still result in a fail file with all the problematic records
         if futures and successful_batches == 0:
-            log.error("Aborting import: All processed batches failed.")
-            rpc_thread.abort_flag = True
+            log.warning("All batches failed, but import completed. Check fail file for details.")
         rpc_thread.executor.shutdown(wait=True, cancel_futures=True)
         rpc_thread.progress.update(
             rpc_thread.task_id,
