@@ -364,16 +364,23 @@ def _get_model_fields(model: Any) -> Optional[dict[str, Any]]:
     try:
         # Use the proper Odoo method instead of accessing _fields attribute
         # which can cause issues with RPC proxy objects
-        return model.fields_get()
+        fields_result = model.fields_get()
+        # Cast to the expected type to satisfy MyPy
+        if isinstance(fields_result, dict):
+            return fields_result
+        else:
+            return None
     except Exception as e:
         log.warning(f"Could not retrieve model fields via fields_get(): {e}")
         # Fallback to attribute access only if fields_get fails
         # But be very careful with RPC proxy objects
         try:
             # Use getattr with a default to avoid issues with hasattr on RPC proxies
-            model_fields = getattr(model, '_fields', None)
+            model_fields = getattr(model, "_fields", None)
             if model_fields is not None and isinstance(model_fields, dict):
-                return model_fields
+                # Cast to the expected type to satisfy MyPy
+                fields_dict: dict[str, Any] = model_fields
+                return fields_dict
             else:
                 return None
         except Exception:
