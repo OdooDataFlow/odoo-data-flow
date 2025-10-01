@@ -964,7 +964,7 @@ def _execute_load_batch(  # noqa: C901
                     # This ensures the fail file has consistent column counts
                     padded_row = list(row) + [""] * (len(batch_header) - len(row))
                     error_msg = f"Row has {len(row)} columns but requires at least {max_index + 1} columns based on header"
-                    failed_line = padded_row + [f"Load failed: {error_msg}"]
+                    failed_line = [*padded_row, f"Load failed: {error_msg}"]
                     aggregated_failed_lines.append(failed_line)
 
         if not load_lines:
@@ -1105,7 +1105,7 @@ def _execute_load_batch(  # noqa: C901
             # Create id_map and track failed records separately
             id_map = {}
             successful_count = 0
-            total_count = len(
+            len(
                 current_chunk
             )  # Use current_chunk instead of load_lines to match correctly
             aggregated_failed_lines_batch = []  # Track failed lines for this batch specifically

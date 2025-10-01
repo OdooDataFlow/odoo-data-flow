@@ -208,6 +208,21 @@ class RPCThreadExport(RpcThread):
                 exported_data = self.model.export_data(
                     ids_to_export, self.header, context=self.context
                 ).get("datas", [])
+
+                # NEW: Sanitize UTF-8 in exported data immediately after fetching from Odoo
+                # This ensures any binary data from Odoo is properly sanitized before processing
+                sanitized_exported_data = []
+                for row in exported_data:
+                    sanitized_row = []
+                    for value in row:
+                        # Sanitize string values to ensure valid UTF-8
+                        if isinstance(value, str):
+                            sanitized_row.append(_sanitize_utf8_string(value))
+                        else:
+                            sanitized_row.append(value)
+                    sanitized_exported_data.append(sanitized_row)
+                exported_data = sanitized_exported_data
+
                 return [
                     dict(zip(self.header, row)) for row in exported_data
                 ], ids_to_export
@@ -234,13 +249,32 @@ class RPCThreadExport(RpcThread):
             if not raw_data:
                 return [], []
 
+            # NEW: Sanitize UTF-8 in raw data immediately after fetching from Odoo
+            # This ensures any binary data from Odoo is properly sanitized before processing
+            sanitized_raw_data = []
+            for record in raw_data:
+                sanitized_record = {}
+                for key, value in record.items():
+                    # Sanitize string values to ensure valid UTF-8
+                    if isinstance(value, str):
+                        sanitized_record[key] = _sanitize_utf8_string(value)
+                    else:
+                        sanitized_record[key] = value
+                sanitized_raw_data.append(sanitized_record)
+            raw_data = sanitized_raw_data
+
             # Enrich with XML IDs if in hybrid mode
             if enrichment_tasks:
                 self._enrich_with_xml_ids(raw_data, enrichment_tasks)
 
-            processed_ids = [
-                rec["id"] for rec in raw_data if isinstance(rec.get("id"), int)
-            ]
+            # Collect processed IDs (ensure they are integers)
+            processed_ids: list[int] = []
+            for rec in raw_data:
+                id_value = rec.get("id")
+                if isinstance(id_value, int):
+                    processed_ids.append(id_value)
+                elif isinstance(id_value, str) and id_value.isdigit():
+                    processed_ids.append(int(id_value))
             return self._format_batch_results(raw_data), processed_ids
 
         except (
@@ -886,10 +920,25 @@ def _sanitize_utf8_string(text: Any) -> str:
     if not isinstance(text, str):
         text = str(text)
 
-    # If it's already valid UTF-8, return as-is
+    # If it's already valid UTF-8, check for problematic control characters
     try:
-        text.encode("utf-8")
-        return str(text)  # Explicitly convert to str to satisfy MyPy
+        # Check if the string contains problematic control characters
+        # that might cause issues when writing to CSV
+        sanitized_text = ""
+        for char in text:
+            # Check if character is a problematic control character
+            if ord(char) < 32 and char not in "\n\r\t":
+                # Replace problematic control characters with '?'
+                sanitized_text += "?"
+            elif ord(char) == 0x9D:  # Specifically handle the problematic 0x9d byte
+                # This is the byte that was causing issues in your CSV file
+                sanitized_text += "?"
+            else:
+                sanitized_text += char
+
+        # Verify the sanitized text is valid UTF-8
+        sanitized_text.encode("utf-8")
+        return sanitized_text
     except UnicodeEncodeError:
         pass
 
