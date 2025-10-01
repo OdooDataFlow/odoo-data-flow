@@ -1522,7 +1522,9 @@ def _run_threaded_pass(  # noqa: C901
         # Don't abort the import if all batches failed - this just means all records had errors
         # which should still result in a fail file with all the problematic records
         if futures and successful_batches == 0:
-            log.warning("All batches failed, but import completed. Check fail file for details.")
+            log.warning(
+                "All batches failed, but import completed. Check fail file for details."
+            )
         rpc_thread.executor.shutdown(wait=True, cancel_futures=True)
         rpc_thread.progress.update(
             rpc_thread.task_id,
