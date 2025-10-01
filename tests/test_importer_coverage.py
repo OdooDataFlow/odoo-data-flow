@@ -15,7 +15,7 @@ def test_count_lines_with_content() -> None:
     """Test _count_lines with actual content."""
     import tempfile
 
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.csv') as f:
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
         f.write("line1\nline2\nline3\n")
         temp_path = f.name
 
