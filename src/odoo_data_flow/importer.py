@@ -344,32 +344,90 @@ def run_import(  # noqa: C901
                     schema_overrides=schema_overrides,
                 )
             except (pl.exceptions.ComputeError, ValueError) as e:
-                if "encoding" not in str(e).lower():
-                    raise  # Not an encoding error, re-raise.
+                error_msg = str(e).lower()
+                
+                # Determine if this is an encoding error or a data type parsing error
+                is_encoding_error = "encoding" in error_msg
+                is_parse_error = "could not parse" in error_msg or "dtype" in error_msg
+                
+                if not is_encoding_error and not is_parse_error:
+                    raise  # Not an encoding or parsing error, re-raise.
 
-                log.warning(
-                    f"Read failed with encoding '{encoding}', trying fallbacks..."
-                )
-                source_df = None
-                for enc in ["utf8", "windows-1252", "latin-1", "iso-8859-1", "cp1252"]:
+                if is_encoding_error:
+                    # Handle encoding errors as before
+                    log.warning(
+                        f"Read failed with encoding '{encoding}', trying fallbacks..."
+                    )
+                    source_df = None
+                    for enc in ["utf8", "windows-1252", "latin-1", "iso-8859-1", "cp1252"]:
+                        try:
+                            source_df = pl.read_csv(
+                                filename,
+                                separator=separator,
+                                encoding=_map_encoding_to_polars(enc),
+                                truncate_ragged_lines=True,
+                                schema_overrides=schema_overrides,
+                            )
+                            log.warning(
+                                f"Successfully read with fallback encoding '{enc}'."
+                            )
+                            break
+                        except (pl.exceptions.ComputeError, ValueError):
+                            continue
+                    if source_df is None:
+                        raise ValueError(
+                            "Could not read CSV with any of the tried encodings."
+                        ) from e
+                elif is_parse_error:
+                    # This is a data type parsing error - try reading with flexible schema
+                    log.warning(
+                        f"Read failed due to data type parsing: '{e}'. "
+                        f"Retrying with flexible parsing..."
+                    )
                     try:
+                        # Try reading with 'null_values' parameter and more flexible settings
                         source_df = pl.read_csv(
                             filename,
                             separator=separator,
-                            encoding=_map_encoding_to_polars(enc),
+                            encoding=polars_encoding,
                             truncate_ragged_lines=True,
                             schema_overrides=schema_overrides,
+                            null_values=["", "NULL", "null", "NaN", "nan"],  # Handle common null representations
                         )
-                        log.warning(
-                            f"Successfully read with fallback encoding '{enc}'."
-                        )
-                        break
+                        log.warning("Successfully read CSV with flexible parsing for data type issues.")
                     except (pl.exceptions.ComputeError, ValueError):
-                        continue
-                if source_df is None:
-                    raise ValueError(
-                        "Could not read CSV with any of the tried encodings."
-                    ) from e
+                        # If that still fails due to dtype issues, try with try_parse_dates=False
+                        try:
+                            source_df = pl.read_csv(
+                                filename,
+                                separator=separator,
+                                encoding=polars_encoding,
+                                truncate_ragged_lines=True,
+                                schema_overrides=schema_overrides,
+                                try_parse_dates=False,  # Don't try to auto-parse dates
+                                null_values=["", "NULL", "null", "NaN", "nan"],
+                            )
+                            log.warning("Successfully read CSV by disabling date parsing.")
+                        except (pl.exceptions.ComputeError, ValueError):
+                            # If still failing, try treating problematic columns as strings
+                            try:
+                                # Get the columns first
+                                header = pl.read_csv(
+                                    filename, separator=separator, n_rows=0, truncate_ragged_lines=True
+                                ).columns
+                                # Create schema overrides that forces problematic columns as strings
+                                # For now, just use the original overrides + some fallback
+                                source_df = pl.read_csv(
+                                    filename,
+                                    separator=separator,
+                                    encoding=polars_encoding,
+                                    truncate_ragged_lines=True,
+                                    schema_overrides={col: pl.Utf8 for col in header},  # All columns as strings
+                                )
+                                log.warning("Successfully read CSV by treating all columns as strings.")
+                            except (pl.exceptions.ComputeError, ValueError):
+                                # If all attempts fail, raise the original error
+                                raise
         except Exception as e:
             log.error(
                 f"Failed to read source file '{filename}' for relational import: {e}"
