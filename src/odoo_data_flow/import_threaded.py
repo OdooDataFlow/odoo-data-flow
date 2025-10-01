@@ -369,7 +369,10 @@ def _get_model_fields(model: Any) -> Optional[dict[str, Any]]:
         # But be careful - Mock objects will return Mock() not raise exceptions
         if isinstance(fields_result, dict):
             return fields_result
-        elif hasattr(fields_result, '__class__') and 'Mock' in fields_result.__class__.__name__:
+        elif (
+            hasattr(fields_result, "__class__")
+            and "Mock" in fields_result.__class__.__name__
+        ):
             # This is likely a Mock object from testing, not a real dict
             # Fall through to the _fields attribute approach
             pass
@@ -379,7 +382,7 @@ def _get_model_fields(model: Any) -> Optional[dict[str, Any]]:
         # If fields_get() fails with a real exception, fall back to _fields attribute approach
         # This maintains compatibility with existing tests and edge cases
         pass
-    
+
     # Original logic for handling _fields attribute directly
     # (preserving backward compatibility with tests)
     if not hasattr(model, "_fields"):

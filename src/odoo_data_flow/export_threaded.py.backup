@@ -340,6 +340,19 @@ def _initialize_export(
         log.error(f"Failed during metadata initialization. Error: {e}", exc_info=True)
         return None, None, None
 
+            return text_bytes.decode('utf-8', errors='replace')
+        except Exception:
+            # Ultimate fallback - strip to ASCII printable chars only
+            result = \"\"
+            for char in str(text):
+                if ord(char) < 127 and ord(char) >= 32:
+                    result += char
+                elif char in '\n\r\t':
+                    result += char
+                else:
+                    result += '?'  # Replace unrepresentable chars with ?
+            return result
+
 
 def _clean_batch(batch_data: list[dict[str, Any]]) -> pl.DataFrame:
     """Converts a batch of data to a DataFrame without complex cleaning."""
@@ -372,7 +385,7 @@ def _clean_and_transform_batch(
                 pl.col(col_name)
                 .map_elements(
                     lambda x: _sanitize_utf8_string(x) if x is not None else x,
-                    return_dtype=pl.String,
+                    return_dtype=pl.String
                 )
                 .alias(col_name)
             )
@@ -862,66 +875,3 @@ def export_data(
         log.error(f"Export failed. Session data retained in: {session_dir}")
 
     return success, session_id, total_record_count, final_df
-
-
-def _sanitize_utf8_string(text: Any) -> str:
-    """Sanitize text to ensure valid UTF-8.
-
-    This function handles various edge cases:
-    - None values are converted to empty strings
-    - Non-string values are converted to strings
-    - Invalid UTF-8 byte sequences are replaced with placeholder characters
-    - Control characters (except common ones like newlines) are removed or replaced
-
-    Args:
-        text: The text to sanitize
-
-    Returns:
-        A sanitized UTF-8 string
-    """
-    if text is None:
-        return ""
-
-    # Convert to string if not already
-    if not isinstance(text, str):
-        text = str(text)
-
-    # If it's already valid UTF-8, return as-is
-    try:
-        text.encode("utf-8")
-        return str(text)  # Explicitly convert to str to satisfy MyPy
-    except UnicodeEncodeError:
-        pass
-
-    # Handle invalid UTF-8 by replacing problematic characters
-    # First, try to decode as latin-1 (which can decode any byte sequence)
-    # then encode as UTF-8, replacing invalid sequences
-    try:
-        # If text contains invalid UTF-8, try to fix it
-        if isinstance(text, str):
-            # Try to encode and decode to fix encoding issues
-            text_bytes = text.encode("utf-8", errors="surrogatepass")
-            # Decode back, replacing invalid sequences
-            result = text_bytes.decode("utf-8", errors="replace")
-            return str(result)  # Explicitly convert to str to satisfy MyPy
-        else:
-            return str(text)
-    except (UnicodeEncodeError, UnicodeDecodeError):
-        # If all else fails, use a very safe approach
-        # Convert to bytes using latin-1 (which never fails)
-        # then decode as UTF-8 with replacement of invalid sequences
-        try:
-            text_bytes = str(text).encode("latin-1")
-            result = text_bytes.decode("utf-8", errors="replace")
-            return str(result)  # Explicitly convert to str to satisfy MyPy
-        except Exception:
-            # Ultimate fallback - strip to ASCII printable chars only
-            result = ""
-            for char in str(text):
-                if ord(char) < 127 and ord(char) >= 32:
-                    result += char
-                elif char in "\n\r\t":
-                    result += char
-                else:
-                    result += "?"  # Replace unrepresentable chars with ?
-            return str(result)  # Explicitly convert to str to satisfy MyPy
