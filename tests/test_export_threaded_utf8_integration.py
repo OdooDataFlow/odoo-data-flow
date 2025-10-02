@@ -36,7 +36,7 @@ class TestUTF8SanitizationIntegration:
             ),
         ]
 
-        for input_val, expected in test_cases:
+        for input_val, _expected in test_cases:
             result = _sanitize_utf8_string(input_val)
             assert isinstance(result, str)
             # Should be valid UTF-8
@@ -74,7 +74,11 @@ class TestUTF8SanitizationIntegration:
 
         field_types = {"id": "char", "name": "char", "description": "text"}
 
-        polars_schema = {"id": pl.String, "name": pl.String, "description": pl.String}
+        polars_schema = {
+            "id": pl.String(),
+            "name": pl.String(),
+            "description": pl.String(),
+        }
 
         result_df = _clean_and_transform_batch(df, field_types, polars_schema)
 
@@ -117,7 +121,11 @@ class TestUTF8SanitizationIntegration:
 
         field_types = {"id": "char", "name": "char", "description": "text"}
 
-        polars_schema = {"id": pl.String, "name": pl.String, "description": pl.String}
+        polars_schema = {
+            "id": pl.String(),
+            "name": pl.String(),
+            "description": pl.String(),
+        }
 
         result_df = _clean_and_transform_batch(df, field_types, polars_schema)
 
@@ -152,22 +160,28 @@ class TestUTF8SanitizationIntegration:
             ("Very long string " * 1000, "Very long string " * 1000),
             # Strings with many special characters
             (
-                "Special chars: \x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
-                "Special chars: \x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+                "Special chars: \x00\x01\x02\x03\x04\x05"
+                "\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+                "Special chars: \x00\x01\x02\x03\x04\x05"
+                "\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
             ),
             # Strings with binary data patterns
             (
-                "Binary pattern: \x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8a\x8b\x8c\x8d\x8e\x8f",
-                "Binary pattern: \x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8a\x8b\x8c\x8d\x8e\x8f",
+                "Binary pattern: \x80\x81\x82\x83\x84\x85"
+                "\x86\x87\x88\x89\x8a\x8b\x8c\x8d\x8e\x8f",
+                "Binary pattern: \x80\x81\x82\x83\x84\x85"
+                "\x86\x87\x88\x89\x8a\x8b\x8c\x8d\x8e\x8f",
             ),
             # Strings with high-byte patterns
             (
-                "High bytes: \x90\x91\x92\x93\x94\x95\x96\x97\x98\x99\x9a\x9b\x9c\x9d\x9e\x9f",
-                "High bytes: \x90\x91\x92\x93\x94\x95\x96\x97\x98\x99\x9a\x9b\x9c\x9d\x9e\x9f",
+                "High bytes: \x90\x91\x92\x93\x94\x95"
+                "\x96\x97\x98\x99\x9a\x9b\x9c\x9d\x9e\x9f",
+                "High bytes: \x90\x91\x92\x93\x94\x95"
+                "\x96\x97\x98\x99\x9a\x9b\x9c\x9d\x9e\x9f",
             ),
         ]
 
-        for input_val, expected in extreme_cases:
+        for input_val, _expected in extreme_cases:
             result = _sanitize_utf8_string(input_val)
             assert isinstance(result, str)
             # Should be valid UTF-8 (no exceptions)

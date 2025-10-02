@@ -94,7 +94,11 @@ class TestCleanAndTransformBatchUtf8:
 
         field_types = {"id": "char", "name": "char", "description": "text"}
 
-        polars_schema = {"id": pl.String, "name": pl.String, "description": pl.String}
+        polars_schema = {
+            "id": pl.String(),
+            "name": pl.String(),
+            "description": pl.String(),
+        }
 
         result_df = _clean_and_transform_batch(df, field_types, polars_schema)
 
@@ -115,7 +119,11 @@ class TestCleanAndTransformBatchUtf8:
 
         field_types = {"id": "char", "name": "char", "description": "text"}
 
-        polars_schema = {"id": pl.String, "name": pl.String, "description": pl.String}
+        polars_schema = {
+            "id": pl.String(),
+            "name": pl.String(),
+            "description": pl.String(),
+        }
 
         result_df = _clean_and_transform_batch(df, field_types, polars_schema)
 
@@ -147,10 +155,10 @@ class TestCleanAndTransformBatchUtf8:
         }
 
         polars_schema = {
-            "id": pl.Int64,
-            "name": pl.String,
-            "price": pl.Float64,
-            "active": pl.Boolean,
+            "id": pl.Int64(),
+            "name": pl.String(),
+            "price": pl.Float64(),
+            "active": pl.Boolean(),
         }
 
         result_df = _clean_and_transform_batch(df, field_types, polars_schema)
@@ -174,7 +182,11 @@ class TestCleanAndTransformBatchUtf8:
 
         field_types = {"id": "char", "name": "char", "description": "text"}
 
-        polars_schema = {"id": pl.String, "name": pl.String, "description": pl.String}
+        polars_schema = {
+            "id": pl.String(),
+            "name": pl.String(),
+            "description": pl.String(),
+        }
 
         result_df = _clean_and_transform_batch(df, field_types, polars_schema)
 
@@ -208,7 +220,7 @@ class TestCleanAndTransformBatchUtf8:
 
         field_types = {"id": "char", "name": "char", "quantity": "integer"}
 
-        polars_schema = {"id": pl.String, "name": pl.String, "quantity": pl.Int64}
+        polars_schema = {"id": pl.String(), "name": pl.String(), "quantity": pl.Int64()}
 
         result_df = _clean_and_transform_batch(df, field_types, polars_schema)
 
@@ -223,13 +235,15 @@ class TestCleanAndTransformBatchUtf8:
         self,
     ) -> None:
         """Test handling of binary-like strings that might cause the original issue."""
-        # Create a DataFrame with binary-like strings that might cause the original issue
+        # Create a DataFrame with binary-like strings that might cause
+        # the original issue
         df = pl.DataFrame(
             {
                 "id": ["1", "2", "3"],
                 "name": [
                     "Regular Product Name",
-                    "Product with \x9d binary char",  # This is the problematic byte from your error
+                    "Product with \x9d binary char",  # This is the
+                    # problematic byte from your error
                     "Another Product Name",
                 ],
                 "description": [
@@ -242,7 +256,11 @@ class TestCleanAndTransformBatchUtf8:
 
         field_types = {"id": "char", "name": "char", "description": "text"}
 
-        polars_schema = {"id": pl.String, "name": pl.String, "description": pl.String}
+        polars_schema = {
+            "id": pl.String(),
+            "name": pl.String(),
+            "description": pl.String(),
+        }
 
         result_df = _clean_and_transform_batch(df, field_types, polars_schema)
 
@@ -279,7 +297,11 @@ class TestCleanAndTransformBatchUtf8:
 
         field_types = {"id": "char", "name": "char", "description": "text"}
 
-        polars_schema = {"id": pl.String, "name": pl.String, "description": pl.String}
+        polars_schema = {
+            "id": pl.String(),
+            "name": pl.String(),
+            "description": pl.String(),
+        }
 
         result_df = _clean_and_transform_batch(df, field_types, polars_schema)
 
@@ -313,7 +335,11 @@ class TestCleanAndTransformBatchUtf8:
 
         field_types = {"id": "char", "name": "char", "description": "text"}
 
-        polars_schema = {"id": pl.String, "name": pl.String, "description": pl.String}
+        polars_schema = {
+            "id": pl.String(),
+            "name": pl.String(),
+            "description": pl.String(),
+        }
 
         result_df = _clean_and_transform_batch(df, field_types, polars_schema)
 
@@ -356,7 +382,11 @@ class TestCleanAndTransformBatchUtf8:
 
         field_types = {"id": "char", "name": "char", "description": "text"}
 
-        polars_schema = {"id": pl.String, "name": pl.String, "description": pl.String}
+        polars_schema = {
+            "id": pl.String(),
+            "name": pl.String(),
+            "description": pl.String(),
+        }
 
         result_df = _clean_and_transform_batch(df, field_types, polars_schema)
 

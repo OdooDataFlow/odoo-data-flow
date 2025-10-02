@@ -379,8 +379,12 @@ def _get_model_fields(model: Any) -> Optional[dict[str, Any]]:
         else:
             return None
     except Exception:
-        # If fields_get() fails with a real exception, fall back to _fields attribute approach
+        # If fields_get() fails with a real exception, fall back to
+        # _fields attribute approach
         # This maintains compatibility with existing tests and edge cases
+        log.debug(
+            "fields_get() failed, falling back to _fields attribute", exc_info=True
+        )
         pass
 
     # Original logic for handling _fields attribute directly
@@ -960,10 +964,14 @@ def _execute_load_batch(  # noqa: C901
                     load_lines.append(processed_row)
                 else:
                     # Row doesn't have enough columns, add to failed lines
-                    # Pad the row to match the original header length before adding error message
+                    # Pad the row to match the original header length
+                    # before adding error message
                     # This ensures the fail file has consistent column counts
                     padded_row = list(row) + [""] * (len(batch_header) - len(row))
-                    error_msg = f"Row has {len(row)} columns but requires at least {max_index + 1} columns based on header"
+                    error_msg = (
+                        f"Row has {len(row)} columns but requires "
+                        f"at least {max_index + 1} columns based on header"
+                    )
                     failed_line = [*padded_row, f"Load failed: {error_msg}"]
                     aggregated_failed_lines.append(failed_line)
 
@@ -1108,7 +1116,8 @@ def _execute_load_batch(  # noqa: C901
             len(
                 current_chunk
             )  # Use current_chunk instead of load_lines to match correctly
-            aggregated_failed_lines_batch = []  # Track failed lines for this batch specifically
+            aggregated_failed_lines_batch = []  # Track failed lines for this
+            # batch specifically
 
             # Create id_map by matching records with created_ids
             for i, line in enumerate(current_chunk):
@@ -1120,12 +1129,21 @@ def _execute_load_batch(  # noqa: C901
                         successful_count += 1
                     else:
                         # Record was returned as None in the created_ids list
-                        error_msg = f"Record creation failed - Odoo returned None for record index {i}"
+                        error_msg = (
+                            f"Record creation failed - Odoo returned None "
+                            f"for record index {i}"
+                        )
                         failed_line = [*list(line), f"Load failed: {error_msg}"]
                         aggregated_failed_lines_batch.append(failed_line)
                 else:
-                    # Record wasn't in the created_ids list (fewer IDs returned than sent)
-                    error_msg = f"Record creation failed - expected {len(current_chunk)} records, only {len(created_ids)} returned by Odoo load() method"
+                    # Record wasn't in the created_ids list (fewer IDs
+                    # returned than sent)
+                    error_msg = (
+                        f"Record creation failed - expected "
+                        f"{len(current_chunk)} records, "
+                        f"only {len(created_ids)} returned by Odoo "
+                        f"load() method"
+                    )
                     failed_line = [*list(line), f"Load failed: {error_msg}"]
                     aggregated_failed_lines_batch.append(failed_line)
 
@@ -1164,7 +1182,8 @@ def _execute_load_batch(  # noqa: C901
             elif len(aggregated_failed_lines_batch) > 0:
                 # Add the specific records that failed to the aggregated failed lines
                 log.info(
-                    f"Capturing {len(aggregated_failed_lines_batch)} failed records for fail file"
+                    f"Capturing {len(aggregated_failed_lines_batch)} "
+                    f"failed records for fail file"
                 )
                 aggregated_failed_lines.extend(aggregated_failed_lines_batch)
 
@@ -1496,8 +1515,10 @@ def _run_threaded_pass(  # noqa: C901
                     # to allow processing of datasets with many validation errors
                     if consecutive_failures >= 500:  # Increased from 50 to 500
                         log.warning(
-                            f"Stopping import: {consecutive_failures} consecutive batches have failed. "
-                            f"This indicates a persistent systemic issue that needs investigation."
+                            f"Stopping import: {consecutive_failures} "
+                            f"consecutive batches have failed. "
+                            f"This indicates a persistent systemic issue "
+                            f"that needs investigation."
                         )
                         rpc_thread.abort_flag = True
 
@@ -1545,7 +1566,8 @@ def _run_threaded_pass(  # noqa: C901
             refresh=True,
         )
     finally:
-        # Don't abort the import if all batches failed - this just means all records had errors
+        # Don't abort the import if all batches failed - this just means
+        # all records had errors
         # which should still result in a fail file with all the problematic records
         if futures and successful_batches == 0:
             log.warning(

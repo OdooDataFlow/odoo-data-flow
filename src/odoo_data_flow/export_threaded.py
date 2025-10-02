@@ -9,6 +9,7 @@ import csv
 import json
 import shutil
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from time import time
 from typing import Any, Optional, Union, cast
@@ -179,7 +180,7 @@ class RPCThreadExport(RpcThread):
             self.has_failures = True
             return [], []
 
-    def _execute_batch(
+    def _execute_batch(  # noqa: C901
         self, ids_to_export: list[int], num: Union[int, str]
     ) -> tuple[list[dict[str, Any]], list[int]]:
         """Executes the export for a single batch of IDs.
@@ -209,8 +210,10 @@ class RPCThreadExport(RpcThread):
                     ids_to_export, self.header, context=self.context
                 ).get("datas", [])
 
-                # NEW: Sanitize UTF-8 in exported data immediately after fetching from Odoo
-                # This ensures any binary data from Odoo is properly sanitized before processing
+                # NEW: Sanitize UTF-8 in exported data immediately after
+                # fetching from Odoo
+                # This ensures any binary data from Odoo is properly
+                # sanitized before processing
                 sanitized_exported_data = []
                 for row in exported_data:
                     sanitized_row = []
@@ -249,8 +252,10 @@ class RPCThreadExport(RpcThread):
             if not raw_data:
                 return [], []
 
-            # NEW: Sanitize UTF-8 in raw data immediately after fetching from Odoo
-            # This ensures any binary data from Odoo is properly sanitized before processing
+            # NEW: Sanitize UTF-8 in raw data immediately after
+            # fetching from Odoo
+            # This ensures any binary data from Odoo is properly
+            # sanitized before processing
             sanitized_raw_data = []
             for record in raw_data:
                 sanitized_record = {}
@@ -382,10 +387,10 @@ def _clean_batch(batch_data: list[dict[str, Any]]) -> pl.DataFrame:
     return pl.DataFrame(batch_data, infer_schema_length=None)
 
 
-def _clean_and_transform_batch(
+def _clean_and_transform_batch(  # noqa: C901
     df: pl.DataFrame,
     field_types: dict[str, str],
-    polars_schema: dict[str, pl.DataType],
+    polars_schema: Mapping[str, pl.DataType],
 ) -> pl.DataFrame:
     """Runs a multi-stage cleaning and transformation pipeline on a DataFrame."""
     # Step 1: Convert any list-type or object-type columns to strings FIRST.
@@ -413,7 +418,8 @@ def _clean_and_transform_batch(
     if string_sanitization_exprs:
         df = df.with_columns(string_sanitization_exprs)
 
-    # Step 3: Now that lists are gone and strings are sanitized, it's safe to clean up 'False' values.
+    # Step 3: Now that lists are gone and strings are sanitized, it's safe
+    # to clean up 'False' values.
     false_cleaning_exprs = []
     for field_name, field_type in field_types.items():
         if field_name in df.columns and field_type != "boolean":
@@ -532,7 +538,7 @@ def _process_export_batches(  # noqa: C901
     otherwise concatenates in memory for best performance.
     """
     field_types = {k: v.get("type", "char") for k, v in fields_info.items()}
-    polars_schema: dict[str, pl.DataType] = {
+    polars_schema: Mapping[str, pl.DataType] = {
         field: ODOO_TO_POLARS_MAP.get(odoo_type, pl.String)()
         for field, odoo_type in field_types.items()
     }
@@ -636,7 +642,10 @@ def _process_export_batches(  # noqa: C901
         if enrich_main_xml_id:
             # The .id column is correctly typed as Int64. The id column, which
             # would also be Int64, needs its type changed to String for the header.
-            polars_schema["id"] = pl.String()
+            # Create a mutable copy of the schema for this modification
+            mutable_schema = dict(polars_schema)
+            mutable_schema["id"] = pl.String()
+            polars_schema = mutable_schema
         empty_df = pl.DataFrame(schema=polars_schema)
         if output:
             if is_resuming:
@@ -898,7 +907,7 @@ def export_data(
     return success, session_id, total_record_count, final_df
 
 
-def _sanitize_utf8_string(text: Any) -> str:
+def _sanitize_utf8_string(text: Any) -> str:  # noqa: C901
     """Sanitize text to ensure valid UTF-8.
 
     This function handles various edge cases:

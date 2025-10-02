@@ -385,13 +385,15 @@ def run_import(  # noqa: C901
                             "Could not read CSV with any of the tried encodings."
                         ) from e
                 elif is_parse_error:
-                    # This is a data type parsing error - try reading with flexible schema
+                    # This is a data type parsing error - try reading with
+                    # flexible schema
                     log.warning(
                         f"Read failed due to data type parsing: '{e}'. "
                         f"Retrying with flexible parsing..."
                     )
                     try:
-                        # Try reading with 'null_values' parameter and more flexible settings
+                        # Try reading with 'null_values' parameter and more
+                        # flexible settings
                         source_df = pl.read_csv(
                             filename,
                             separator=separator,
@@ -407,10 +409,12 @@ def run_import(  # noqa: C901
                             ],  # Handle common null representations
                         )
                         log.warning(
-                            "Successfully read CSV with flexible parsing for data type issues."
+                            "Successfully read CSV with flexible parsing "
+                            "for data type issues."
                         )
                     except (pl.exceptions.ComputeError, ValueError):
-                        # If that still fails due to dtype issues, try with try_parse_dates=False
+                        # If that still fails due to dtype issues, try with
+                        # try_parse_dates=False
                         try:
                             source_df = pl.read_csv(
                                 filename,
@@ -425,8 +429,10 @@ def run_import(  # noqa: C901
                                 "Successfully read CSV by disabling date parsing."
                             )
                         except (pl.exceptions.ComputeError, ValueError):
-                            # If still failing, read the data in a way that allows preflight to proceed
-                            # The actual type validation and conversion will be handled during import
+                            # If still failing, read the data in a way that
+                            # allows preflight to proceed
+                            # The actual type validation and conversion will
+                            # be handled during import
                             try:
                                 # First get the header structure
                                 header_info = pl.read_csv(
@@ -436,8 +442,10 @@ def run_import(  # noqa: C901
                                     truncate_ragged_lines=True,
                                 ).columns
 
-                                # Read with a limited number of rows to identify the issue
-                                # and allow preflight to continue with basic data analysis
+                                # Read with a limited number of rows to
+                                # identify the issue
+                                # and allow preflight to continue with basic
+                                # data analysis
                                 source_df = pl.read_csv(
                                     filename,
                                     separator=separator,
@@ -446,15 +454,20 @@ def run_import(  # noqa: C901
                                     schema_overrides={
                                         col: pl.Utf8 for col in header_info
                                     },  # All as strings for now
-                                    n_rows=100,  # Only read first 100 rows to ensure preflight performance
+                                    n_rows=100,  # Only read first 100 rows
+                                    # to ensure preflight performance
                                 )
                                 log.warning(
-                                    "Successfully read partial CSV for preflight analysis. "
-                                    "Type validation will be handled during actual import."
+                                    "Successfully read partial CSV for "
+                                    "preflight analysis. "
+                                    "Type validation will be handled "
+                                    "during actual import."
                                 )
                             except (pl.exceptions.ComputeError, ValueError):
-                                # Final attempt: read with maximum flexibility by skipping problematic rows
-                                # Use ignore_errors to handle dtype parsing issues gracefully
+                                # Final attempt: read with maximum
+                                # flexibility by skipping problematic rows
+                                # Use ignore_errors to handle dtype parsing
+                                # issues gracefully
                                 source_df = pl.read_csv(
                                     filename,
                                     separator=separator,
@@ -473,7 +486,8 @@ def run_import(  # noqa: C901
                                     ignore_errors=True,
                                 )
                                 log.warning(
-                                    "Successfully read CSV with error tolerance for preflight checks."
+                                    "Successfully read CSV with error tolerance"
+                                    " for preflight checks."
                                 )
         except Exception as e:
             log.error(
