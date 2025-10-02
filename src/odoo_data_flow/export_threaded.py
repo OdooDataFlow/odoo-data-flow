@@ -229,11 +229,27 @@ class RPCThreadExport(RpcThread):
                     if field == ".id":
                         new_record[".id"] = record.get("id")
                     elif field.endswith("/.id"):
-                        new_record[field] = (
-                            value[0]
-                            if isinstance(value, (list, tuple)) and value
-                            else None
-                        )
+                        # Handle many-to-many fields that should return comma-separated database IDs
+                        if isinstance(value, (list, tuple)) and value:
+                            # For many-to-many relationships, convert list of IDs to comma-separated string
+                            if all(isinstance(item, int) for item in value):
+                                # If all items are integers (database IDs), join them
+                                new_record[field] = ",".join(str(item) for item in value)
+                            elif all(isinstance(item, (list, tuple)) and len(item) >= 1 for item in value):
+                                # If items are tuples like (id, name), extract the IDs
+                                ids = [str(item[0]) for item in value if len(item) >= 1 and isinstance(item[0], int)]
+                                new_record[field] = ",".join(ids) if ids else None
+                            else:
+                                # Handle other cases - extract first elements that are integers
+                                ids = []
+                                for item in value:
+                                    if isinstance(item, int):
+                                        ids.append(str(item))
+                                    elif isinstance(item, (list, tuple)) and len(item) >= 1 and isinstance(item[0], int):
+                                        ids.append(str(item[0]))
+                                new_record[field] = ",".join(ids) if ids else str(value[0]) if value else None
+                        else:
+                            new_record[field] = str(value) if value is not None else None
                     else:
                         new_record[field] = None
             processed_data.append(new_record)
@@ -1155,4 +1171,6 @@ def _sanitize_utf8_string(text: Any) -> str:
                 else:
                     result += "?"  # Replace unrepresentable chars with ?
             return str(result)  # Explicitly convert to str to satisfy MyPy
+
+
 # ruff: noqa: C901
