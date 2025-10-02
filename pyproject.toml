@@ -131,6 +131,10 @@ check_untyped_defs = true
 
 
 [[tool.mypy.overrides]]
+module = "odoo_data_flow.export_threaded"
+disable_error_code = ["unreachable"]
+
+[[tool.mypy.overrides]]
 module = "odoo"
 ignore_missing_imports = true
 
