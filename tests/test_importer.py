@@ -549,11 +549,11 @@ def test_run_import_with_relational_strategy(
     assert mock_import_data.call_count == 1  # Only the first pass
     mock_run_direct_relational.assert_called_once()
     mock_save_cache.assert_called_once()
+
+
 """Additional tests for importer.py to improve coverage."""
 
 from pathlib import Path
-
-from odoo_data_flow.importer import _count_lines, _infer_model_from_filename
 
 
 def test_count_lines_file_not_found() -> None:

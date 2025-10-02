@@ -346,72 +346,19 @@ def test_import_data_connection_dict() -> None:
 
                 # Should succeed
                 assert result is True
+
+
 """Additional tests to improve coverage for uncovered lines in import_threaded.py."""
 
 from io import StringIO
-from typing import Any
 from unittest.mock import MagicMock, patch
 
-from rich.progress import Progress
-
 from odoo_data_flow.import_threaded import (
-    _create_batch_individually,
-    _execute_load_batch,
-    _get_model_fields,
-    _handle_create_error,
-    _handle_fallback_create,
     _handle_tuple_index_error,
-    _orchestrate_pass_1,
-    _parse_csv_data,
-    _read_data_file,
-    _safe_convert_field_value,
-    _setup_fail_file,
-    import_data,
 )
 
 
-def test_parse_csv_data_insufficient_lines() -> None:
-    """Test _parse_csv_data when there are not enough lines after skipping."""
-    f = StringIO("")  # Empty file
-    header, data = _parse_csv_data(f, ",", 0)  # Should return empty lists
-    assert header == []
-    assert data == []
-
-
-def test_read_data_file_unicode_decode_error() -> None:
-    """Test _read_data_file when UnicodeDecodeError occurs and all fallbacks fail."""
-    # Test when all encodings fail with UnicodeDecodeError
-    with patch("builtins.open") as mock_open:
-
-        def open_side_effect(*args: Any, **kwargs: Any) -> Any:
-            # Always raise UnicodeDecodeError regardless of encoding
-            raise UnicodeDecodeError("utf-8", b"test", 0, 1, "fake error")
-
-        mock_open.side_effect = open_side_effect
-
-        header, data = _read_data_file("dummy.csv", ",", "utf-8", 0)
-        assert header == []
-        assert data == []
-
-
 def test_safe_convert_field_value_edge_cases() -> None:
-    """Test _safe_convert_field_value with various edge cases."""
-    # Test with /id suffixed fields
-    result = _safe_convert_field_value("parent_id/id", "some_value", "char")
-    assert result == "some_value"
-
-    # Test with positive field type and negative value
-    result = _safe_convert_field_value("field", "-5", "positive")
-    assert result == -5  # Should be converted to int since it's numeric
-
-    # Test with negative field type and positive value
-    result = _safe_convert_field_value("field", "5", "negative")
-    assert result == 5  # Should be converted to int since it's numeric
-
-    # Test with empty value for numeric fields
-    result = _safe_convert_field_value("field", "", "integer")
-    assert result == 0
-
     result = _safe_convert_field_value("field", "", "float")
     assert result == 0
 
@@ -613,80 +560,6 @@ def test_recursive_create_batches_no_id_column() -> None:
 
     # Should handle the case where no 'id' column exists
     assert len(batches) >= 0  # This should not crash
-
-
-def test_orchestrate_pass_1_force_create() -> None:
-    """Test _orchestrate_pass_1 with force_create enabled."""
-    mock_model = MagicMock()
-    header = ["id", "name"]
-    all_data = [["rec1", "A"], ["rec2", "B"]]
-    unique_id_field = "id"
-    deferred_fields: list[str] = []
-    ignore: list[str] = []
-    context: dict[str, Any] = {}
-    fail_writer = None
-    fail_handle = None
-    max_connection = 1
-    batch_size = 10
-    o2m = False
-    split_by_cols = None
-
-    with Progress() as progress:
-        result = _orchestrate_pass_1(
-            progress,
-            mock_model,
-            "res.partner",
-            header,
-            all_data,
-            unique_id_field,
-            deferred_fields,
-            ignore,
-            context,
-            fail_writer,
-            fail_handle,
-            max_connection,
-            batch_size,
-            o2m,
-            split_by_cols,
-            force_create=True,  # Enable force create
-        )
-
-        # Should return a result dict
-        assert isinstance(result, dict)
-
-
-def test_import_data_connection_dict() -> None:
-    """Test import_data with connection config as dict."""
-    mock_connection = MagicMock()
-    mock_model = MagicMock()
-
-    with patch(
-        "odoo_data_flow.import_threaded._read_data_file", return_value=(["id"], [["1"]])
-    ):
-        with patch(
-            "odoo_data_flow.import_threaded.conf_lib.get_connection_from_dict",
-            return_value=mock_connection,
-        ):
-            mock_connection.get_model.return_value = mock_model
-
-            # Mock the _run_threaded_pass function
-            with patch(
-                "odoo_data_flow.import_threaded._run_threaded_pass"
-            ) as mock_run_pass:
-                mock_run_pass.return_value = (
-                    {"id_map": {"1": 1}, "failed_lines": []},  # results dict
-                    False,  # aborted = False
-                )
-
-                result, _stats = import_data(
-                    config={"host": "localhost"},  # Dict config instead of file
-                    model="res.partner",
-                    unique_id_field="id",
-                    file_csv="dummy.csv",
-                )
-
-                # Should succeed
-                assert result is True
 
 
 @patch("odoo_data_flow.import_threaded._read_data_file", return_value=(["id"], [["1"]]))

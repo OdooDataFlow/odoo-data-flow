@@ -327,13 +327,14 @@ class TestCreateBatchIndividually:
             )
             assert "id_map" in result
             assert "failed_lines" in result
+
+
 """More targeted tests to increase coverage of import_threaded.py."""
 
 from unittest.mock import MagicMock, patch
 
 from odoo_data_flow.import_threaded import (
     _execute_load_batch,
-    _handle_create_error,
     _safe_convert_field_value,
 )
 

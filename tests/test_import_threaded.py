@@ -846,36 +846,28 @@ def test_execute_load_batch_sanitizes_ids_in_model_fields_case() -> None:
     expected_id2 = to_xmlid("different id with spaces")
     assert result["id_map"][expected_id1] == 1
     assert result["id_map"][expected_id2] == 2
+
+
 """Additional tests to improve coverage of import_threaded.py."""
 
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
 from rich.progress import TaskID
 
 from odoo_data_flow.import_threaded import (
     RPCThreadImport,
-    _create_batch_individually,
-    _create_batches,
-    _execute_load_batch,
     _execute_write_batch,
     _filter_ignored_columns,
-    _format_odoo_error,
     _get_model_fields,
     _handle_create_error,
     _handle_tuple_index_error,
-    _orchestrate_pass_1,
-    _orchestrate_pass_2,
     _parse_csv_data,
     _prepare_pass_2_data,
     _process_external_id_fields,
-    _read_data_file,
     _recursive_create_batches,
     _run_threaded_pass,
     _safe_convert_field_value,
-    _setup_fail_file,
-    import_data,
 )
 
 
