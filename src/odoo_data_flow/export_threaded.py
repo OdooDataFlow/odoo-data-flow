@@ -890,7 +890,7 @@ def _determine_export_strategy(
             if "/" in fld and fld.split("/")[0] in fields_info
         ]
     )
-    
+
     # Check specifically for many-to-many fields with XML ID specifiers (/id)
     has_many_to_many_xml_id_fields = any(
         fields_info.get(f.split("/")[0], {}).get("type") in ["one2many", "many2many"]
@@ -903,8 +903,8 @@ def _determine_export_strategy(
     # The old version used export_data method which handled these relationships properly
     # Only use hybrid mode for non-many-to-many XML ID fields
     is_hybrid = (
-        has_read_specifiers 
-        and has_xml_id_specifiers 
+        has_read_specifiers
+        and has_xml_id_specifiers
         and not has_many_to_many_xml_id_fields
     )
 
