@@ -99,10 +99,11 @@ class RPCThreadExport(RpcThread):
 
             related_ids = list(
                 {
-                    rec[source_field][0]
+                    rid
                     for rec in raw_data
                     if isinstance(rec.get(source_field), (list, tuple))
-                    and rec.get(source_field)
+                    for rid in rec.get(source_field, [])
+                    if isinstance(rid, int)
                 }
             )
             if not related_ids:
