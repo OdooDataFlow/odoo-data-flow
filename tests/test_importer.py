@@ -553,8 +553,6 @@ def test_run_import_with_relational_strategy(
 
 """Additional tests for importer.py to improve coverage."""
 
-from pathlib import Path
-
 
 def test_count_lines_file_not_found() -> None:
     """Test _count_lines with non-existent file."""
