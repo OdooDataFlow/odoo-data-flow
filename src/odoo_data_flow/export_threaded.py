@@ -229,10 +229,11 @@ class RPCThreadExport(RpcThread):
                     if field == ".id":
                         new_record[".id"] = record.get("id")
                     elif field.endswith("/.id"):
-                        # Handle many-to-many fields that should return comma-separated database IDs
+                        # Handle many-to-many fields that should return
+                        # comma-separated database IDs
                         base_field = field.split("/")[0].replace(".id", "id")
                         value = record.get(base_field)
-                        
+
                         # Very simple, robust handling
                         if isinstance(value, (list, tuple)):
                             if len(value) > 0:
@@ -241,11 +242,15 @@ class RPCThreadExport(RpcThread):
                                 for item in value:
                                     if isinstance(item, int):
                                         ids.append(str(item))
-                                    elif isinstance(item, (list, tuple)) and len(item) > 0:
-                                        # If it's a tuple/list, take the first element if it's an int
+                                    elif (
+                                        isinstance(item, (list, tuple))
+                                        and len(item) > 0
+                                    ):
+                                        # If it's a tuple/list, take the first
+                                        # element if it's an int
                                         if isinstance(item[0], int):
                                             ids.append(str(item[0]))
-                                
+
                                 if ids:
                                     new_record[field] = ",".join(ids)
                                 else:
