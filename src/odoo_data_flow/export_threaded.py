@@ -230,28 +230,36 @@ class RPCThreadExport(RpcThread):
                         new_record[".id"] = record.get("id")
                     elif field.endswith("/.id"):
                         # Handle many-to-many fields that should return comma-separated database IDs
-                        if isinstance(value, (list, tuple)) and value:
-                            # For many-to-many relationships, convert list of IDs to comma-separated string
-                            if all(isinstance(item, int) for item in value):
-                                # If all items are integers (database IDs), join them
-                                new_record[field] = ",".join(str(item) for item in value)
-                            elif all(isinstance(item, (list, tuple)) and len(item) >= 1 for item in value):
-                                # If items are tuples like (id, name), extract the IDs
-                                ids = [str(item[0]) for item in value if len(item) >= 1 and isinstance(item[0], int)]
-                                new_record[field] = ",".join(ids) if ids else None
-                            else:
-                                # Handle other cases - extract first elements that are integers
+                        base_field = field.split("/")[0].replace(".id", "id")
+                        value = record.get(base_field)
+                        
+                        # Very simple, robust handling
+                        if isinstance(value, (list, tuple)):
+                            if len(value) > 0:
+                                # Extract all integer IDs and join them
                                 ids = []
                                 for item in value:
                                     if isinstance(item, int):
                                         ids.append(str(item))
-                                    elif isinstance(item, (list, tuple)) and len(item) >= 1 and isinstance(item[0], int):
-                                        ids.append(str(item[0]))
-                                new_record[field] = ",".join(ids) if ids else str(value[0]) if value else None
+                                    elif isinstance(item, (list, tuple)) and len(item) > 0:
+                                        # If it's a tuple/list, take the first element if it's an int
+                                        if isinstance(item[0], int):
+                                            ids.append(str(item[0]))
+                                
+                                if ids:
+                                    new_record[field] = ",".join(ids)
+                                else:
+                                    # Fallback: convert entire value to string
+                                    new_record[field] = str(value) if value else ""
+                            else:
+                                # Empty list
+                                new_record[field] = ""
+                        elif value is not None:
+                            # Single value
+                            new_record[field] = str(value)
                         else:
-                            new_record[field] = str(value) if value is not None else None
-                    else:
-                        new_record[field] = None
+                            # None value
+                            new_record[field] = ""
             processed_data.append(new_record)
         return processed_data
 
