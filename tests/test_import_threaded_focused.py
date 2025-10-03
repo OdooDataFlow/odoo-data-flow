@@ -5,13 +5,14 @@ import os
 import tempfile
 from pathlib import Path
 from typing import Any
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
 from odoo_data_flow.import_threaded import (
     _convert_external_id_field,
     _create_batch_individually,
+    _execute_load_batch,
     _filter_ignored_columns,
     _format_odoo_error,
     _get_model_fields,
@@ -20,8 +21,11 @@ from odoo_data_flow.import_threaded import (
     _prepare_pass_2_data,
     _read_data_file,
     _recursive_create_batches,
+    _safe_convert_field_value,
     _setup_fail_file,
 )
+
+"""Focused tests for import_threaded to improve coverage."""
 
 
 class TestFormatOdooError:
@@ -331,13 +335,6 @@ class TestCreateBatchIndividually:
 
 """More targeted tests to increase coverage of import_threaded.py."""
 
-from unittest.mock import MagicMock, patch
-
-from odoo_data_flow.import_threaded import (
-    _execute_load_batch,
-    _safe_convert_field_value,
-)
-
 
 def test_safe_convert_field_value_additional_cases() -> None:
     """Test _safe_convert_field_value with additional edge cases."""
@@ -425,7 +422,7 @@ def test_handle_create_error_serialization_error() -> None:
 def test_handle_create_error_tuple_index_error() -> None:
     """Test _handle_create_error with tuple index out of range error."""
     error = Exception("tuple index out of range")
-    error_str, failed_line, summary = _handle_create_error(
+    error_str, _failed_line, _summary = _handle_create_error(
         0, error, ["test", "data"], "original summary"
     )
     # Should contain tuple unpacking error message
@@ -435,7 +432,7 @@ def test_handle_create_error_tuple_index_error() -> None:
 def test_handle_create_error_invalid_field_error() -> None:
     """Test _handle_create_error with invalid field error."""
     error = Exception("Invalid field 'invalid_field' in leaf")
-    error_str, failed_line, summary = _handle_create_error(
+    error_str, _failed_line, _summary = _handle_create_error(
         0, error, ["test", "data"], "original summary"
     )
     # Should contain invalid field message
