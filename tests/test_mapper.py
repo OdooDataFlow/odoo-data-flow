@@ -3,7 +3,7 @@
 import inspect
 import logging
 import os
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 from unittest.mock import MagicMock, call, patch
 
 import httpx
@@ -11,6 +11,9 @@ import pytest
 
 from odoo_data_flow.lib import mapper
 from odoo_data_flow.lib.internal.exceptions import SkippingError
+
+if TYPE_CHECKING:
+    import pytest_mock
 
 # Import MapperFunc for type hinting in this test file
 from odoo_data_flow.lib.mapper import MapperFunc
@@ -70,7 +73,7 @@ def _mock_concat(
 
 # --- Pytest Fixtures for Patching ---
 @pytest.fixture(autouse=True)
-def mock_mapper_dependencies(mocker: MagicMock) -> None:
+def mock_mapper_dependencies(mocker: "pytest_mock.MockerFixture") -> None:
     """Fixture to mock external dependencies in mapper.py."""
     mocker.patch("odoo_data_flow.lib.mapper.to_m2o", side_effect=_mock_to_m2o)
     mocker.patch(
@@ -105,7 +108,7 @@ def test_val_postprocess_builtin() -> None:
     assert mapper_func(LINE_SIMPLE, {}) == "a"
 
 
-def test_val_postprocess_fallback(mocker: MagicMock) -> None:
+def test_val_postprocess_fallback(mocker: "pytest_mock.MockerFixture") -> None:
     """Test post process fallback.
 
     Tests the val mapper's fallback from a 2-arg to a 1-arg postprocess call.
@@ -280,7 +283,7 @@ def test_binary_url_map_empty() -> None:
     assert mapper_func(LINE_SIMPLE, {}) == ""
 
 
-def test_binary_url_map_skip_on_not_found(mocker: MagicMock) -> None:
+def test_binary_url_map_skip_on_not_found(mocker: "pytest_mock.MockerFixture") -> None:
     """Tests that binary_url_map raises SkippingError when request fails."""
     mock_httpx_get = mocker.patch("odoo_data_flow.lib.mapper.httpx.get")
     mock_httpx_get.side_effect = httpx.RequestError(
@@ -292,7 +295,7 @@ def test_binary_url_map_skip_on_not_found(mocker: MagicMock) -> None:
         mapper_func(LINE_SIMPLE, {})
 
 
-def test_binary_url_map_request_exception(mocker: MagicMock) -> None:
+def test_binary_url_map_request_exception(mocker: "pytest_mock.MockerFixture") -> None:
     """Tests that a warning is logged when a URL request fails and skip=False."""
     mock_httpx_get = mocker.patch("odoo_data_flow.lib.mapper.httpx.get")
     mock_log_warning = mocker.patch("odoo_data_flow.lib.mapper.log.warning")
@@ -451,7 +454,7 @@ def test_map_val_m2m_with_non_string_key() -> None:
     assert mapper_func({}, {}) == "One"
 
 
-def test_binary_with_path_prefix(mocker: MagicMock) -> None:
+def test_binary_with_path_prefix(mocker: "pytest_mock.MockerFixture") -> None:
     """Tests the binary mapper with a path_prefix."""
     mock_open = mocker.patch(
         "builtins.open", mocker.mock_open(read_data=b"file_content")
@@ -470,7 +473,7 @@ def test_m2o_att_name() -> None:
     assert result == {"att1": "prefix.att1", "att3": "prefix.att3"}
 
 
-def test_m2o_fun_state_present_but_unused(mocker: MagicMock) -> None:
+def test_m2o_fun_state_present_but_unused(mocker: "pytest_mock.MockerFixture") -> None:
     """Confirms m2o_fun works correctly when 'state' is provided but not directly used.
 
     Args:
@@ -497,7 +500,7 @@ def test_m2o_fun_state_present_but_unused(mocker: MagicMock) -> None:
 
 
 def test_m2o_fun_with_skip_and_empty_value_state_unused(
-    mocker: MagicMock,
+    mocker: "pytest_mock.MockerFixture",
 ) -> None:
     """Tests m2o_fun with 'skip' when value is empty, confirming state is unused.
 
@@ -525,7 +528,9 @@ def test_m2o_fun_with_skip_and_empty_value_state_unused(
     assert state == {"initial": "value"}
 
 
-def test_m2o_map_fun_state_passed_to_concat_mapper(mocker: MagicMock) -> None:
+def test_m2o_map_fun_state_passed_to_concat_mapper(
+    mocker: "pytest_mock.MockerFixture",
+) -> None:
     """Test m2o_map state management.
 
     Confirms m2o_map passes 'state' to the underlying concat_mapper and
@@ -556,7 +561,9 @@ def test_m2o_map_fun_state_passed_to_concat_mapper(mocker: MagicMock) -> None:
     mock_to_m2o.assert_called_once_with("test_prefix", "John_Doe_APP", default="")
 
 
-def test_m2o_map_fun_state_modified_by_concat_mapper(mocker: MagicMock) -> None:
+def test_m2o_map_fun_state_modified_by_concat_mapper(
+    mocker: "pytest_mock.MockerFixture",
+) -> None:
     """Confirms m2o_map's underlying concat_mapper can modify the state.
 
     Args:
@@ -573,7 +580,7 @@ def test_m2o_map_fun_state_modified_by_concat_mapper(mocker: MagicMock) -> None:
 
 
 def test_m2o_map_fun_with_skip_and_empty_concat_value_state_passed(
-    mocker: MagicMock,
+    mocker: "pytest_mock.MockerFixture",
 ) -> None:
     """Tests m2o_map.
 

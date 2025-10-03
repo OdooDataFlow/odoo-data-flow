@@ -40,9 +40,8 @@ def batch(iterable: Iterable[Any], size: int) -> Iterator[list[Any]]:
 def to_xmlid(name: str) -> str:
     """Create valid xmlid.
 
-    Sanitizes a string to make it a valid XML ID, replacing only characters
-    that are invalid in XML IDs. Preserves the required '.' separator between
-    module name and identifier in Odoo XML IDs (e.g., 'module.identifier').
+    Sanitizes a string to make it a valid XML ID, replacing special
+    characters with underscores.
     """
     # A mapping of characters to replace.
     # NOTE: Do NOT replace '.' as it's required to separate module.name in Odoo XML IDs
