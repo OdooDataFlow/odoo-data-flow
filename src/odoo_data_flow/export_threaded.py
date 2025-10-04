@@ -885,9 +885,9 @@ def _determine_export_strategy(
     has_many_to_many_fields = any(
         fields_info.get(f, {}).get("type") in ["one2many", "many2many"]
         for f in [
-            fld.split("/")[0]
+            fld.split("/")[0].replace(".id", "id")
             for fld in header
-            if "/" in fld and fld.split("/")[0] in fields_info
+            if "/" in fld and fld.split("/")[0].replace(".id", "id") in fields_info
         ]
     )
 
