@@ -1,4 +1,4 @@
-"""Tests for the refactored, low-level, multi-threaded import logic."""
+"""Additional tests to cover missing functionality in import_threaded.py."""
 
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -52,13 +52,28 @@ def test_safe_convert_field_value_id_suffix() -> None:
     result = _safe_convert_field_value("parent_id/id", "some_value", "char")
     assert result == "some_value"
 
-    # Test with positive field type and negative value (should remain as string
+    # Test with positive field type and negative value (should remain as string since
     result = _safe_convert_field_value("field", "-5", "positive")
     assert isinstance(result, (int, str))
 
-    # Test with negative field type and positive value (should remain as string
+    # Test with negative field type and positive value (should remain as string since
     result = _safe_convert_field_value("field", "5", "negative")
     assert isinstance(result, (int, str))
+
+    # Test with empty value for numeric fields (should return 0)
+    result = _safe_convert_field_value("field", "", "integer")
+    assert result == 0
+
+    result = _safe_convert_field_value("field", "", "float")
+    assert result == 0
+
+    # Test with invalid float values (should remain as string)
+    result = _safe_convert_field_value("field", "not_a_number", "float")
+    assert result == "not_a_number"
+
+    # Test with non-integer float values (should remain as string)
+    result = _safe_convert_field_value("field", "1.5", "integer")
+    assert result == "1.5"  # Should remain as string since it's not an integer
 
 
 def test_handle_create_error_tuple_index_out_of_range() -> None:
@@ -113,18 +128,24 @@ def test_handle_tuple_index_error() -> None:
 def test_create_batch_individually_tuple_index_out_of_range() -> None:
     """Test _create_batch_individually with tuple index out of range."""
     mock_model = MagicMock()
-    # Make create raise an exception
-    mock_model.create.side_effect = IndexError("tuple index out of range")
     mock_model.browse().env.ref.return_value = None  # No existing record
 
+    # Mock create method to raise IndexError
+    mock_model.create.side_effect = IndexError("tuple index out of range")
+
     batch_header = ["id", "name"]
-    batch_lines = [["rec1", "Alice"], ["rec2", "Bob"]]
+    batch_lines = [["rec1", "A"], ["rec2", "B"]]
 
     result = _create_batch_individually(
-        mock_model, batch_lines, batch_header, 0, {}, [], None
+        mock_model, batch_lines, batch_header, 0, {}, []
     )
+
     # Should handle the error and return failed lines
-    assert len(result.get("failed_lines", [])) == 2  # Both records should fail
+    assert (
+        len(result["failed_lines"]) == 2
+    )  # Both records should fail since we're mocking create to raise IndexError
+    error_msg = str(result["failed_lines"][0][-1]).lower()
+    assert "tuple index" in error_msg or "range" in error_msg
 
 
 def test_handle_fallback_create_with_progress() -> None:
@@ -177,7 +198,7 @@ def test_execute_load_batch_force_create_with_progress() -> None:
         "ignore_list": [],
     }
     batch_header = ["id", "name"]
-    batch_lines = [["rec1", "Alice"], ["rec2", "Bob"]]
+    batch_lines = [["rec1", "A"], ["rec2", "B"]]
 
     with patch(
         "odoo_data_flow.import_threaded._create_batch_individually"
@@ -191,7 +212,6 @@ def test_execute_load_batch_force_create_with_progress() -> None:
 
         result = _execute_load_batch(thread_state, batch_lines, batch_header, 1)
 
-        # Should succeed with force create
         assert result["success"] is True
         assert result["id_map"] == {"rec1": 1, "rec2": 2}
         mock_create.assert_called_once()
@@ -241,7 +261,8 @@ def test_recursive_create_batches_no_id_column() -> None:
     header = ["name", "age"]  # No 'id' column
     data = [["Alice", "25"], ["Bob", "30"]]
 
-    batches = list(_recursive_create_batches(data, [], header, 10, False))
+    batches = list(_recursive_create_batches(data, [], header, 10, True))  # o2m=True
+
     # Should handle the case where no 'id' column exists
     assert len(batches) >= 0  # This should not crash
 
@@ -295,9 +316,9 @@ def test_import_data_connection_dict() -> None:
         "odoo_data_flow.import_threaded._read_data_file", return_value=(["id"], [["1"]])
     ):
         with patch(
-            "odoo_data_flow.import_threaded.conf_lib.get_connection_from_dict"
-        ) as mock_get_conn:
-            mock_get_conn.return_value = mock_connection
+            "odoo_data_flow.import_threaded.conf_lib.get_connection_from_dict",
+            return_value=mock_connection,
+        ):
             mock_connection.get_model.return_value = mock_model
 
             # Mock the _run_threaded_pass function
@@ -313,7 +334,7 @@ def test_import_data_connection_dict() -> None:
                     config={"host": "localhost"},  # Dict config instead of file
                     model="res.partner",
                     unique_id_field="id",
-                    file_csv="dummy.csv",  # This will be mocked
+                    file_csv="dummy.csv",
                 )
 
                 # Should succeed
@@ -323,20 +344,22 @@ def test_import_data_connection_dict() -> None:
 def test_import_data_connection_failure() -> None:
     """Test import_data when connection fails."""
     with patch(
-        "odoo_data_flow.import_threaded.conf_lib.get_connection_from_dict"
-    ) as mock_get_conn:
-        mock_get_conn.side_effect = Exception("Connection failed")
+        "odoo_data_flow.import_threaded._read_data_file", return_value=(["id"], [["1"]])
+    ):
+        with patch(
+            "odoo_data_flow.import_threaded.conf_lib.get_connection_from_dict",
+            side_effect=Exception("Connection failed"),
+        ):
+            result, _stats = import_data(
+                config={"host": "localhost"},
+                model="res.partner",
+                unique_id_field="id",
+                file_csv="dummy.csv",
+            )
 
-        result, _stats = import_data(
-            config={"host": "localhost"},  # Dict config
-            model="res.partner",
-            unique_id_field="id",
-            file_csv="dummy.csv",
-        )
-
-        # Should fail gracefully
-        assert result is False
-        assert _stats == {}
+            # Should fail gracefully
+            assert result is False
+            assert _stats == {}
 
 
 def test_import_data_no_header() -> None:
@@ -355,7 +378,7 @@ def test_import_data_no_header() -> None:
 
 
 def test_get_model_fields_callable_method() -> None:
-    """Test _get_model_fields when _fields is callable method."""
+    """Test _get_model_fields when _fields is a callable method."""
     mock_model = MagicMock()
     mock_model._fields = MagicMock(return_value={"field1": {"type": "char"}})
 
@@ -375,7 +398,12 @@ def test_get_model_fields_callable_method_exception() -> None:
 def test_get_model_fields_callable_method_non_dict() -> None:
     """Test _get_model_fields when _fields callable returns non-dict."""
     mock_model = MagicMock()
-    mock_model._fields = MagicMock(return_value="not a dict")
+
+    # Test when _fields() returns non-dict
+    mock_callable_fields = MagicMock()
+    mock_callable_fields.return_value = "not_a_dict"
+    mock_model._fields = mock_callable_fields
 
     result = _get_model_fields(mock_model)
+    # If _fields is callable and returns non-dict, should return None
     assert result is None

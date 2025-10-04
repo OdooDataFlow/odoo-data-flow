@@ -27,6 +27,45 @@ from .lib.internal.ui import _show_error_panel
 from .logging_config import log
 
 
+def _map_encoding_to_polars(encoding: str) -> str:
+    """Map common encoding names to polars-supported encoding values.
+
+    Polars supports: 'utf8', 'utf8-lossy', 'windows-1252', 'windows-1252-lossy'
+    This function maps common encoding names to these supported values.
+
+    Args:
+        encoding: The encoding name to map
+
+    Returns:
+        A polars-supported encoding name
+    """
+    # Normalize encoding names to lowercase
+    encoding = encoding.lower().strip()
+
+    # Mapping for common encoding names to polars-supported values
+    encoding_map = {
+        # UTF variants
+        "utf-8": "utf8",
+        "utf8": "utf8",
+        "utf-8-sig": "utf8",  # UTF-8 with BOM
+        # Latin variants commonly used in Western Europe
+        "latin-1": "windows-1252",
+        "iso-8859-1": "windows-1252",
+        "cp1252": "windows-1252",
+        "windows-1252": "windows-1252",
+        # Lossy variants - when we want to preserve as much data as possible
+        "utf-8-lossy": "utf8-lossy",
+        "latin-1-lossy": "windows-1252-lossy",
+        "iso-8859-1-lossy": "windows-1252-lossy",
+        "cp1252-lossy": "windows-1252-lossy",
+        "windows-1252-lossy": "windows-1252-lossy",
+    }
+
+    # Return mapped encoding if available, otherwise return the original
+    # (will be validated by polars)
+    return encoding_map.get(encoding, encoding)
+
+
 def _count_lines(filepath: str) -> int:
     """Counts the number of lines in a file, returning 0 if it doesn't exist."""
     try:
@@ -113,9 +152,10 @@ def run_import(  # noqa: C901
     parsed_context: dict[str, Any]
     if isinstance(context, str):
         try:
-            parsed_context = json.loads(context)
-            if not isinstance(parsed_context, dict):
+            loaded_context = json.loads(context)
+            if not isinstance(loaded_context, dict):
                 raise TypeError
+            parsed_context = loaded_context
         except (json.JSONDecodeError, TypeError):
             _show_error_panel(
                 "Invalid Context",
@@ -212,11 +252,14 @@ def run_import(  # noqa: C901
 
     start_time = time.time()
     try:
+        # Use corrected file if preflight validation created one
+        file_to_import = import_plan.get("_corrected_file", file_to_process)
+
         success, stats = import_threaded.import_data(
             config=config,
             model=model,
             unique_id_field=final_uid_field,
-            file_csv=file_to_process,
+            file_csv=file_to_import,
             deferred_fields=final_deferred,
             context=parsed_context,
             fail_file=fail_output_file,
@@ -243,24 +286,119 @@ def run_import(  # noqa: C901
     fail_file_was_created = _count_lines(fail_output_file) > 1
     is_truly_successful = success and not fail_file_was_created
 
-    if is_truly_successful:
-        id_map = cast(dict[str, int], stats.get("id_map", {}))
-        if id_map:
-            if isinstance(config, str):
-                cache.save_id_map(config, model, id_map)
+    # Initialize id_map early to avoid UnboundLocalError
+    id_map = (
+        cast(dict[str, int], stats.get("id_map", {})) if is_truly_successful else {}
+    )
+    if is_truly_successful and id_map:
+        if isinstance(config, str):
+            cache.save_id_map(config, model, id_map)
 
-        # --- Pass 2: Relational Strategies ---
-        if import_plan.get("strategies") and not fail:
-            source_df = pl.read_csv(
-                filename, separator=separator, truncate_ragged_lines=True
+        # --- Main Import Process ---
+    log.info("*** STARTING MAIN IMPORT PROCESS ***")
+    log.info(f"*** MODEL: {model} ***")
+    log.info(f"*** FILENAME: {filename} ***")
+    log.info(f"*** IMPORT PLAN KEYS: {list(import_plan.keys())} ***")
+    if "strategies" in import_plan:
+        log.info(f"*** IMPORT PLAN STRATEGIES: {import_plan['strategies']} ***")
+        log.info(
+            f"*** IMPORT PLAN STRATEGIES COUNT: {len(import_plan['strategies'])} ***"
+        )
+    else:
+        log.info("*** NO STRATEGIES FOUND IN IMPORT PLAN ***")
+
+    # --- Pass 1: Standard Fields ---
+    if not fail:
+        log.info("*** PASS 2: STARTING RELATIONAL IMPORT PROCESS ***")
+        log.info(f"*** DETECTED STRATEGIES: {import_plan.get('strategies', {})} ***")
+        log.info(f"*** STRATEGIES COUNT: {len(import_plan.get('strategies', {}))} ***")
+
+        # Check if file exists and is not empty before reading
+        if not os.path.exists(filename):
+            log.warning(f"File does not exist: {filename}")
+            return
+        if os.path.getsize(filename) == 0:
+            log.warning(f"File is empty: {filename}, skipping relational import")
+            return
+
+        # Read the CSV file with explicit schema for /id suffixed columns
+        try:
+            # First, get the header to determine if schema overrides are needed.
+            header = pl.read_csv(
+                filename, separator=separator, n_rows=0, truncate_ragged_lines=True
+            ).columns
+            id_columns = [col for col in header if col.endswith("/id")]
+            schema_overrides = (
+                {col: pl.Utf8 for col in id_columns} if id_columns else None
             )
+
+            # Now, read the full file once with the correct schema and
+            # encoding fallbacks.
+            polars_encoding = _map_encoding_to_polars(encoding)
+            try:
+                source_df = pl.read_csv(
+                    filename,
+                    separator=separator,
+                    encoding=polars_encoding,
+                    truncate_ragged_lines=True,
+                    schema_overrides=schema_overrides,
+                )
+            except (pl.exceptions.ComputeError, ValueError) as e:
+                if "encoding" not in str(e).lower():
+                    raise  # Not an encoding error, re-raise.
+
+                log.warning(
+                    f"Read failed with encoding '{encoding}', trying fallbacks..."
+                )
+                source_df = None
+                for enc in ["utf8", "windows-1252", "latin-1", "iso-8859-1", "cp1252"]:
+                    try:
+                        source_df = pl.read_csv(
+                            filename,
+                            separator=separator,
+                            encoding=_map_encoding_to_polars(enc),
+                            truncate_ragged_lines=True,
+                            schema_overrides=schema_overrides,
+                        )
+                        log.warning(
+                            f"Successfully read with fallback encoding '{enc}'."
+                        )
+                        break
+                    except (pl.exceptions.ComputeError, ValueError):
+                        continue
+                if source_df is None:
+                    raise ValueError(
+                        "Could not read CSV with any of the tried encodings."
+                    ) from e
+        except Exception as e:
+            log.error(
+                f"Failed to read source file '{filename}' for relational import: {e}"
+            )
+            return
+        # At this point, source_df is guaranteed to be a DataFrame since
+        # we would have returned early if there was an error.
+        if source_df is None:
+            # This should never happen due to the logic above, but as a safety check
+            raise RuntimeError("source_df is unexpectedly None after CSV reading")
+
+        # Only proceed with relational import if there are strategies defined
+        strategies = import_plan.get("strategies", {})
+        if strategies:
             with Progress() as progress:
                 task_id = progress.add_task(
-                    "Pass 2/2: Relational fields",
-                    total=len(import_plan["strategies"]),
+                    "Pass 2/2: Updating relations",
+                    total=len(strategies),
                 )
-                for field, strategy_info in import_plan["strategies"].items():
+                for field, strategy_info in strategies.items():
+                    log.info(
+                        f"*** PROCESSING FIELD '{field}' WITH "
+                        f"STRATEGY '{strategy_info['strategy']}' ***"
+                    )
                     if strategy_info["strategy"] == "direct_relational_import":
+                        log.info(
+                            f"*** CALLING run_direct_relational_import "
+                            f"for field '{field}' ***"
+                        )
                         import_details = relational_import.run_direct_relational_import(
                             config,
                             model,
@@ -275,6 +413,10 @@ def run_import(  # noqa: C901
                             filename,
                         )
                         if import_details:
+                            log.info(
+                                f"*** DIRECT RELATIONAL IMPORT RETURNED "
+                                f"DETAILS FOR FIELD '{field}' ***"
+                            )
                             import_threaded.import_data(
                                 config=config,
                                 model=import_details["model"],
@@ -284,7 +426,15 @@ def run_import(  # noqa: C901
                                 batch_size=batch_size_run,
                             )
                             Path(import_details["file_csv"]).unlink()
+                        else:
+                            log.info(
+                                f"*** DIRECT RELATIONAL IMPORT RETURNED "
+                                f"NONE FOR FIELD '{field}' ***"
+                            )
                     elif strategy_info["strategy"] == "write_tuple":
+                        log.info(
+                            f"** CALLING run_write_tuple_import FOR FIELD '{field}' **"
+                        )
                         result = relational_import.run_write_tuple_import(
                             config,
                             model,
@@ -304,6 +454,10 @@ def run_import(  # noqa: C901
                                 "Check logs for details."
                             )
                     elif strategy_info["strategy"] == "write_o2m_tuple":
+                        log.info(
+                            f"*** CALLING run_write_o2m_tuple_import "
+                            f"FOR FIELD '{field}' ***"
+                        )
                         result = relational_import.run_write_o2m_tuple_import(
                             config,
                             model,
@@ -322,6 +476,7 @@ def run_import(  # noqa: C901
                                 f"Write O2M tuple import failed for field '{field}'. "
                                 "Check logs for details."
                             )
+
                     progress.update(task_id, advance=1)
 
         log.info(

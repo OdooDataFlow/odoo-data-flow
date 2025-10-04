@@ -1,10 +1,12 @@
 """Test the pre-flight checker functions."""
 
+import csv
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import polars as pl
 import pytest
 from polars.exceptions import ColumnNotFoundError
 
@@ -47,6 +49,82 @@ def mock_show_warning_panel() -> Generator[MagicMock, None, None]:
     """Fixture to mock _show_warning_panel."""
     with patch("odoo_data_flow.lib.preflight._show_warning_panel") as mock_panel:
         yield mock_panel
+
+
+class TestConnectionCheck:
+    """Tests for the connection_check pre-flight checker."""
+
+    @patch("odoo_data_flow.lib.preflight.conf_lib.get_connection_from_dict")
+    def test_connection_check_success_with_dict_config(
+        self, mock_get_connection: MagicMock
+    ) -> None:
+        """Verify connection check succeeds with dict configuration."""
+        config = {"hostname": "localhost", "database": "test_db"}
+        result = preflight.connection_check(
+            preflight_mode=PreflightMode.NORMAL,
+            config=config,
+            model="res.partner",
+            filename="test.csv",
+        )
+
+        assert result is True
+        mock_get_connection.assert_called_once_with(config)
+
+    @patch("odoo_data_flow.lib.preflight.conf_lib.get_connection_from_config")
+    def test_connection_check_success_with_file_config(
+        self, mock_get_connection: MagicMock
+    ) -> None:
+        """Verify connection check succeeds with file configuration."""
+        config_file = "/path/to/config.conf"
+        result = preflight.connection_check(
+            preflight_mode=PreflightMode.NORMAL,
+            config=config_file,
+            model="res.partner",
+            filename="test.csv",
+        )
+
+        assert result is True
+        mock_get_connection.assert_called_once_with(config_file=config_file)
+
+    @patch("odoo_data_flow.lib.preflight.conf_lib.get_connection_from_dict")
+    @patch("odoo_data_flow.lib.preflight._show_error_panel")
+    def test_connection_check_failure_with_dict_config(
+        self, mock_show_error: MagicMock, mock_get_connection: MagicMock
+    ) -> None:
+        """Verify connection check fails gracefully with dict configuration error."""
+        mock_get_connection.side_effect = Exception("Connection failed")
+        config = {"hostname": "invalid.host", "database": "test_db"}
+        result = preflight.connection_check(
+            preflight_mode=PreflightMode.NORMAL,
+            config=config,
+            model="res.partner",
+            filename="test.csv",
+        )
+
+        assert result is False
+        mock_get_connection.assert_called_once_with(config)
+        mock_show_error.assert_called_once()
+        assert "Odoo Connection Error" in mock_show_error.call_args[0][0]
+
+    @patch("odoo_data_flow.lib.preflight.conf_lib.get_connection_from_config")
+    @patch("odoo_data_flow.lib.preflight._show_error_panel")
+    def test_connection_check_failure_with_file_config(
+        self, mock_show_error: MagicMock, mock_get_connection: MagicMock
+    ) -> None:
+        """Verify connection check fails gracefully with file configuration error."""
+        mock_get_connection.side_effect = Exception("Config file not found")
+        config_file = "/invalid/path/to/config.conf"
+        result = preflight.connection_check(
+            preflight_mode=PreflightMode.NORMAL,
+            config=config_file,
+            model="res.partner",
+            filename="test.csv",
+        )
+
+        assert result is False
+        mock_get_connection.assert_called_once_with(config_file=config_file)
+        mock_show_error.assert_called_once()
+        assert "Odoo Connection Error" in mock_show_error.call_args[0][0]
 
 
 class TestSelfReferencingCheck:
@@ -99,6 +177,25 @@ class TestSelfReferencingCheck:
         assert result is True
         assert "strategy" not in import_plan
         mock_sort.assert_not_called()
+
+    @patch("odoo_data_flow.lib.preflight.sort.sort_for_self_referencing")
+    def test_check_handles_sort_function_error(self, mock_sort: MagicMock) -> None:
+        """Verify the check handles errors from sort_for_self_referencing gracefully."""
+        # Mock sort function to return False indicating an error
+        mock_sort.return_value = False
+        import_plan: dict[str, Any] = {}
+
+        result = preflight.self_referencing_check(
+            preflight_mode=PreflightMode.NORMAL,
+            filename="file.csv",
+            import_plan=import_plan,
+        )
+
+        # Should return False when sort function encounters an error
+        assert result is False
+        # Should not modify import plan when there's an error
+        assert "strategy" not in import_plan
+        mock_sort.assert_called_once()
 
 
 class TestInternalHelpers:
@@ -203,24 +300,57 @@ class TestLanguageCheck:
         )
         assert result is True
 
-    @patch("odoo_data_flow.lib.preflight.language_installer.run_language_installation")
     @patch("odoo_data_flow.lib.preflight.Confirm.ask", return_value=True)
     @patch(
         "odoo_data_flow.lib.preflight._get_installed_languages",
         return_value={"en_US"},
     )
-    def test_missing_languages_user_confirms_install_success(
+    def test_language_check_dict_config_installation_not_supported(
         self,
         mock_get_langs: MagicMock,
         mock_confirm: MagicMock,
-        mock_installer: MagicMock,
         mock_polars_read_csv: MagicMock,
+        mock_conf_lib: MagicMock,
+        mock_show_error_panel: MagicMock,
     ) -> None:
-        """Tests missing languages where user confirms and install succeeds."""
+        """Tests that language installation fails gracefully with dict config."""
+        # Setup data with missing languages
+        mock_df = MagicMock()
+        (
+            mock_df.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value
+        ) = [
+            "fr_FR",
+        ]
+        mock_polars_read_csv.return_value = mock_df
+
+        # Use dict config (not supported for installation)
+        config = {"hostname": "localhost", "database": "test_db"}
+        result = preflight.language_check(
+            preflight_mode=PreflightMode.NORMAL,
+            model="res.partner",
+            filename="file.csv",
+            config=config,
+            headless=False,
+        )
+
+        # Should fail when installation is attempted with dict config
+        assert result is False
+        mock_confirm.assert_called_once()
+        mock_show_error_panel.assert_called_once()
+        assert (
+            "Language installation from a dict config is not supported"
+            in mock_show_error_panel.call_args[0][0]
+        )
+
+    @patch("odoo_data_flow.lib.preflight._get_installed_languages", return_value=None)
+    def test_language_check_handles_get_installed_languages_failure(
+        self, mock_get_langs: MagicMock, mock_polars_read_csv: MagicMock
+    ) -> None:
+        """Tests that language_check handles when _get_installed_languages fails."""
+        # Setup CSV data with languages that would require checking
         (
             mock_polars_read_csv.return_value.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value
         ) = ["fr_FR"]
-        mock_installer.return_value = True
 
         result = preflight.language_check(
             preflight_mode=PreflightMode.NORMAL,
@@ -229,9 +359,10 @@ class TestLanguageCheck:
             config="",
             headless=False,
         )
-        assert result is True
-        mock_confirm.assert_called_once()
-        mock_installer.assert_called_once_with("", ["fr_FR"])
+
+        # Should return False when _get_installed_languages fails
+        assert result is False
+        mock_get_langs.assert_called_once_with("")
 
     @patch("odoo_data_flow.lib.preflight.Confirm.ask", return_value=True)
     @patch(
@@ -360,6 +491,47 @@ class TestLanguageCheck:
         mock_conf_lib.assert_not_called()
         mock_install.assert_not_called()
         mock_confirm.assert_not_called()
+
+    @patch("odoo_data_flow.lib.preflight.Confirm.ask", return_value=True)
+    @patch(
+        "odoo_data_flow.lib.preflight._get_installed_languages",
+        return_value={"en_US"},
+    )
+    def test_language_check_dict_config_installation_not_supported_v2(
+        self,
+        mock_get_langs: MagicMock,
+        mock_confirm: MagicMock,
+        mock_polars_read_csv: MagicMock,
+        mock_conf_lib: MagicMock,
+        mock_show_error_panel: MagicMock,
+    ) -> None:
+        """Tests that language installation fails gracefully with dict config."""
+        # Setup data with missing languages
+        (
+            mock_polars_read_csv.return_value.get_column.return_value.unique.return_value.drop_nulls.return_value.to_list.return_value
+        ) = ["fr_FR"]
+        mock_conf_lib.return_value.get_model.return_value.search_read.return_value = [
+            {"code": "en_US"}
+        ]
+
+        # Use dict config (not supported for installation)
+        config = {"hostname": "localhost", "database": "test_db"}
+        result = preflight.language_check(
+            preflight_mode=PreflightMode.NORMAL,
+            model="res.partner",
+            filename="file.csv",
+            config=config,
+            headless=False,
+        )
+
+        # Should fail when installation is attempted with dict config
+        assert result is False
+        mock_confirm.assert_called_once()
+        mock_show_error_panel.assert_called_once()
+        assert (
+            "Language installation from a dict config is not supported"
+            in mock_show_error_panel.call_args[0][0]
+        )
 
 
 class TestDeferralAndStrategyCheck:
@@ -616,6 +788,46 @@ class TestGetOdooFields:
         mock_cache.save_fields_get_cache.assert_not_called()
 
 
+class TestGetCSVHeader:
+    """Tests for the _get_csv_header helper function."""
+
+    def test_get_csv_header_success(self, tmp_path: Path) -> None:
+        """Verify _get_csv_header successfully reads a CSV file header."""
+        # Create a sample CSV file
+        csv_file = tmp_path / "test.csv"
+        with open(csv_file, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f, delimiter=";")
+            writer.writerow(["id", "name", "email", "age"])
+            writer.writerow(["1", "Alice", "alice@test.com", "25"])
+            writer.writerow(["2", "Bob", "bob@test.com", "30"])
+
+        from odoo_data_flow.lib.preflight import _get_csv_header
+
+        result = _get_csv_header(str(csv_file), ";")
+
+        assert result == ["id", "name", "email", "age"]
+
+    def test_get_csv_header_file_not_found(self) -> None:
+        """Verify _get_csv_header returns None when file does not exist."""
+        from odoo_data_flow.lib.preflight import _get_csv_header
+
+        result = _get_csv_header("/nonexistent.csv", ";")
+
+        assert result is None
+
+    def test_get_csv_header_empty_file(self, tmp_path: Path) -> None:
+        """Verify _get_csv_header handles empty file gracefully."""
+        csv_file = tmp_path / "empty.csv"
+        with open(csv_file, "w", encoding="utf-8") as f:
+            f.write("")  # Empty file
+
+        from odoo_data_flow.lib.preflight import _get_csv_header
+
+        result = _get_csv_header(str(csv_file), ";")
+
+        assert result is None
+
+
 class TestValidateHeader:
     """Tests for the _validate_header function."""
 
@@ -705,3 +917,395 @@ class TestValidateHeader:
         assert "commercial_company_name" in call_args[0][1]
         assert "non-stored" in call_args[0][1]
         assert "1 non-stored readonly" in call_args[0][1]
+
+
+def test_type_correction_check_no_corrections_needed(tmp_path: Path) -> None:
+    """Test type correction check when no corrections are needed."""
+    # Create a simple CSV file with clean integer data
+    csv_file = tmp_path / "clean_data.csv"
+    with open(csv_file, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f, delimiter=";")
+        writer.writerow(["id", "name", "quantity"])
+        writer.writerow(["rec1", "Product A", "100"])
+        writer.writerow(["rec2", "Product B", "200"])
+
+    config = {"test": "config"}
+    import_plan: dict[str, Any] = {}
+
+    # Mock Odoo fields to simulate integer field type
+    with patch("odoo_data_flow.lib.preflight._get_odoo_fields") as mock_get_fields:
+        mock_get_fields.return_value = {
+            "id": {"type": "char"},
+            "name": {"type": "char"},
+            "quantity": {"type": "integer"},
+        }
+
+        from odoo_data_flow.lib.preflight import PreflightMode, type_correction_check
+
+        result = type_correction_check(
+            PreflightMode.NORMAL,
+            "test.model",
+            str(csv_file),
+            config,
+            import_plan,
+            separator=";",
+            encoding="utf-8",
+        )
+
+        # Should pass when no corrections needed
+        assert result is True
+        # Should not create corrected file when no corrections needed
+        assert "_corrected_file" not in import_plan
+
+
+def test_type_correction_check_with_corrections(tmp_path: Path) -> None:
+    """Test type correction check when corrections are needed and applied."""
+    # Create a CSV file with float-like integer strings that need correction
+    csv_file = tmp_path / "dirty_data.csv"
+    with open(csv_file, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f, delimiter=";")
+        writer.writerow(["id", "name", "price"])
+        writer.writerow(
+            ["rec1", "Product A", "99.0"]
+        )  # Float string that's really integer
+        writer.writerow(
+            ["rec2", "Product B", "149.00"]
+        )  # Float string that's really integer
+
+    config = {"test": "config"}
+    import_plan: dict[str, Any] = {}
+
+    # Mock Odoo fields to simulate integer field type
+    with patch("odoo_data_flow.lib.preflight._get_odoo_fields") as mock_get_fields:
+        mock_get_fields.return_value = {
+            "id": {"type": "char"},
+            "name": {"type": "char"},
+            "price": {"type": "integer"},
+        }
+
+        from odoo_data_flow.lib.preflight import PreflightMode, type_correction_check
+
+        result = type_correction_check(
+            PreflightMode.NORMAL,
+            "test.model",
+            str(csv_file),
+            config,
+            import_plan,
+            separator=";",
+            encoding="utf-8",
+        )
+
+        # Should pass after applying corrections
+        assert result is True
+        # Should create corrected file when corrections are applied
+        assert "_corrected_file" in import_plan
+        assert import_plan["_corrected_file"].endswith(".csv")
+
+
+def test_type_correction_check_odoo_error_handling(tmp_path: Path) -> None:
+    """Test type correction check gracefully handles Odoo connection errors."""
+    csv_file = tmp_path / "test_data.csv"
+    with open(csv_file, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f, delimiter=";")
+        writer.writerow(["id", "value"])
+        writer.writerow(["rec1", "100.0"])
+
+    config = {"test": "config"}
+    import_plan: dict[str, Any] = {}
+
+    # Mock Odoo fields to raise an exception
+    with patch("odoo_data_flow.lib.preflight._get_odoo_fields") as mock_get_fields:
+        mock_get_fields.side_effect = Exception("Connection failed")
+
+        from odoo_data_flow.lib.preflight import PreflightMode, type_correction_check
+
+        result = type_correction_check(
+            PreflightMode.NORMAL,
+            "test.model",
+            str(csv_file),
+            config,
+            import_plan,
+            separator=";",
+            encoding="utf-8",
+        )
+
+        # Should still pass even when Odoo connection fails
+        assert result is True
+        # Should proceed with original file when Odoo connection fails
+        assert "_corrected_file" not in import_plan
+
+
+def test_type_correction_check_empty_file(tmp_path: Path) -> None:
+    """Test type correction check handles empty file gracefully."""
+    csv_file = tmp_path / "empty.csv"
+    with open(csv_file, "w", newline="", encoding="utf-8"):
+        pass  # Create empty file
+
+    config = {"test": "config"}
+    import_plan: dict[str, Any] = {}
+
+    from odoo_data_flow.lib.preflight import PreflightMode, type_correction_check
+
+    result = type_correction_check(
+        PreflightMode.NORMAL,
+        "test.model",
+        str(csv_file),
+        config,
+        import_plan,
+        separator=";",
+        encoding="utf-8",
+    )
+
+    # Should pass even with empty file
+    assert result is True
+    # Should not create corrected file for empty file
+    assert "_corrected_file" not in import_plan
+
+
+def test_type_correction_check_no_header(tmp_path: Path) -> None:
+    """Test type correction check handles file with no header gracefully."""
+    csv_file = tmp_path / "no_header.csv"
+    with open(csv_file, "w", newline="", encoding="utf-8") as f:
+        f.write("")  # Empty file with no header
+
+    config = {"test": "config"}
+    import_plan: dict[str, Any] = {}
+
+    from odoo_data_flow.lib.preflight import PreflightMode, type_correction_check
+
+    result = type_correction_check(
+        PreflightMode.NORMAL,
+        "test.model",
+        str(csv_file),
+        config,
+        import_plan,
+        separator=";",
+        encoding="utf-8",
+    )
+
+    # Should pass even with no header
+    assert result is True
+    # Should not create corrected file when no header
+    assert "_corrected_file" not in import_plan
+
+
+def test_type_correction_check_odoo_field_retrieval_failure(tmp_path: Path) -> None:
+    """Test type correction check handles Odoo field retrieval failure gracefully."""
+    csv_file = tmp_path / "test.csv"
+    with open(csv_file, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f, delimiter=";")
+        writer.writerow(["id", "name"])
+        writer.writerow(["rec1", "Test"])
+
+    config = {"test": "config"}
+    import_plan: dict[str, Any] = {}
+
+    # Mock to simulate Odoo connection failure
+    with patch("odoo_data_flow.lib.preflight._get_odoo_fields", return_value=None):
+        from odoo_data_flow.lib.preflight import PreflightMode, type_correction_check
+
+        result = type_correction_check(
+            PreflightMode.NORMAL,
+            "test.model",
+            str(csv_file),
+            config,
+            import_plan,
+            separator=";",
+            encoding="utf-8",
+        )
+
+        # Should still pass even when Odoo field retrieval fails
+        assert result is True
+        # Should proceed with original file when Odoo connection fails
+        assert "_corrected_file" not in import_plan
+
+
+def test_type_correction_check_file_read_error(tmp_path: Path) -> None:
+    """Test type correction check handles file read errors gracefully."""
+    # Create a file that will be deleted to simulate read error
+    csv_file = tmp_path / "unreadable.csv"
+    with open(csv_file, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f, delimiter=";")
+        writer.writerow(["id", "price"])
+        writer.writerow(["rec1", "100.0"])
+
+    # Delete the file to simulate read error
+    csv_file.unlink()
+
+    config = {"test": "config"}
+    import_plan: dict[str, Any] = {}
+
+    from odoo_data_flow.lib.preflight import PreflightMode, type_correction_check
+
+    result = type_correction_check(
+        PreflightMode.NORMAL,
+        "test.model",
+        str(csv_file),
+        config,
+        import_plan,
+        separator=";",
+        encoding="utf-8",
+    )
+
+    # Should still pass even when file read fails
+    assert result is True
+    # Should proceed with original file when read fails
+    assert "_corrected_file" not in import_plan
+
+
+def test_type_correction_check_polars_casting_failure(tmp_path: Path) -> None:
+    """Test type correction check handles Polars casting failures gracefully."""
+    csv_file = tmp_path / "casting_failure.csv"
+    with open(csv_file, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f, delimiter=";")
+        writer.writerow(["id", "price"])
+        writer.writerow(["rec1", "invalid_price"])  # Invalid value that can't be cast
+
+    config = {"test": "config"}
+    import_plan: dict[str, Any] = {}
+
+    # Mock to return integer field to trigger correction logic
+    with patch("odoo_data_flow.lib.preflight._get_odoo_fields") as mock_get_fields:
+        mock_get_fields.return_value = {
+            "id": {"type": "char"},
+            "price": {"type": "integer"},
+        }
+
+        from odoo_data_flow.lib.preflight import PreflightMode, type_correction_check
+
+        result = type_correction_check(
+            PreflightMode.NORMAL,
+            "test.model",
+            str(csv_file),
+            config,
+            import_plan,
+            separator=";",
+            encoding="utf-8",
+        )
+
+        # Should still pass even when Polars casting fails
+        assert result is True
+        # May or may not create corrected file depending on logic
+        # The key is it should not crash
+
+
+def test_type_correction_check_main_exception_handler(tmp_path: Path) -> None:
+    """Test that type correction check gracefully handles main function exceptions."""
+    # Create a valid CSV file
+    csv_file = tmp_path / "test.csv"
+    with open(csv_file, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f, delimiter=";")
+        writer.writerow(["id", "price"])
+        writer.writerow(["rec1", "100.0"])
+
+    config = {"test": "config"}
+    import_plan: dict[str, Any] = {}
+
+    # Mock _get_odoo_fields to return integer fields to trigger correction logic
+    with patch("odoo_data_flow.lib.preflight._get_odoo_fields") as mock_get_fields:
+        mock_get_fields.return_value = {
+            "id": {"type": "char"},
+            "price": {"type": "integer"},
+        }
+
+        # Mock polars.read_csv to raise an exception to trigger the main
+        # exception handler
+        with patch("odoo_data_flow.lib.preflight.pl.read_csv") as mock_read_csv:
+            mock_read_csv.side_effect = Exception("Simulated Polars read error")
+
+            from odoo_data_flow.lib.preflight import (
+                PreflightMode,
+                type_correction_check,
+            )
+
+            result = type_correction_check(
+                PreflightMode.NORMAL,
+                "test.model",
+                str(csv_file),
+                config,
+                import_plan,
+                separator=";",
+                encoding="utf-8",
+            )
+
+            # Should still return True even when main function raises exception
+            assert result is True
+            # Should warn about the error but proceed with original file
+            assert "_corrected_file" not in import_plan
+
+
+def test_type_correction_check_casting_exception_handler(tmp_path: Path) -> None:
+    """Test that type correction check gracefully handles Polars casting exceptions."""
+    # Create a valid CSV file with integer-like float strings
+    csv_file = tmp_path / "test.csv"
+    with open(csv_file, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f, delimiter=";")
+        writer.writerow(["id", "price"])
+        writer.writerow(["rec1", "100.0"])
+
+    config = {"test": "config"}
+    import_plan: dict[str, Any] = {}
+
+    # Mock _get_odoo_fields to return integer fields to trigger correction logic
+    with patch("odoo_data_flow.lib.preflight._get_odoo_fields") as mock_get_fields:
+        mock_get_fields.return_value = {
+            "id": {"type": "char"},
+            "price": {"type": "integer"},
+        }
+
+        # Mock write_csv to raise an exception to trigger the casting exception handler
+        with patch(
+            "odoo_data_flow.lib.preflight.pl.DataFrame.write_csv"
+        ) as mock_write_csv:
+            mock_write_csv.side_effect = Exception("Simulated Polars write error")
+
+            from odoo_data_flow.lib.preflight import (
+                PreflightMode,
+                type_correction_check,
+            )
+
+            result = type_correction_check(
+                PreflightMode.NORMAL,
+                "test.model",
+                str(csv_file),
+                config,
+                import_plan,
+                separator=";",
+                encoding="utf-8",
+            )
+
+            # Should still return True even when casting raises exception
+            assert result is True
+            # Should still proceed and may or may not create corrected file depending
+            # on flow
+    # Mock _get_odoo_fields to return integer fields to trigger correction logic
+    with patch("odoo_data_flow.lib.preflight._get_odoo_fields") as mock_get_fields:
+        mock_get_fields.return_value = {
+            "id": {"type": "char"},
+            "price": {"type": "integer"},
+        }
+
+        # Mock the DataFrame.with_columns operation to raise an exception
+        # This will trigger the casting exception handler
+        with patch.object(pl.DataFrame, "with_columns") as mock_with_columns:
+            mock_with_columns.side_effect = Exception("Simulated Polars cast error")
+
+            from odoo_data_flow.lib.preflight import (
+                PreflightMode,
+                type_correction_check,
+            )
+
+            result = type_correction_check(
+                PreflightMode.NORMAL,
+                "test.model",
+                str(csv_file),
+                config,
+                import_plan,
+                separator=";",
+                encoding="utf-8",
+            )
+
+            # Should still return True even when casting raises exception
+            assert result is True
+            # Should still proceed and may or may not create corrected file depending
+            # on flow
