@@ -352,8 +352,9 @@ def _create_batches(
 def _get_model_fields(model: Any) -> Optional[dict[str, Any]]:
     """Safely retrieves the fields metadata from an Odoo model.
 
-    This handles cases where `_fields` can be a dictionary or a callable
-    method, which can vary between Odoo versions or customizations.
+    This handles cases where `_fields` should be a dictionary attribute.
+    In normal Odoo usage, `_fields` is an attribute, not a method.
+    Some customizations may make it callable, so we handle both cases.
 
     Args:
         model: The Odoo model object.
@@ -367,20 +368,23 @@ def _get_model_fields(model: Any) -> Optional[dict[str, Any]]:
     model_fields_attr = model._fields
     model_fields = None
 
-    if callable(model_fields_attr):
+    if isinstance(model_fields_attr, dict):
+        # It's a property/dictionary, use it directly
+        model_fields = model_fields_attr
+    elif callable(model_fields_attr):
+        # In rare cases, some customizations might make _fields a callable
+        # that returns the fields dictionary. This shouldn't happen in normal usage.
         try:
-            # It's a method, call it to get the fields
             model_fields_result = model_fields_attr()
             # Only use the result if it's a dictionary/mapping
             if isinstance(model_fields_result, dict):
                 model_fields = model_fields_result
         except Exception:
             # If calling fails, fall back to None
-            log.warning("Could not retrieve model fields by calling _fields method.")
+            log.warning(
+                "Could not retrieve model fields by calling _fields method. This is not standard Odoo behavior."
+            )
             model_fields = None
-    elif isinstance(model_fields_attr, dict):
-        # It's a property/dictionary, use it directly
-        model_fields = model_fields_attr
     else:
         log.warning(
             "Model `_fields` attribute is of unexpected type: %s",
@@ -1059,16 +1063,32 @@ def _execute_load_batch(  # noqa: C901
                     failed_line = [*line, f"Load failed: {error_msg}"]
                     aggregated_failed_lines.append(failed_line)
 
-            # Use sanitized IDs for the id_map to match what was actually sent to Odoo
-            id_map = {
-                to_xmlid(line[uid_index]): created_ids[i]
-                if i < len(created_ids)
-                else None
-                for i, line in enumerate(current_chunk)
-            }
+            # Create id_map and track failed records separately
+            id_map = {}
+            successful_count = 0
+            total_count = len(
+                current_chunk
+            )  # Use current_chunk instead of load_lines to match correctly
+            aggregated_failed_lines_batch = []  # Track failed lines for this batch specifically
 
-            # Remove None entries (failed creations) from id_map
-            id_map = {k: v for k, v in id_map.items() if v is not None}
+            # Create id_map by matching records with created_ids
+            for i, line in enumerate(current_chunk):
+                if i < len(created_ids):
+                    db_id = created_ids[i]
+                    if db_id is not None:
+                        sanitized_id = to_xmlid(line[uid_index])
+                        id_map[sanitized_id] = db_id
+                        successful_count += 1
+                    else:
+                        # Record was returned as None in the created_ids list
+                        error_msg = f"Record creation failed - Odoo returned None for record index {i}"
+                        failed_line = [*list(line), f"Load failed: {error_msg}"]
+                        aggregated_failed_lines_batch.append(failed_line)
+                else:
+                    # Record wasn't in the created_ids list (fewer IDs returned than sent)
+                    error_msg = f"Record creation failed - expected {len(current_chunk)} records, only {len(created_ids)} returned by Odoo load() method"
+                    failed_line = [*list(line), f"Load failed: {error_msg}"]
+                    aggregated_failed_lines_batch.append(failed_line)
 
             # Log id_map information for debugging
             log.debug(f"Created {len(id_map)} records in batch {batch_number}")
@@ -1081,29 +1101,33 @@ def _execute_load_batch(  # noqa: C901
             successful_count = len(created_ids)
             total_count = len(load_lines)
 
-            # If there are error messages from Odoo, all records in chunk should
-            # be marked as failed
+            # Check if Odoo server returned messages with validation errors
             if res.get("messages"):
-                # All records in the chunk are considered failed due to
-                # error messages
                 log.info(
                     f"All {len(current_chunk)} records in chunk marked as "
-                    f"failed due to error messages"
+                    f"failed due to Odoo server messages: {res.get('messages')}"
                 )
-                # Don't add them again since they were already added in the
-                #  earlier block
-            elif successful_count < total_count:
-                failed_count = total_count - successful_count
-                log.info(f"Capturing {failed_count} failed records for fail file")
-                # Add error information to the lines that failed
-                for i, line in enumerate(current_chunk):
-                    # Check if this line corresponds to a created record
-                    if i >= len(created_ids) or created_ids[i] is None:
-                        # This record failed, add it to failed_lines with error info
-                        error_msg = "Record creation failed"
-
-                        failed_line = [*list(line), f"Load failed: {error_msg}"]
+                # Add all records in current chunk to failed lines with server messages
+                for line in current_chunk:
+                    message_details = res.get("messages", [])
+                    error_msg = (
+                        str(
+                            message_details[0].get(
+                                "message", "Unknown error from Odoo server"
+                            )
+                        )
+                        if message_details
+                        else "Unknown error"
+                    )
+                    failed_line = [*list(line), f"Load failed: {error_msg}"]
+                    if failed_line not in aggregated_failed_lines:  # Avoid duplicates
                         aggregated_failed_lines.append(failed_line)
+            elif len(aggregated_failed_lines_batch) > 0:
+                # Add the specific records that failed to the aggregated failed lines
+                log.info(
+                    f"Capturing {len(aggregated_failed_lines_batch)} failed records for fail file"
+                )
+                aggregated_failed_lines.extend(aggregated_failed_lines_batch)
 
             # Always update the aggregated map with successful records
             # Create a new dictionary containing only the items with integer values
