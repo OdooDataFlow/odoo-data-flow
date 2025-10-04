@@ -467,13 +467,15 @@ def _convert_external_id_field(
         Tuple of (base_field_name, converted_value)
     """
     base_field_name = field_name[:-3]  # Remove '/id' suffix
-    converted_value = False
 
     if not field_value:
         # Empty external ID means no value for this field
+        # Return None to indicate the field should be omitted entirely
+        # This prevents setting many2many fields to False which creates empty combinations
         log.debug(
-            f"Converted empty external ID {field_name} -> {base_field_name} (False)"
+            f"Converted empty external ID {field_name} -> omitting field entirely"
         )
+        return base_field_name, None
     else:
         # Convert external ID to database ID
         try:
@@ -485,18 +487,21 @@ def _convert_external_id_field(
                     f"Converted external ID {field_name} ({field_value}) -> "
                     f"{base_field_name} ({record_ref.id})"
                 )
+                return base_field_name, converted_value
             else:
-                # If we can't find the external ID, value remains False
+                # If we can't find the external ID, omit the field entirely
                 log.warning(
                     f"Could not find record for external ID '{field_value}', "
-                    f"setting {base_field_name} to False"
+                    f"omitting field {base_field_name} entirely"
                 )
+                return base_field_name, None
         except Exception as e:
             log.warning(
                 f"Error looking up external ID '{field_value}' for field "
                 f"'{field_name}': {e}"
             )
-            # On error, value remains False
+            # On error, omit the field entirely
+            return base_field_name, None
 
     return base_field_name, converted_value
 
@@ -590,7 +595,11 @@ def _process_external_id_fields(
             base_name, value = _convert_external_id_field(
                 model, field_name, field_value
             )
-            converted_vals[base_name] = value
+            # Only add the field to converted_vals if the value is not None
+            # This allows us to omit fields entirely when appropriate (e.g., for
+            # empty many2many fields)
+            if value is not None:
+                converted_vals[base_name] = value
             external_id_fields.append(field_name)
         else:
             # Regular field - pass through as-is
