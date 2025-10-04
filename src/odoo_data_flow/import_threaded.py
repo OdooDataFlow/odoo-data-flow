@@ -204,7 +204,9 @@ def _setup_fail_file(
         fail_writer.writerow(header_to_write)
         return fail_writer, fail_handle
     except OSError as e:
-        log.error(f"Could not open fail file for writing: {fail_file}. Error: {e}")
+        log.error(
+            f"Could not open fail file for writing: {fail_file}. Error: {e}"
+        )
         return None, None
 
 
@@ -343,7 +345,9 @@ def _create_batches(
     if not data:
         return
     for i, (_, batch_data) in enumerate(
-        _recursive_create_batches(data, split_by_cols or [], header, batch_size, o2m),
+        _recursive_create_batches(
+            data, split_by_cols or [], header, batch_size, o2m
+        ),
         start=1,
     ):
         yield i, batch_data
@@ -383,7 +387,8 @@ def _get_model_fields(model: Any) -> Optional[dict[str, Any]]:
         # _fields attribute approach
         # This maintains compatibility with existing tests and edge cases
         log.debug(
-            "fields_get() failed, falling back to _fields attribute", exc_info=True
+            "fields_get() failed, falling back to _fields attribute",
+            exc_info=True,
         )
         pass
 
@@ -408,7 +413,9 @@ def _get_model_fields(model: Any) -> Optional[dict[str, Any]]:
                 model_fields = model_fields_result
         except Exception:
             # If calling fails, fall back to None
-            log.warning("Could not retrieve model fields by calling _fields method.")
+            log.warning(
+                "Could not retrieve model fields by calling _fields method."
+            )
             model_fields = None
     else:
         log.warning(
@@ -471,7 +478,8 @@ def _convert_external_id_field(
     if not field_value:
         # Empty external ID means no value for this field
         # Return None to indicate the field should be omitted entirely
-        # This prevents setting many2many fields to False which creates empty combinations
+        # This prevents setting many2many fields to False which creates
+        # empty combinations
         log.debug(
             f"Converted empty external ID {field_name} -> omitting field entirely"
         )
@@ -502,8 +510,6 @@ def _convert_external_id_field(
             )
             # On error, omit the field entirely
             return base_field_name, None
-
-    return base_field_name, converted_value
 
 
 def _safe_convert_field_value(  # noqa: C901
@@ -646,7 +652,8 @@ def _handle_create_error(  # noqa: C901
         or "poolerror" in error_str_lower
     ):
         error_message = (
-            f"Database connection pool exhaustion in row {i + 1}: {create_error}"
+            f"Database connection pool exhaustion in row {i + 1}: "
+            f"{create_error}"
         )
         if "Fell back to create" in error_summary:
             error_summary = "Database connection pool exhaustion detected"
@@ -655,9 +662,13 @@ def _handle_create_error(  # noqa: C901
         "could not serialize access" in error_str_lower
         or "concurrent update" in error_str_lower
     ):
-        error_message = f"Database serialization error in row {i + 1}: {create_error}"
+        error_message = (
+            f"Database serialization error in row {i + 1}: {create_error}"
+        )
         if "Fell back to create" in error_summary:
-            error_summary = "Database serialization conflict detected during create"
+            error_summary = (
+                "Database serialization conflict detected during create"
+            )
     elif (
         "tuple index out of range" in error_str_lower
         or "indexerror" in error_str_lower
@@ -673,7 +684,8 @@ def _handle_create_error(  # noqa: C901
         error_message = error_str.replace("\n", " | ")
         if "invalid field" in error_str_lower and "/id" in error_str_lower:
             error_message = (
-                f"Invalid external ID field detected in row {i + 1}: {error_message}"
+                f"Invalid external ID field detected in row {i + 1}: "
+                f"{error_message}"
             )
 
         if "Fell back to create" in error_summary:
@@ -785,11 +797,15 @@ def _create_batch_individually(  # noqa: C901
             # Special handling for tuple index out of range errors
             # These can occur when sending wrong types to Odoo fields
             if "tuple index out of range" in error_str_lower:
-                _handle_tuple_index_error(progress, source_id, line, failed_lines)
+                _handle_tuple_index_error(
+                    progress, source_id, line, failed_lines
+                )
                 continue
             else:
                 # Handle other IndexError as malformed row
-                error_message = f"Malformed row detected (row {i + 1} in batch): {e}"
+                error_message = (
+                    f"Malformed row detected (row {i + 1} in batch): {e}"
+                )
                 failed_lines.append([*line, error_message])
                 if "Fell back to create" in error_summary:
                     error_summary = "Malformed CSV row detected"
@@ -803,7 +819,9 @@ def _create_batch_individually(  # noqa: C901
                 "does not seem to be an integer" in error_str_lower
                 and "for field" in error_str_lower
             ):
-                _handle_tuple_index_error(progress, source_id, line, failed_lines)
+                _handle_tuple_index_error(
+                    progress, source_id, line, failed_lines
+                )
                 continue
 
             # Special handling for database connection pool exhaustion errors
@@ -842,8 +860,8 @@ def _create_batch_individually(  # noqa: C901
                 # - let the record be processed in next batch
                 continue
 
-            error_message, new_failed_line, error_summary = _handle_create_error(
-                i, create_error, line, error_summary
+            error_message, new_failed_line, error_summary = (
+                _handle_create_error(i, create_error, line, error_summary)
             )
             failed_lines.append(new_failed_line)
     return {
@@ -949,7 +967,9 @@ def _execute_load_batch(  # noqa: C901
 
     # Track retry attempts for serialization errors to prevent infinite retries
     serialization_retry_count = 0
-    max_serialization_retries = 3  # Maximum number of retries for serialization errors
+    max_serialization_retries = (
+        3  # Maximum number of retries for serialization errors
+    )
 
     while lines_to_process:
         current_chunk = lines_to_process[:chunk_size]
@@ -976,7 +996,9 @@ def _execute_load_batch(  # noqa: C901
                     # Pad the row to match the original header length
                     # before adding error message
                     # This ensures the fail file has consistent column counts
-                    padded_row = list(row) + [""] * (len(batch_header) - len(row))
+                    padded_row = list(row) + [""] * (
+                        len(batch_header) - len(row)
+                    )
                     error_msg = (
                         f"Row has {len(row)} columns but requires "
                         f"at least {max_index + 1} columns based on header"
@@ -1069,12 +1091,18 @@ def _execute_load_batch(  # noqa: C901
                     msg_text = message.get("message", "")
                     if msg_type == "error":
                         # Only raise for actual errors, not warnings
-                        log.error(f"Load operation returned fatal error: {msg_text}")
+                        log.error(
+                            f"Load operation returned fatal error: {msg_text}"
+                        )
                         raise ValueError(msg_text)
                     elif msg_type in ["warning", "info"]:
-                        log.warning(f"Load operation returned {msg_type}: {msg_text}")
+                        log.warning(
+                            f"Load operation returned {msg_type}: {msg_text}"
+                        )
                     else:
-                        log.info(f"Load operation returned {msg_type}: {msg_text}")
+                        log.info(
+                            f"Load operation returned {msg_type}: {msg_text}"
+                        )
 
             created_ids = res.get("ids", [])
             log.debug(
@@ -1098,7 +1126,9 @@ def _execute_load_batch(  # noqa: C901
                     if load_lines:
                         log.debug("First few lines being sent:")
                         for i, line in enumerate(load_lines[:3]):
-                            log.debug(f"  Line {i}: {dict(zip(load_header, line))}")
+                            log.debug(
+                                f"  Line {i}: {dict(zip(load_header, line))}"
+                            )
                 else:
                     log.warning(
                         f"Partial record creation: {len(created_ids)}/{len(load_lines)}"
@@ -1111,7 +1141,9 @@ def _execute_load_batch(  # noqa: C901
             if res.get("messages"):
                 # Extract error information and add to failed_lines to be written
                 # to fail file
-                error_msg = res["messages"][0].get("message", "Batch load failed.")
+                error_msg = res["messages"][0].get(
+                    "message", "Batch load failed."
+                )
                 log.error(f"Capturing load failure for fail file: {error_msg}")
                 # Add all current chunk records to failed lines since there are
                 # error messages
@@ -1159,9 +1191,13 @@ def _execute_load_batch(  # noqa: C901
             # Log id_map information for debugging
             log.debug(f"Created {len(id_map)} records in batch {batch_number}")
             if id_map:
-                log.debug(f"Sample id_map entries: {dict(list(id_map.items())[:3])}")
+                log.debug(
+                    f"Sample id_map entries: {dict(list(id_map.items())[:3])}"
+                )
             else:
-                log.warning(f"No id_map entries created for batch {batch_number}")
+                log.warning(
+                    f"No id_map entries created for batch {batch_number}"
+                )
 
             # Capture failed lines for writing to fail file
             successful_count = len(created_ids)
@@ -1186,7 +1222,9 @@ def _execute_load_batch(  # noqa: C901
                         else "Unknown error"
                     )
                     failed_line = [*list(line), f"Load failed: {error_msg}"]
-                    if failed_line not in aggregated_failed_lines:  # Avoid duplicates
+                    if (
+                        failed_line not in aggregated_failed_lines
+                    ):  # Avoid duplicates
                         aggregated_failed_lines.append(failed_line)
             elif len(aggregated_failed_lines_batch) > 0:
                 # Add the specific records that failed to the aggregated failed lines
@@ -1199,7 +1237,9 @@ def _execute_load_batch(  # noqa: C901
             # Always update the aggregated map with successful records
             # Create a new dictionary containing only the items with integer values
             filtered_id_map = {
-                key: value for key, value in id_map.items() if isinstance(value, int)
+                key: value
+                for key, value in id_map.items()
+                if isinstance(value, int)
             }
             aggregated_id_map.update(filtered_id_map)
             lines_to_process = lines_to_process[chunk_size:]
@@ -1382,7 +1422,9 @@ def _execute_load_batch(  # noqa: C901
                             error_message=clean_error,
                         )
                         lines_to_process = lines_to_process[chunk_size:]
-                        serialization_retry_count = 0  # Reset counter for next batch
+                        serialization_retry_count = (
+                            0  # Reset counter for next batch
+                        )
                         continue
                 continue
 
@@ -1508,7 +1550,9 @@ def _run_threaded_pass(  # noqa: C901
     }
     consecutive_failures = 0
     successful_batches = 0
-    original_description = rpc_thread.progress.tasks[rpc_thread.task_id].description
+    original_description = rpc_thread.progress.tasks[
+        rpc_thread.task_id
+    ].description
 
     try:
         for future in concurrent.futures.as_completed(futures):
@@ -1532,8 +1576,12 @@ def _run_threaded_pass(  # noqa: C901
                         rpc_thread.abort_flag = True
 
                 aggregated["id_map"].update(result.get("id_map", {}))
-                aggregated["failed_writes"].extend(result.get("failed_writes", []))
-                aggregated["successful_writes"] += result.get("successful_writes", 0)
+                aggregated["failed_writes"].extend(
+                    result.get("failed_writes", [])
+                )
+                aggregated["successful_writes"] += result.get(
+                    "successful_writes", 0
+                )
                 failed_lines = result.get("failed_lines", [])
                 if failed_lines:
                     aggregated["failed_lines"].extend(failed_lines)
@@ -1551,7 +1599,9 @@ def _run_threaded_pass(  # noqa: C901
                 rpc_thread.progress.update(rpc_thread.task_id, advance=1)
 
             except Exception as e:
-                log.error(f"A worker thread failed unexpectedly: {e}", exc_info=True)
+                log.error(
+                    f"A worker thread failed unexpectedly: {e}", exc_info=True
+                )
                 rpc_thread.abort_flag = True
                 rpc_thread.progress.console.print(
                     f"[bold red]Worker Failed: {e}[/bold red]"
@@ -1568,7 +1618,9 @@ def _run_threaded_pass(  # noqa: C901
     except KeyboardInterrupt:
         log.warning("Ctrl+C detected! Aborting import gracefully...")
         rpc_thread.abort_flag = True
-        rpc_thread.progress.console.print("[bold yellow]Aborted by user[/bold yellow]")
+        rpc_thread.progress.console.print(
+            "[bold yellow]Aborted by user[/bold yellow]"
+        )
         rpc_thread.progress.update(
             rpc_thread.task_id,
             description="[bold yellow]Aborted by user[/bold yellow]",
@@ -1659,7 +1711,9 @@ def _orchestrate_pass_1(
         return {"success": False}
 
     pass_1_batches = list(
-        _create_batches(pass_1_data, split_by_cols, pass_1_header, batch_size, o2m)
+        _create_batches(
+            pass_1_data, split_by_cols, pass_1_header, batch_size, o2m
+        )
     )
     num_batches = len(pass_1_batches)
     pass_1_task = progress.add_task(
@@ -1733,7 +1787,9 @@ def _orchestrate_pass_2(
     )
 
     if not pass_2_data_to_write:
-        log.info("No valid relations found to update in Pass 2. Import complete.")
+        log.info(
+            "No valid relations found to update in Pass 2. Import complete."
+        )
         return True, 0
 
     # --- Grouping Logic ---
@@ -1891,7 +1947,9 @@ def import_data(
         )
         _show_error_panel(title, friendly_message)
         return False, {}
-    fail_writer, fail_handle = _setup_fail_file(fail_file, header, separator, encoding)
+    fail_writer, fail_handle = _setup_fail_file(
+        fail_file, header, separator, encoding
+    )
     console = Console()
     progress = Progress(
         SpinnerColumn(),
