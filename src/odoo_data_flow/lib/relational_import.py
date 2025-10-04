@@ -91,11 +91,33 @@ def _resolve_related_ids(  # noqa: C901
 
             resolved_data = data_model.search_read(domain, ["module", "name", "res_id"])
             if not resolved_data:
-                log.error(
-                    f"XML-ID resolution failed for all IDs in model '{related_model}'. "
-                    "This is often caused by referencing records that don't exist "
-                    "or don't have external IDs assigned."
-                )
+                if xml_ids:  # Only log error if there were XML IDs to resolve
+                    # Determine which specific XML IDs were not found
+                    found_xml_ids = {rec["name"] for rec in resolved_data}
+                    missing_xml_ids = set(xml_ids) - found_xml_ids
+                    if len(missing_xml_ids) <= 10:  # Log sample if not too many
+                        log.error(
+                            f"XML-ID resolution failed for all {len(xml_ids)} XML "
+                            f"IDs in model '{related_model}'. "
+                            f"Missing XML IDs: {list(missing_xml_ids)}. "
+                            "This is often caused by referencing records that "
+                            "don't exist or don't have external IDs assigned."
+                        )
+                    else:
+                        log.error(
+                            f"XML-ID resolution failed for all {len(xml_ids)} XML "
+                            f"IDs in model '{related_model}'. "
+                            f"Sample missing XML IDs: {list(missing_xml_ids)[:10]}. "
+                            f"Total missing: {len(missing_xml_ids)}. "
+                            "This is often caused by referencing records that "
+                            "don't exist or don't have external IDs assigned."
+                        )
+                else:
+                    # xml_ids was empty, so no error to report
+                    log.debug(
+                        f"No XML IDs to resolve for model '{related_model}'. "
+                        f"Only database IDs were provided."
+                    )
                 if not db_ids:
                     return None
             else:

@@ -55,7 +55,6 @@ def _map_encoding_to_polars(encoding: str) -> str:
         "windows-1252": "windows-1252",
         # Lossy variants - when we want to preserve as much data as possible
         "utf-8-lossy": "utf8-lossy",
-        "utf-8-lossy": "utf8-lossy",
         "latin-1-lossy": "windows-1252-lossy",
         "iso-8859-1-lossy": "windows-1252-lossy",
         "cp1252-lossy": "windows-1252-lossy",

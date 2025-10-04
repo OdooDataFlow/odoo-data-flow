@@ -1081,14 +1081,6 @@ def _execute_load_batch(  # noqa: C901
             successful_count = len(created_ids)
             total_count = len(load_lines)
 
-            # If there are error messages from Odoo, all records in chunk
-            # should be marked as failed
-            if res.get("messages"):
-                # All records in the chunk are considered failed due to
-                # error messages
-                successful_count = len(created_ids)
-                total_count = len(load_lines)
-
             # If there are error messages from Odoo, all records in chunk should
             # be marked as failed
             if res.get("messages"):
