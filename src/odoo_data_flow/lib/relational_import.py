@@ -234,17 +234,19 @@ def _query_relation_info_from_odoo(
         # We need to check both orders since the relation could be defined either way
         # Note: The field names in ir.model.relation may vary by Odoo version
         # Common field names are: model, comodel_id, or model_id for the related fields
+        # Based on the review comment, the correct field name in Odoo for 
+        # the target model in a relation is "model" (not "comodel")
         domain = [
             "|",
             "&",
             ("model", "=", model),
-            ("comodel", "=", related_model_fk),
+            ("model", "=", related_model_fk),
             "&",
             ("model", "=", related_model_fk),
-            ("comodel", "=", model),
+            ("model", "=", model),
         ]
 
-        relations = relation_model.search_read(domain, ["name", "model", "comodel"])
+        relations = relation_model.search_read(domain, ["name", "model", "model"])
 
         if relations:
             # Found matching relations, use the first one

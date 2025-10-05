@@ -28,6 +28,17 @@ from .lib import cache, conf_lib
 from .lib.internal.rpc_thread import RpcThread
 from .lib.internal.tools import batch
 from .lib.odoo_lib import ODOO_TO_POLARS_MAP
+
+# For performance, this map should be defined as a module-level constant.
+# Create a translation map that replaces control characters with '?'
+# while preserving common ones like tab, newline, and carriage return
+_CONTROL_CHAR_MAP = str.maketrans(
+    {i: "?" for i in range(32) if i not in (9, 10, 13)}  # Control chars except tab, newline, cr
+)
+# Also handle extended control characters (127-159)
+_CONTROL_CHAR_MAP.update(
+    {i: "?" for i in range(127, 160)}
+)
 from .logging_config import log
 
 # --- Fix for csv.field_size_limit OverflowError ---
@@ -1113,24 +1124,14 @@ def _sanitize_utf8_string(text: Any) -> str:
 
     # If it's already valid UTF-8, check for problematic control characters
     try:
-        # Check if the string contains problematic control characters
-        # that might cause issues when writing to CSV
-        sanitized_text = ""
-        for char in text:
-            # Check if character is a problematic control character
-            if ord(char) < 32 and char not in "\n\r\t":
-                # Replace problematic control characters with '?'
-                sanitized_text += "?"
-            elif ord(char) == 0x9D:  # Specifically handle the problematic 0x9d byte
-                # This is the byte that was causing issues in your CSV file
-                sanitized_text += "?"
-            else:
-                sanitized_text += char
-
-        # Verify the sanitized text is valid UTF-8
+        # Use str.translate with a pre-built mapping for better performance
+        # This avoids the overhead of a Python loop for each character
+        sanitized_text = text.translate(_CONTROL_CHAR_MAP)
+        # Verify the sanitized text is valid UTF-8 and return it.
         sanitized_text.encode("utf-8")
-        return sanitized_text
+        return str(sanitized_text)  # Explicitly convert to str to satisfy MyPy
     except UnicodeEncodeError:
+        # If translation introduces an error (unlikely), fall through.
         pass
 
     # Handle invalid UTF-8 by replacing problematic characters
@@ -1156,14 +1157,8 @@ def _sanitize_utf8_string(text: Any) -> str:
             return str(result)  # Explicitly convert to str to satisfy MyPy
         except Exception:
             # Ultimate fallback - strip to ASCII printable chars only
-            result = ""
-            for char in str(text):
-                if ord(char) < 127 and ord(char) >= 32:
-                    result += char
-                elif char in "\n\r\t":
-                    result += char
-                else:
-                    result += "?"  # Replace unrepresentable chars with ?
+            # Use str.translate for better performance instead of character-by-character loop
+            result = str(text).translate(_CONTROL_CHAR_MAP)
             return str(result)  # Explicitly convert to str to satisfy MyPy
 
 
