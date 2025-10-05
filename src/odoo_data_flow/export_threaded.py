@@ -28,18 +28,18 @@ from .lib import cache, conf_lib
 from .lib.internal.rpc_thread import RpcThread
 from .lib.internal.tools import batch
 from .lib.odoo_lib import ODOO_TO_POLARS_MAP
+from .logging_config import log
 
 # For performance, this map should be defined as a module-level constant.
 # Create a translation map that replaces control characters with '?'
 # while preserving common ones like tab, newline, and carriage return
 _CONTROL_CHAR_MAP = str.maketrans(
-    {i: "?" for i in range(32) if i not in (9, 10, 13)}  # Control chars except tab, newline, cr
+    {
+        i: "?" for i in range(32) if i not in (9, 10, 13)
+    }  # Control chars except tab, newline, cr
 )
 # Also handle extended control characters (127-159)
-_CONTROL_CHAR_MAP.update(
-    {i: "?" for i in range(127, 160)}
-)
-from .logging_config import log
+_CONTROL_CHAR_MAP.update({i: "?" for i in range(127, 160)})
 
 # --- Fix for csv.field_size_limit OverflowError ---
 max_int = sys.maxsize
@@ -1157,7 +1157,8 @@ def _sanitize_utf8_string(text: Any) -> str:
             return str(result)  # Explicitly convert to str to satisfy MyPy
         except Exception:
             # Ultimate fallback - strip to ASCII printable chars only
-            # Use str.translate for better performance instead of character-by-character loop
+            # Use str.translate for better performance instead of
+            # character-by-character loop
             result = str(text).translate(_CONTROL_CHAR_MAP)
             return str(result)  # Explicitly convert to str to satisfy MyPy
 
