@@ -2,6 +2,7 @@
 
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -226,7 +227,7 @@ class TestCleanBatch:
         an empty DataFrame with the expected schema.
         """
         # --- Arrange ---
-        batch_data = []
+        batch_data: list[dict[str, Any]] = []
 
         # --- Act ---
         result = _clean_batch(batch_data)
