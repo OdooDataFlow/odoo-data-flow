@@ -880,27 +880,18 @@ def _determine_export_strategy(
         info.get("type") in technical_types for info in fields_info.values()
     )
 
-    # Check for many-to-many fields to maintain compatibility
-    # with old export_data behavior
-    has_many_to_many_fields = any(
-        fields_info.get(f, {}).get("type") in ["one2many", "many2many"]
-        for f in [
-            fld.split("/")[0].replace(".id", "id")
-            for fld in header
-            if "/" in fld and fld.split("/")[0].replace(".id", "id") in fields_info
-        ]
-    )
-
     # Check specifically for many-to-many fields with XML ID specifiers (/id)
+    # This is important for maintaining compatibility with the old export_data method
+    # which handled these relationships correctly
     has_many_to_many_xml_id_fields = any(
         fields_info.get(f.split("/")[0], {}).get("type") in ["one2many", "many2many"]
         for f in header
         if "/" in f and f.endswith("/id")
     )
 
-    # CRITICAL FIX: To maintain compatibility with old version for many-to-many fields,
-    # avoid hybrid mode when we have many-to-many fields with /id specifiers
-    # The old version used export_data method which handled these relationships properly
+    # CRITICAL FIX: To maintain compatibility, avoid hybrid mode for many-to-many
+    # fields with /id specifiers, as the old `export_data` method handled these
+    # relationships correctly.
     # Only use hybrid mode for non-many-to-many XML ID fields
     is_hybrid = (
         has_read_specifiers
@@ -908,29 +899,6 @@ def _determine_export_strategy(
         and not has_many_to_many_xml_id_fields
     )
 
-    # For better compatibility with old version behavior for many-to-many fields,
-    # we'll avoid hybrid mode if it would cause issues with relationship handling
-    # If we have many-to-many fields with XML ID specifiers, consider using export_data
-    if has_many_to_many_fields and has_xml_id_specifiers and has_read_specifiers:
-        # For maximum compatibility with the old version behavior,
-        # we should reconsider whether hybrid mode is truly needed here
-        # Since the old version used export_data which handled m2m correctly,
-        # we might need to prioritize that behavior
-        pass  # Keep existing logic but document the compatibility need
-
-    force_read_method = (
-        technical_names or has_read_specifiers or is_hybrid or has_technical_fields
-    )
-
-    # CRITICAL COMPATIBILITY FIX: If we have many-to-many fields that worked
-    # well with old export_data method,
-    # and we're not dealing with technical requirements that mandate read method,
-    # consider a more compatibility-focused approach
-    # However, we must respect the current architecture and user's field requirements
-
-    # The real solution: ensure hybrid approach properly handles many-to-many enrichment
-    # This is what the old export_data method did automatically
-    is_hybrid = has_read_specifiers and has_xml_id_specifiers
     force_read_method = (
         technical_names or has_read_specifiers or is_hybrid or has_technical_fields
     )
@@ -945,7 +913,7 @@ def _determine_export_strategy(
         )
     elif is_hybrid:
         log.info("Hybrid export mode activated. Using 'read' with XML ID enrichment.")
-        if has_many_to_many_fields:
+        if has_many_to_many_xml_id_fields:
             log.info("Note: Processing many-to-many fields with hybrid approach.")
     elif has_technical_fields:
         log.info("Read method auto-enabled for 'selection' or 'binary' fields.")
