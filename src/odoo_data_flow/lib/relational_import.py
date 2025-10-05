@@ -31,10 +31,19 @@ def _resolve_related_ids(  # noqa: C901
         f"Cache miss for related model '{related_model}'. "
         f"Falling back to slow XML-ID resolution."
     )
-    if isinstance(config, dict):
-        connection = conf_lib.get_connection_from_dict(config)
-    else:
-        connection = conf_lib.get_connection_from_config(config_file=config)
+
+    # Handle connection errors gracefully
+    try:
+        if isinstance(config, dict):
+            connection = conf_lib.get_connection_from_dict(config)
+        else:
+            connection = conf_lib.get_connection_from_config(config_file=config)
+    except Exception as e:
+        log.error(
+            f"Failed to establish connection for resolving related IDs: {e}. "
+            f"This is often caused by incorrect configuration or network issues."
+        )
+        return None
 
     id_list = external_ids.drop_nulls().unique().to_list()
     log.info(f"Resolving {len(id_list)} unique IDs for '{related_model}'...")
@@ -234,7 +243,7 @@ def _query_relation_info_from_odoo(
         # We need to check both orders since the relation could be defined either way
         # Note: The field names in ir.model.relation may vary by Odoo version
         # Common field names are: model, comodel_id, or model_id for the related fields
-        # Based on the review comment, the correct field name in Odoo for 
+        # Based on the review comment, the correct field name in Odoo for
         # the target model in a relation is "model" (not "comodel")
         domain = [
             "|",

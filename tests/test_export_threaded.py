@@ -14,6 +14,7 @@ from odoo_data_flow.export_threaded import (
     _clean_batch,
     _initialize_export,
     _process_export_batches,
+    _sanitize_utf8_string,
     export_data,
 )
 
@@ -201,35 +202,327 @@ class TestCleanBatch:
     def test_clean_batch_creates_dataframe(self) -> None:
         """Tests that a DataFrame is created correctly from a list of dicts."""
         # Arrange
-        test_data = [
-            {"id": 1, "name": "Test 1"},
-            {"id": 2, "name": "Test 2"},
+        batch_data = [
+            {"id": 1, "name": "John Doe", "is_company": True},
+            {"id": 2, "name": "Jane Smith", "is_company": False},
         ]
 
         # Act
-        result_df = _clean_batch(test_data)
+        result = _clean_batch(batch_data)
 
         # Assert
-        assert isinstance(result_df, pl.DataFrame)
-        assert len(result_df) == 2
-        expected_df = pl.DataFrame(test_data)
-        assert_frame_equal(result_df, expected_df)
+        assert isinstance(result, pl.DataFrame)
+        assert result.height == 2
+        assert result.width == 3
+        assert result.columns == ["id", "name", "is_company"]
+        assert result["id"].to_list() == [1, 2]
+        assert result["name"].to_list() == ["John Doe", "Jane Smith"]
+        assert result["is_company"].to_list() == [True, False]
 
     def test_clean_batch_empty_input(self) -> None:
-        """Tests that an empty list is handled correctly."""
-        # Act & Assert
-        assert _clean_batch([]).is_empty()
+        """Empty input test.
+
+        Tests that _clean_batch handles empty input gracefully by returning
+        an empty DataFrame with the expected schema.
+        """
+        # --- Arrange ---
+        batch_data = []
+
+        # --- Act ---
+        result = _clean_batch(batch_data)
+
+        # --- Assert ---
+        assert isinstance(result, pl.DataFrame)
+        assert result.height == 0
+        assert result.width == 0
 
     def test_clean_batch_with_boolean(self) -> None:
         """Test that _clean_batch handles boolean values correctly."""
-        data = [{"id": 1, "active": True}, {"id": 2, "active": False}]
-        # field_types = {"id": "integer", "active": "boolean"}
-        df = _clean_batch(data)
-        assert df.to_dicts() == data
+        # --- Arrange ---
+        batch_data = [
+            {"active": True, "is_company": False},
+            {"active": False, "is_company": True},
+        ]
+
+        # --- Act ---
+        result = _clean_batch(batch_data)
+
+        # --- Assert ---
+        assert isinstance(result, pl.DataFrame)
+        assert result.height == 2
+        assert result["active"].dtype == pl.Boolean
+        assert result["is_company"].dtype == pl.Boolean
+        assert result["active"].to_list() == [True, False]
+        assert result["is_company"].to_list() == [False, True]
+
+
+class TestSanitizeUtf8String:
+    """Tests for the _sanitize_utf8_string utility function."""
+
+    def test_sanitize_utf8_string_normal_text(self) -> None:
+        """Normal text test.
+
+        Tests that _sanitize_utf8_string handles normal text correctly without
+        any modifications.
+        """
+        # --- Arrange ---
+        text = "Hello, World!"
+
+        # --- Act ---
+        result = _sanitize_utf8_string(text)
+
+        # --- Assert ---
+        assert result == "Hello, World!"
+
+    def test_sanitize_utf8_string_none_value(self) -> None:
+        """None value test.
+
+        Tests that _sanitize_utf8_string converts None values to empty strings.
+        """
+        # --- Arrange ---
+        text = None
+
+        # --- Act ---
+        result = _sanitize_utf8_string(text)
+
+        # --- Assert ---
+        assert result == ""
+
+    def test_sanitize_utf8_string_non_string_value(self) -> None:
+        """Non-string value test.
+
+        Tests that _sanitize_utf8_string converts non-string values to strings.
+        """
+        # --- Arrange ---
+        text = 123
+
+        # --- Act ---
+        result = _sanitize_utf8_string(text)
+
+        # --- Assert ---
+        assert result == "123"
+
+    def test_sanitize_utf8_string_control_characters(self) -> None:
+        """Control characters test.
+
+        Tests that _sanitize_utf8_string replaces problematic control characters
+        with '?' while preserving common ones like tab, newline, and carriage return.
+        """
+        # --- Arrange ---
+        # Text with various control characters
+        text = "Hello\x00World\x01Test\x02"  # Null, SOH, STX characters
+
+        # --- Act ---
+        result = _sanitize_utf8_string(text)
+
+        # --- Assert ---
+        # Control characters should be replaced with '?'
+        assert result == "Hello?World?Test?"
+
+    def test_sanitize_utf8_string_preserve_common_controls(self) -> None:
+        """Common control characters preservation test.
+
+        Tests that _sanitize_utf8_string preserves common control characters
+        like tab, newline, and carriage return.
+        """
+        # --- Arrange ---
+        # Text with tab, newline, and carriage return
+        text = "Hello	World\nTest\rEnd"
+
+        # --- Act ---
+        result = _sanitize_utf8_string(text)
+
+        # --- Assert ---
+        # Common control characters should be preserved
+        assert result == "Hello	World\nTest\rEnd"
+
+    def test_sanitize_utf8_string_extended_control_characters(self) -> None:
+        """Extended control characters test.
+
+        Tests that _sanitize_utf8_string handles extended control characters
+        (127-159) correctly.
+        """
+        # --- Arrange ---
+        # Text with extended control characters
+        text = "Test\x7fCharacter\x80Test\x9fEnd"  # DEL, 0x80, 0x9f characters
+
+        # --- Act ---
+        result = _sanitize_utf8_string(text)
+
+        # --- Assert ---
+        # Extended control characters should be replaced with '?'
+        assert result == "Test?Character?Test?End"
+
+
+class TestEnrichMainDfWithXmlIds:
+    """Tests for the _enrich_main_df_with_xml_ids utility function."""
+
+    def test_enrich_main_df_with_xml_ids_missing_id_column(self) -> None:
+        """Test _enrich_main_df_with_xml_ids when ".id" column is missing."""
+        import polars as pl
+
+        from odoo_data_flow.export_threaded import _enrich_main_df_with_xml_ids
+
+        # Create DataFrame without ".id" column
+        df_without_id = pl.DataFrame(
+            {
+                "name": ["Test", "Another"],
+                "value": [100, 200],
+            }
+        )
+
+        mock_connection = MagicMock()
+        model_name = "res.partner"
+
+        result_df = _enrich_main_df_with_xml_ids(
+            df_without_id, mock_connection, model_name
+        )
+
+        # DataFrame should remain unchanged if ".id" column is missing
+        assert result_df.equals(df_without_id)
+
+    def test_enrich_main_df_with_xml_ids_empty_dataframe(self) -> None:
+        """Test _enrich_main_df_with_xml_ids with an empty DataFrame."""
+        import polars as pl
+
+        from odoo_data_flow.export_threaded import _enrich_main_df_with_xml_ids
+
+        # Create an empty DataFrame with ".id" column
+        df_empty = pl.DataFrame({"id": [], ".id": []})
+
+        mock_connection = MagicMock()
+        mock_model = MagicMock()
+        mock_connection.get_model.return_value = mock_model
+        mock_model.search_read.return_value = []
+        model_name = "res.partner"
+
+        result_df = _enrich_main_df_with_xml_ids(df_empty, mock_connection, model_name)
+
+        # Result should be a DataFrame with "id" column filled with None values
+        assert result_df.height == 0
+        assert "id" in result_df.columns
+        assert ".id" in result_df.columns
+
+    def test_enrich_main_df_with_xml_ids_success_case(self) -> None:
+        """Test _enrich_main_df_with_xml_ids with successful XML ID retrieval."""
+        import polars as pl
+
+        from odoo_data_flow.export_threaded import _enrich_main_df_with_xml_ids
+
+        # Create DataFrame with ".id" column
+        df_with_ids = pl.DataFrame(
+            {
+                ".id": [1, 2, 3],
+                "name": ["Partner 1", "Partner 2", "Partner 3"],
+                "value": [100, 200, 300],
+            }
+        )
+
+        # Mock the connection and model
+        mock_connection = MagicMock()
+        mock_model = MagicMock()
+        mock_connection.get_model.return_value = mock_model
+        mock_model.search_read.return_value = [
+            {"res_id": 1, "module": "base", "name": "partner_1"},
+            {"res_id": 2, "module": "base", "name": "partner_2"},
+            {"res_id": 3, "module": "custom", "name": "partner_3"},
+        ]
+        model_name = "res.partner"
+
+        result_df = _enrich_main_df_with_xml_ids(
+            df_with_ids, mock_connection, model_name
+        )
+
+        # Check that the result DataFrame has the expected structure
+        assert result_df.height == 3
+        assert "id" in result_df.columns
+        assert ".id" in result_df.columns
+        assert "name" in result_df.columns
+        assert "value" in result_df.columns
+
+        # Check that XML IDs were properly enriched
+        expected_xml_ids = ["base.partner_1", "base.partner_2", "custom.partner_3"]
+        assert result_df["id"].to_list() == expected_xml_ids
+        # Check that original ".id" column is preserved
+        assert result_df[".id"].to_list() == [1, 2, 3]
+
+    def test_enrich_main_df_with_xml_ids_partial_match(self) -> None:
+        """Test _enrich_main_df_with_xml_ids when only some IDs have XML IDs."""
+        import polars as pl
+
+        from odoo_data_flow.export_threaded import _enrich_main_df_with_xml_ids
+
+        # Create DataFrame with ".id" column
+        df_with_ids = pl.DataFrame(
+            {
+                ".id": [1, 2, 3],
+                "name": ["Partner 1", "Partner 2", "Partner 3"],
+            }
+        )
+
+        # Mock the connection and model - only some IDs have XML IDs
+        mock_connection = MagicMock()
+        mock_model = MagicMock()
+        mock_connection.get_model.return_value = mock_model
+        mock_model.search_read.return_value = [
+            {"res_id": 1, "module": "base", "name": "partner_1"},
+            # ID 2 is missing
+            {"res_id": 3, "module": "custom", "name": "partner_3"},
+        ]
+        model_name = "res.partner"
+
+        result_df = _enrich_main_df_with_xml_ids(
+            df_with_ids, mock_connection, model_name
+        )
+
+        # Check that the result DataFrame has the expected structure
+        assert result_df.height == 3
+        assert "id" in result_df.columns
+        assert ".id" in result_df.columns
+
+        # Check that XML IDs were properly enriched where available, None where not
+        result_xml_ids = result_df["id"].to_list()
+        assert result_xml_ids[0] == "base.partner_1"  # Found XML ID
+        assert result_xml_ids[1] is None  # No XML ID found
+        assert result_xml_ids[2] == "custom.partner_3"  # Found XML ID
+
+    def test_enrich_main_df_with_xml_ids_no_matches(self) -> None:
+        """Test _enrich_main_df_with_xml_ids when no XML IDs are found."""
+        import polars as pl
+
+        from odoo_data_flow.export_threaded import _enrich_main_df_with_xml_ids
+
+        # Create DataFrame with ".id" column
+        df_with_ids = pl.DataFrame(
+            {
+                ".id": [1, 2, 3],
+                "name": ["Partner 1", "Partner 2", "Partner 3"],
+            }
+        )
+
+        # Mock the connection and model - no XML IDs found
+        mock_connection = MagicMock()
+        mock_model = MagicMock()
+        mock_connection.get_model.return_value = mock_model
+        mock_model.search_read.return_value = []
+        model_name = "res.partner"
+
+        result_df = _enrich_main_df_with_xml_ids(
+            df_with_ids, mock_connection, model_name
+        )
+
+        # Check that the result DataFrame has the expected structure
+        assert result_df.height == 3
+        assert "id" in result_df.columns
+        assert ".id" in result_df.columns
+
+        # Check that all XML IDs are None since none were found
+        result_xml_ids = result_df["id"].to_list()
+        assert all(xml_id is None for xml_id in result_xml_ids)
 
 
 class TestExportData:
-    """Tests for the main export_data orchestrator function."""
+    """Tests for the export_data function."""
 
     def test_export_in_memory_success(self, mock_conf_lib: MagicMock) -> None:
         """Tests the success path for a default in-memory export."""
