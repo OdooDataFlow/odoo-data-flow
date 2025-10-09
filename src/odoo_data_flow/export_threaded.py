@@ -633,7 +633,7 @@ def _clean_and_transform_batch(
             )
 
     # Step 6: Final cast to the target schema.
-    casted_df = df.cast(polars_schema, strict=False)  # type: ignore[arg-type]
+    casted_df = df.cast(polars_schema, strict=False)
     return casted_df.select(list(polars_schema.keys()))
 
 

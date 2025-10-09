@@ -124,7 +124,7 @@ class Processor:
         if final_schema:
             final_schema = {
                 k: v()
-                if inspect.isclass(v) and issubclass(v, pl.DataType)  # type: ignore[unreachable]
+                if inspect.isclass(v) and issubclass(v, pl.DataType)
                 else v
                 for k, v in final_schema.items()
             }
