@@ -588,8 +588,10 @@ class Processor:
 
                     return wrapper
 
-                if isinstance(target_dtype, type) and issubclass(
-                    target_dtype, pl.DataType
+                if (
+                    target_dtype is not None
+                    and isinstance(target_dtype, type)
+                    and issubclass(target_dtype, pl.DataType)
                 ):
                     resolved_target_dtype = target_dtype()
                 else:

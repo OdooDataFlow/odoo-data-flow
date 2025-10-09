@@ -716,7 +716,9 @@ def _process_export_batches(
     }
     if polars_schema:
         polars_schema = {
-            k: v() if isinstance(v, type) and issubclass(v, pl.DataType) else v
+            k: v()
+            if v is not None and isinstance(v, type) and issubclass(v, pl.DataType)
+            else v
             for k, v in polars_schema.items()
         }
 

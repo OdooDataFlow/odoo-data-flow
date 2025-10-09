@@ -128,6 +128,14 @@ show_error_context = true
 # Add this to ignore missing stubs for third-party libraries
 ignore_missing_imports = true
 check_untyped_defs = true
+# Handle src layout for editable installs to avoid duplicate modules
+mypy_path = ["src"]
+# Prevent following imports to avoid duplicate module detection with editable installs
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+follow_imports = "normal"
 
 
 [[tool.mypy.overrides]]
