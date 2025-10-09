@@ -139,6 +139,7 @@ disable_error_code = ["misc"]
 
 [[tool.mypy.overrides]]
 module = "tests.*"
+disable_error_code = ["misc"]
 follow_imports = "normal"
 
 
