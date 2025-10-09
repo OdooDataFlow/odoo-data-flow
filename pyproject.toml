@@ -134,6 +134,10 @@ mypy_path = ["src"]
 follow_imports = "skip"
 
 [[tool.mypy.overrides]]
+module = "odoo_data_flow.__main__"
+disable_error_code = ["misc"]
+
+[[tool.mypy.overrides]]
 module = "tests.*"
 follow_imports = "normal"
 
