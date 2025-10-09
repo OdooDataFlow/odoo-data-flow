@@ -350,11 +350,10 @@ def _create_batches(
 
 
 def _get_model_fields(model: Any) -> Optional[dict[str, Any]]:
-    """Safely retrieves the fields metadata from an Odoo model.
+    """Safely retrieves the fields metadata from an Odoo model with minimal RPC calls.
 
-    This handles cases where `_fields` can be a dictionary or a callable method,
-    which can vary between Odoo versions or customizations. It also tries to use
-    the proper fields_get() method to avoid RPC issues with proxy model objects.
+    This version avoids the problematic fields_get() call that causes
+    'tuple index out of range' errors in the Odoo server.
 
     Args:
         model: The Odoo model object.
@@ -362,35 +361,12 @@ def _get_model_fields(model: Any) -> Optional[dict[str, Any]]:
     Returns:
         A dictionary of field metadata, or None if it cannot be retrieved.
     """
-    # First, try the safe approach with fields_get() to avoid RPC issues
-    try:
-        fields_result = model.fields_get()
-        # Cast to the expected type to satisfy MyPy
-        # But be careful - Mock objects will return Mock() not raise exceptions
-        if isinstance(fields_result, dict):
-            return fields_result
-        elif (
-            hasattr(fields_result, "__class__")
-            and "Mock" in fields_result.__class__.__name__
-        ):
-            # This is likely a Mock object from testing, not a real dict
-            # Fall through to the _fields attribute approach
-            pass
-        else:
-            return None
-    except Exception:
-        # If fields_get() fails with a real exception, fall back to
-        # _fields attribute approach
-        # This maintains compatibility with existing tests and edge cases
-        log.debug(
-            "fields_get() failed, falling back to _fields attribute",
-            exc_info=True,
-        )
-        pass
-
-    # Original logic for handling _fields attribute directly
-    # (preserving backward compatibility with tests)
+    # Use only the _fields attribute to completely avoid RPC calls that can cause errors
     if not hasattr(model, "_fields"):
+        log.debug(
+            "Model has no _fields attribute and RPC call avoided to "
+            "prevent 'tuple index out of range' error"
+        )
         return None
 
     model_fields_attr = model._fields
@@ -422,6 +398,41 @@ def _get_model_fields(model: Any) -> Optional[dict[str, Any]]:
         fields_dict: dict[str, Any] = model_fields
         return fields_dict
     else:
+        return None
+
+
+def _get_model_fields_safe(model: Any) -> Optional[dict[str, Any]]:
+    """Safely retrieves the fields metadata from an Odoo model with minimal RPC calls.
+
+    This version avoids the problematic fields_get() call that causes
+    'tuple index out of range' errors in the Odoo server.
+
+    Args:
+        model: The Odoo model object.
+
+    Returns:
+        A dictionary of field metadata, or None if it cannot be retrieved.
+    """
+    # Use only the _fields attribute to completely avoid RPC calls that can cause errors
+    if not hasattr(model, "_fields"):
+        log.debug(
+            "Model has no _fields attribute and RPC call avoided to "
+            "prevent 'tuple index out of range' error"
+        )
+        return None
+
+    model_fields_attr = model._fields
+
+    if isinstance(model_fields_attr, dict):
+        # Return directly if it's already a dictionary
+        return model_fields_attr
+    else:
+        # For any other type, return None to avoid potential RPC issues
+        log.debug(
+            "Model _fields attribute is not a dict (%s), "
+            "avoiding RPC calls to prevent errors",
+            type(model_fields_attr),
+        )
         return None
 
 
@@ -720,7 +731,7 @@ def _create_batch_individually(  # noqa: C901
     error_summary = "Fell back to create"
     header_len = len(batch_header)
     ignore_set = set(ignore_list)
-    model_fields = _get_model_fields(model)
+    model_fields = _get_model_fields_safe(model)
 
     for i, line in enumerate(batch_lines):
         try:
@@ -1011,7 +1022,7 @@ def _execute_load_batch(  # noqa: C901
 
             # PRE-PROCESSING: Clean up field values to prevent type errors
             # This prevents "tuple index out of range" errors in Odoo server processing
-            model_fields = _get_model_fields(model)
+            model_fields = _get_model_fields_safe(model)
             if model_fields:
                 processed_load_lines = []
                 for row in load_lines:
