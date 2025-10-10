@@ -8,6 +8,7 @@ from pathlib import Path
 from textwrap import dedent
 
 import nox
+from nox import Session
 
 # A helper command to clean up build artifacts
 CLEAN_COMMAND = """
@@ -34,7 +35,7 @@ nox.options.sessions = (
 )
 
 
-def activate_virtualenv_in_precommit_hooks(session: nox.Session) -> None:
+def activate_virtualenv_in_precommit_hooks(session: Session) -> None:
     """Activate virtualenv in hooks installed by pre-commit.
 
     This function patches git hooks installed by pre-commit to activate the
@@ -109,8 +110,8 @@ def activate_virtualenv_in_precommit_hooks(session: nox.Session) -> None:
                 break
 
 
-@nox.session(name="pre-commit", python=python_versions[0])
-def precommit(session: nox.Session) -> None:
+@nox.session(name="pre-commit", python=python_versions[0])  # type: ignore[misc]
+def precommit(session: Session) -> None:
     """Lint using pre-commit."""
     args = session.posargs or [
         "run",
@@ -134,8 +135,8 @@ def precommit(session: nox.Session) -> None:
         activate_virtualenv_in_precommit_hooks(session)
 
 
-@nox.session(python=python_versions)
-def mypy(session: nox.Session) -> None:
+@nox.session(python=python_versions)  # type: ignore[misc]
+def mypy(session: Session) -> None:
     """Type-check using mypy."""
     args = session.posargs or ["src", "tests", "docs/conf.py"]
 
@@ -159,8 +160,8 @@ def mypy(session: nox.Session) -> None:
         session.run("mypy", f"--python-executable={sys.executable}", "noxfile.py")
 
 
-@nox.session(python=python_versions)
-def tests(session: nox.Session) -> None:
+@nox.session(python=python_versions)  # type: ignore[misc]
+def tests(session: Session) -> None:
     """Run the test suite."""
     session.run("python", "-c", CLEAN_COMMAND)
     session.run(
@@ -179,8 +180,8 @@ def tests(session: nox.Session) -> None:
     session.run("pytest", *session.posargs)
 
 
-@nox.session(python=python_versions[0])
-def tests_compiled(session: nox.Session) -> None:
+@nox.session(python=python_versions[0])  # type: ignore[misc]
+def tests_compiled(session: Session) -> None:
     """Run tests against the compiled C extension code."""
     session.run("python", "-c", CLEAN_COMMAND)
     session.install("pytest", "pytest-mock")
@@ -191,8 +192,8 @@ def tests_compiled(session: nox.Session) -> None:
     session.run("pytest", *session.posargs)
 
 
-@nox.session(python=python_versions[0])
-def coverage(session: nox.Session) -> None:
+@nox.session(python=python_versions[0])  # type: ignore[misc]
+def coverage(session: Session) -> None:
     """Produce the coverage report."""
     args = session.posargs or ["report"]
     session.install(
@@ -216,8 +217,8 @@ def coverage(session: nox.Session) -> None:
     session.run("coverage", *args)
 
 
-@nox.session(name="typeguard", python=python_versions[0])
-def typeguard_tests(session: nox.Session) -> None:
+@nox.session(name="typeguard", python=python_versions[0])  # type: ignore[misc]
+def typeguard_tests(session: Session) -> None:
     """Run tests with typeguard."""
     session.run(
         "uv",
@@ -235,8 +236,8 @@ def typeguard_tests(session: nox.Session) -> None:
     session.run("pytest", "--typeguard-packages", package, *session.posargs)
 
 
-@nox.session(python=python_versions)
-def xdoctest(session: nox.Session) -> None:
+@nox.session(python=python_versions)  # type: ignore[misc]
+def xdoctest(session: Session) -> None:
     """Run examples with xdoctest."""
     if session.posargs:
         args = [package, *session.posargs]
@@ -259,8 +260,8 @@ def xdoctest(session: nox.Session) -> None:
     session.run("python", "-m", "xdoctest", package, *args)
 
 
-@nox.session(name="docs-build", python=python_versions[1])
-def docs_build(session: nox.Session) -> None:
+@nox.session(name="docs-build", python=python_versions[1])  # type: ignore[misc]
+def docs_build(session: Session) -> None:
     """Build the documentation."""
     args = session.posargs or ["docs", "docs/_build"]
     if not session.posargs and "FORCE_COLOR" in os.environ:
@@ -293,8 +294,8 @@ def docs_build(session: nox.Session) -> None:
     session.run("sphinx-build", *args)
 
 
-@nox.session(python=python_versions[0])
-def docs(session: nox.Session) -> None:
+@nox.session(python=python_versions[0])  # type: ignore[misc]
+def docs(session: Session) -> None:
     """Build and serve the documentation with live reloading on file changes."""
     args = session.posargs or ["--open-browser", "docs", "docs/_build"]
     session.run(

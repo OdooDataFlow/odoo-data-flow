@@ -196,16 +196,18 @@ def _get_installed_languages(config: Union[str, dict[str, Any]]) -> Optional[set
 def _get_required_languages(filename: str, separator: str) -> Optional[list[str]]:
     """Extracts the list of required languages from the source file."""
     try:
-        return (
+        result = (
             pl.read_csv(filename, separator=separator, truncate_ragged_lines=True)
             .get_column("lang")
             .unique()
             .drop_nulls()
             .to_list()
         )
+        # Explicitly cast to list[str] to satisfy mypy type checking
+        return list(str(item) for item in result) if result is not None else None
     except ColumnNotFoundError:
         log.debug("No 'lang' column found in source file. Skipping language check.")
-        return []
+        return None  # Consistently return None for no data case
     except Exception as e:
         log.warning(
             f"Could not read languages from source file. Skipping check. Error: {e}"
@@ -348,7 +350,9 @@ def _get_csv_header(filename: str, separator: str) -> Optional[list[str]]:
         A list of strings representing the header, or None on failure.
     """
     try:
-        return pl.read_csv(filename, separator=separator, n_rows=0).columns
+        columns = pl.read_csv(filename, separator=separator, n_rows=0).columns
+        # Explicitly convert to list[str] to satisfy mypy type checking
+        return list(columns) if columns is not None else None
     except Exception as e:
         _show_error_panel("File Read Error", f"Could not read CSV header. Error: {e}")
         return None
