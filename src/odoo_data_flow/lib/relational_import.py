@@ -86,56 +86,113 @@ def _resolve_related_ids(  # noqa: C901
     if xml_ids:
         log.info(f"Resolving {len(xml_ids)} XML IDs through traditional lookup")
 
-        # For XML IDs, we need to look them up by name
+        # For XML IDs, we need to parse them into module.name parts and look them up
+        # XML IDs are stored in ir.model.data with separate 'module' and 'name' fields
         try:
             data_model = connection.get_model("ir.model.data")
 
-            # Build domain for XML ID lookup by name
-            # We'll look for records where the name matches any of our XML IDs
-            domain: list[tuple[str, str, Union[str, list[str]]]]
-            if len(xml_ids) == 1:
-                domain = [("name", "=", xml_ids[0])]
-            else:
-                domain = [("name", "in", xml_ids)]
+            # Parse XML IDs into module and name components
+            parsed_xml_ids = []
+            unparsable_xml_ids = []
 
-            resolved_data = data_model.search_read(domain, ["module", "name", "res_id"])
-            if not resolved_data:
-                if xml_ids:  # Only log error if there were XML IDs to resolve
-                    # Determine which specific XML IDs were not found
-                    found_xml_ids = {rec["name"] for rec in resolved_data}
-                    missing_xml_ids = set(xml_ids) - found_xml_ids
-                    if len(missing_xml_ids) <= 10:  # Log sample if not too many
-                        log.error(
-                            f"XML-ID resolution failed for all {len(xml_ids)} XML "
-                            f"IDs in model '{related_model}'. "
-                            f"Missing XML IDs: {list(missing_xml_ids)}. "
-                            "This is often caused by referencing records that "
-                            "don't exist or don't have external IDs assigned."
-                        )
+            for xml_id in xml_ids:
+                if "." in xml_id:
+                    # Split module.name format
+                    parts = xml_id.split(".", 1)  # Split only on first dot
+                    if len(parts) == 2 and parts[0] and parts[1]:
+                        parsed_xml_ids.append((parts[0], parts[1]))  # (module, name)
                     else:
-                        log.error(
-                            f"XML-ID resolution failed for all {len(xml_ids)} XML "
-                            f"IDs in model '{related_model}'. "
-                            f"Sample missing XML IDs: {list(missing_xml_ids)[:10]}. "
-                            f"Total missing: {len(missing_xml_ids)}. "
-                            "This is often caused by referencing records that "
-                            "don't exist or don't have external IDs assigned."
-                        )
+                        unparsable_xml_ids.append(xml_id)
                 else:
-                    # xml_ids was empty, so no error to report
-                    log.debug(
-                        f"No XML IDs to resolve for model '{related_model}'. "
-                        f"Only database IDs were provided."
-                    )
-                if not db_ids:
-                    return None
-            else:
-                xml_resolved_map = {rec["name"]: rec["res_id"] for rec in resolved_data}
-                resolved_map.update(xml_resolved_map)
-                log.info(
-                    f"Successfully resolved {len(xml_resolved_map)} XML IDs for "
-                    f"model '{related_model}'."
+                    # No dot in XML ID, treat as just name with empty module
+                    # This handles edge cases, though proper XML IDs should
+                    # have module.name format
+                    unparsable_xml_ids.append(xml_id)
+
+            # Handle module.name pairs - map original search term to result
+            resolved_data = []
+            module_name_mappings = {}  # For module.name format: original -> db_id
+            name_only_mappings = {}   # For name-only format: maintain original behavior
+
+            for module, name in parsed_xml_ids:
+                original_search_term = f"{module}.{name}"
+                query_results = data_model.search_read(
+                    [("module", "=", module), ("name", "=", name)],
+                    ["module", "name", "res_id"],
                 )
+
+                for rec in query_results:
+                    # For module.name format, map the original search term to db_id
+                    # This ensures proper joins with source data
+                    module_name_mappings[original_search_term] = rec["res_id"]
+                    resolved_data.append(rec)
+
+            # Handle name-only IDs (for cases where XML ID might not
+            # follow module.name format)
+            if unparsable_xml_ids:
+                # Log a warning and attempt to resolve them as names only
+                log.warning(
+                    f"Attempting to resolve {len(unparsable_xml_ids)} XML IDs "
+                    f"without proper 'module.name' format: {unparsable_xml_ids}. "
+                    f"These will be queried as name-only values."
+                )
+
+                for name_only_id in unparsable_xml_ids:
+                    query_results = data_model.search_read(
+                        [("name", "=", name_only_id)],
+                        ["module", "name", "res_id"],
+                    )
+
+                    for rec in query_results:
+                        # For name-only searches, use the result name as external_id
+                        # This maintains backward compatibility with original behavior
+                        # where the database result name becomes the external_id
+                        name_only_mappings[rec["name"]] = rec["res_id"]
+                        resolved_data.append(rec)
+
+            # Combine both module.name and name-only IDs for error reporting
+            all_ids = parsed_xml_ids + [(None, name) for name in unparsable_xml_ids]
+            module_name_ids = [f"{module}.{name}" for module, name in parsed_xml_ids]
+            name_only_ids = unparsable_xml_ids
+            all_xml_ids_for_error = module_name_ids + name_only_ids
+
+            if all_ids:
+                if not resolved_data:
+                    # Only log error if there were XML IDs to resolve
+                    if all_xml_ids_for_error:
+                        missing_xml_ids = all_xml_ids_for_error
+                        if len(missing_xml_ids) <= 10:  # Log sample if not too many
+                            log.error(
+                                f"XML-ID resolution failed for all "
+                                f"{len(all_xml_ids_for_error)} XML IDs in model "
+                                f"'{related_model}'. Missing XML IDs: "
+                                f"{missing_xml_ids}. This is often caused by "
+                                f"referencing records that don't exist or don't "
+                                f"have external IDs assigned."
+                            )
+                        else:
+                            log.error(
+                                f"XML-ID resolution failed for all "
+                                f"{len(all_xml_ids_for_error)} XML IDs in model "
+                                f"'{related_model}'. Sample missing XML IDs: "
+                                f"{missing_xml_ids[:10]}. Total missing: "
+                                f"{len(missing_xml_ids)}. This is often caused by "
+                                f"referencing records that don't exist or don't "
+                                f"have external IDs assigned."
+                            )
+                    if not db_ids:
+                        return None
+                else:
+                    # Combine both types of mappings
+                    xml_resolved_map = {}
+                    xml_resolved_map.update(module_name_mappings)
+                    xml_resolved_map.update(name_only_mappings)
+
+                    resolved_map.update(xml_resolved_map)
+                    log.info(
+                        f"Successfully resolved {len(xml_resolved_map)} XML IDs for "
+                        f"model '{related_model}'."
+                    )
         except Exception as e:
             log.error(f"An error occurred during bulk XML-ID resolution: {e}")
             if not db_ids:
@@ -675,12 +732,14 @@ def run_write_tuple_import(
     log.debug(f"Looking for field: {field}")
     log.debug(f"Field '{field}' in source_df.columns: {field in source_df.columns}")
 
-    # Check if the field exists in the DataFrame (redundant check for debugging)
+    # Determine the actual column name in the DataFrame (may include /id suffix)
+    original_field = field  # Keep track of the original field name for Odoo updates
     if field not in source_df.columns:
         # Check if the field with /id suffix exists (common for relation fields)
         field_with_id = f"{field}/id"
         if field_with_id in source_df.columns:
             log.debug(f"Using field '{field_with_id}' instead of '{field}'")
+            # Use the /id suffixed column name for DataFrame operations
             field = field_with_id
         else:
             log.error(
@@ -740,7 +799,8 @@ def run_write_tuple_import(
 
     # 4. Execute the updates
     success = _execute_write_tuple_updates(
-        config, model, field, link_df, id_map, related_model_fk, original_filename
+        config, model, original_field, link_df, id_map,
+        related_model_fk, original_filename
     )
 
     # Count successful updates - get from link_df

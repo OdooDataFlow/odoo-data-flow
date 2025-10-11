@@ -123,9 +123,7 @@ class Processor:
         # This resolves all mypy/typeguard errors downstream.
         if final_schema:
             final_schema = {
-                k: v()
-                if inspect.isclass(v) and issubclass(v, pl.DataType)
-                else v
+                k: v() if inspect.isclass(v) and issubclass(v, pl.DataType) else v
                 for k, v in final_schema.items()
             }
         # --- END FINAL NORMALIZATION STEP ---
