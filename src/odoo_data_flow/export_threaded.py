@@ -515,6 +515,15 @@ def _initialize_export(
             connection = conf_lib.get_connection_from_dict(config)
         else:
             connection = conf_lib.get_connection_from_config(config)
+        
+        # Test the connection before proceeding
+        try:
+            connection.check_login()
+            log.debug("Connection to Odoo verified successfully.")
+        except Exception as conn_error:
+            log.error(f"Failed to verify Odoo connection: {conn_error}")
+            return None, None, None
+            
         model_obj = connection.get_model(model_name)
         fields_for_metadata = sorted(
             list(
@@ -522,7 +531,22 @@ def _initialize_export(
                 | {"id"}
             )
         )
-        field_metadata = model_obj.fields_get(fields_for_metadata)
+        try:
+            field_metadata = model_obj.fields_get(fields_for_metadata)
+        except json.JSONDecodeError as e:
+            log.error(
+                f"Failed to decode JSON response from Odoo server during fields_get() call. "
+                f"This usually indicates an authentication failure, server error, or the server "
+                f"returned an HTML error page instead of JSON. Error: {e}"
+            )
+            return None, None, None
+        except Exception as e:
+            log.error(
+                f"Failed during fields_get() call to Odoo server. "
+                f"This could be due to network issues, authentication problems, "
+                f"or server-side errors. Error: {e}"
+            )
+            return None, None, None
         fields_info = {}
         for original_field in header:
             base_field = original_field.split("/")[0]
