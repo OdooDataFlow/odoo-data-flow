@@ -9,6 +9,7 @@ import csv
 import json
 import shutil
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from time import time
 from typing import Any, Optional, Union, cast
@@ -28,6 +29,17 @@ from .lib.internal.rpc_thread import RpcThread
 from .lib.internal.tools import batch
 from .lib.odoo_lib import ODOO_TO_POLARS_MAP
 from .logging_config import log
+
+# For performance, this map should be defined as a module-level constant.
+# Create a translation map that replaces control characters with '?'
+# while preserving common ones like tab, newline, and carriage return
+_CONTROL_CHAR_MAP = str.maketrans(
+    {
+        i: "?" for i in range(32) if i not in (9, 10, 13)
+    }  # Control chars except tab, newline, cr
+)
+# Also handle extended control characters (127-159)
+_CONTROL_CHAR_MAP.update({i: "?" for i in range(127, 160)})
 
 # --- Fix for csv.field_size_limit OverflowError ---
 max_int = sys.maxsize
@@ -98,10 +110,11 @@ class RPCThreadExport(RpcThread):
 
             related_ids = list(
                 {
-                    rec[source_field][0]
+                    rid
                     for rec in raw_data
                     if isinstance(rec.get(source_field), (list, tuple))
-                    and rec.get(source_field)
+                    for rid in rec.get(source_field, [])
+                    if isinstance(rid, int)
                 }
             )
             if not related_ids:
@@ -119,8 +132,53 @@ class RPCThreadExport(RpcThread):
             for record in raw_data:
                 related_val = record.get(source_field)
                 xml_id = None
-                if isinstance(related_val, (list, tuple)) and related_val:
-                    xml_id = db_id_to_xml_id.get(related_val[0])
+                if related_val is not None:
+                    related_ids = []
+
+                    if isinstance(related_val, (list, tuple)) and related_val:
+                        # Handle Odoo's special format for m2m fields:
+                        # (6, 0, [id1, id2, ...])
+                        if (
+                            isinstance(related_val, tuple)
+                            and len(related_val) == 3
+                            and related_val[0] == 6
+                        ):
+                            # This is Odoo's (6, 0, [ids]) format
+                            odoo_ids = related_val[2] if len(related_val) > 2 else []
+                            if isinstance(odoo_ids, (list, tuple)):
+                                related_ids.extend(odoo_ids)
+                        else:
+                            # This is normal format - could be [id1, id2, ...] or
+                            # [(id1, name1), (id2, name2), ...]
+                            for item in related_val:
+                                if isinstance(item, (list, tuple)) and item:
+                                    # If item is a tuple like (id, name),
+                                    # take the ID (first element)
+                                    related_ids.append(item[0])
+                                elif isinstance(item, int):
+                                    # If item is directly an ID
+                                    related_ids.append(item)
+                    elif isinstance(related_val, int):
+                        # Handle case where the field returns a single ID
+                        # instead of a list. This appears to be what's
+                        # happening in some Odoo 12 configurations
+                        related_ids.append(related_val)
+
+                    if related_ids:
+                        xml_ids = [
+                            db_id_to_xml_id.get(rid)
+                            for rid in related_ids
+                            if rid in db_id_to_xml_id
+                        ]
+                        xml_ids = [
+                            xid for xid in xml_ids if xid is not None
+                        ]  # Remove None values
+                        # Type check: ensure all items are strings for join operation
+                        string_xml_ids: list[str] = [
+                            str(xid) for xid in xml_ids if xid is not None
+                        ]
+                        xml_id = ",".join(string_xml_ids) if string_xml_ids else None
+
                 record[task["target_field"]] = xml_id
 
     def _format_batch_results(
@@ -133,9 +191,49 @@ class RPCThreadExport(RpcThread):
             for field in self.header:
                 if field in record:
                     value = record[field]
+                    # Check if this is an enriched field (like "attribute_value_ids/id")
+                    # that should already be a string with comma-separated values
                     if isinstance(value, (list, tuple)) and value:
-                        new_record[field] = value[1]
+                        # For many-to-one relationships, use the display name (index 1)
+                        # For enriched fields that should be comma-separated
+                        # strings, we need to be more careful
+                        if field.endswith("/id"):
+                            # If this is an enriched field like
+                            # "attribute_value_ids/id",
+                            # it should already be a comma-separated string
+                            # after enrichment.
+                            # If it's still a list/tuple here, convert it appropriately.
+                            if len(value) == 1 and isinstance(value[0], (list, tuple)):
+                                # Handle nested tuples/lists
+                                if (
+                                    isinstance(value[0], (list, tuple))
+                                    and len(value[0]) >= 2
+                                ):
+                                    new_record[field] = value[0][1]  # Take name portion
+                                else:
+                                    new_record[field] = (
+                                        str(value[0]) if value[0] else None
+                                    )
+                            else:
+                                # This might be a regular tuple like (id, name)
+                                new_record[field] = (
+                                    value[1]
+                                    if len(value) >= 2
+                                    else str(value[0])
+                                    if value
+                                    else None
+                                )
+                        else:
+                            # For regular many-to-one relationships
+                            new_record[field] = (
+                                value[1]
+                                if len(value) >= 2
+                                else str(value[0])
+                                if value
+                                else None
+                            )
                     else:
+                        # Value is not a list/tuple, just assign it
                         new_record[field] = value
                 else:
                     base_field = field.split("/")[0].replace(".id", "id")
@@ -143,13 +241,42 @@ class RPCThreadExport(RpcThread):
                     if field == ".id":
                         new_record[".id"] = record.get("id")
                     elif field.endswith("/.id"):
-                        new_record[field] = (
-                            value[0]
-                            if isinstance(value, (list, tuple)) and value
-                            else None
-                        )
-                    else:
-                        new_record[field] = None
+                        # Handle many-to-many fields that should return
+                        # comma-separated database IDs
+                        base_field = field.split("/")[0].replace(".id", "id")
+                        value = record.get(base_field)
+
+                        # Very simple, robust handling
+                        if isinstance(value, (list, tuple)):
+                            if len(value) > 0:
+                                # Extract all integer IDs and join them
+                                ids = []
+                                for item in value:
+                                    if isinstance(item, int):
+                                        ids.append(str(item))
+                                    elif (
+                                        isinstance(item, (list, tuple))
+                                        and len(item) > 0
+                                    ):
+                                        # If it's a tuple/list, take the first
+                                        # element if it's an int
+                                        if isinstance(item[0], int):
+                                            ids.append(str(item[0]))
+
+                                if ids:
+                                    new_record[field] = ",".join(ids)
+                                else:
+                                    # Fallback: convert entire value to string
+                                    new_record[field] = str(value) if value else ""
+                            else:
+                                # Empty list
+                                new_record[field] = ""
+                        elif value is not None:
+                            # Single value
+                            new_record[field] = str(value)
+                        else:
+                            # None value
+                            new_record[field] = ""
             processed_data.append(new_record)
         return processed_data
 
@@ -208,9 +335,72 @@ class RPCThreadExport(RpcThread):
                 exported_data = self.model.export_data(
                     ids_to_export, self.header, context=self.context
                 ).get("datas", [])
+
+                # NEW: Sanitize UTF-8 in exported data immediately after
+                # fetching from Odoo
+                # This ensures any binary data from Odoo is properly
+                # sanitized before processing
+                sanitized_exported_data = []
+                for row in exported_data:
+                    sanitized_row = []
+                    for value in row:
+                        # Sanitize string values to ensure valid UTF-8
+                        if isinstance(value, str):
+                            sanitized_row.append(_sanitize_utf8_string(value))
+                        else:
+                            sanitized_row.append(value)
+                    sanitized_exported_data.append(sanitized_row)
+                exported_data = sanitized_exported_data
+
                 return [
                     dict(zip(self.header, row)) for row in exported_data
                 ], ids_to_export
+
+            # For compatibility with old version behavior for many-to-many
+            # XML ID fields, use export_data method when we have relational
+            # XML ID fields that are many2many/one2many. This ensures the
+            # same relationship handling as the
+            # old odoo_export_thread.py. Check for many-to-many fields specifically
+            # (not all fields ending with /id)
+            has_many_to_many_fields = any(
+                self.fields_info.get(f.split("/")[0], {}).get("type")
+                in ["one2many", "many2many"]
+                for f in self.header
+                if "/" in f and f.endswith("/id")
+            )
+
+            # If we have many-to-many XML ID fields, use export_data method to get the
+            # same behavior as old version
+            if self.is_hybrid and has_many_to_many_fields:
+                # Use export_data method which properly handles
+                # many-to-many relationships and returns comma-separated
+                # values like the old version did
+                try:
+                    exported_data = self.model.export_data(
+                        ids_to_export, self.header, context=self.context
+                    ).get("datas", [])
+
+                    # Sanitize UTF-8 in exported data
+                    sanitized_exported_data = []
+                    for row in exported_data:
+                        sanitized_row = []
+                        for value in row:
+                            if isinstance(value, str):
+                                sanitized_row.append(_sanitize_utf8_string(value))
+                            else:
+                                sanitized_row.append(value)
+                        sanitized_exported_data.append(sanitized_row)
+                    exported_data = sanitized_exported_data
+
+                    result = [dict(zip(self.header, row)) for row in exported_data]
+                    return result, ids_to_export
+                except Exception as e:
+                    log.warning(
+                        f"export_data method failed, falling back to "
+                        f"hybrid approach: {e}"
+                    )
+                    # If export_data fails, fall back to the original hybrid approach
+                    pass
 
             for field in self.header:
                 base_field = field.split("/")[0].replace(".id", "id")
@@ -234,13 +424,34 @@ class RPCThreadExport(RpcThread):
             if not raw_data:
                 return [], []
 
+            # NEW: Sanitize UTF-8 in raw data immediately after
+            # fetching from Odoo
+            # This ensures any binary data from Odoo is properly
+            # sanitized before processing
+            sanitized_raw_data = []
+            for record in raw_data:
+                sanitized_record = {}
+                for key, value in record.items():
+                    # Sanitize string values to ensure valid UTF-8
+                    if isinstance(value, str):
+                        sanitized_record[key] = _sanitize_utf8_string(value)
+                    else:
+                        sanitized_record[key] = value
+                sanitized_raw_data.append(sanitized_record)
+            raw_data = sanitized_raw_data
+
             # Enrich with XML IDs if in hybrid mode
             if enrichment_tasks:
                 self._enrich_with_xml_ids(raw_data, enrichment_tasks)
 
-            processed_ids = [
-                rec["id"] for rec in raw_data if isinstance(rec.get("id"), int)
-            ]
+            # Collect processed IDs (ensure they are integers)
+            processed_ids: list[int] = []
+            for rec in raw_data:
+                id_value = rec.get("id")
+                if isinstance(id_value, int):
+                    processed_ids.append(id_value)
+                elif isinstance(id_value, str) and id_value.isdigit():
+                    processed_ids.append(int(id_value))
             return self._format_batch_results(raw_data), processed_ids
 
         except (
@@ -304,6 +515,15 @@ def _initialize_export(
             connection = conf_lib.get_connection_from_dict(config)
         else:
             connection = conf_lib.get_connection_from_config(config)
+
+        # Test the connection before proceeding
+        try:
+            connection.check_login()
+            log.debug("Connection to Odoo verified successfully.")
+        except Exception as conn_error:
+            log.error(f"Failed to verify Odoo connection: {conn_error}")
+            return None, None, None
+
         model_obj = connection.get_model(model_name)
         fields_for_metadata = sorted(
             list(
@@ -311,7 +531,22 @@ def _initialize_export(
                 | {"id"}
             )
         )
-        field_metadata = model_obj.fields_get(fields_for_metadata)
+        try:
+            field_metadata = model_obj.fields_get(fields_for_metadata)
+        except json.JSONDecodeError as e:
+            log.error(
+                f"Failed to decode JSON response from Odoo server during fields_get() call. "
+                f"This usually indicates an authentication failure, server error, or the server "
+                f"returned an HTML error page instead of JSON. Error: {e}"
+            )
+            return None, None, None
+        except Exception as e:
+            log.error(
+                f"Failed during fields_get() call to Odoo server. "
+                f"This could be due to network issues, authentication problems, "
+                f"or server-side errors. Error: {e}"
+            )
+            return None, None, None
         fields_info = {}
         for original_field in header:
             base_field = original_field.split("/")[0]
@@ -351,7 +586,7 @@ def _clean_batch(batch_data: list[dict[str, Any]]) -> pl.DataFrame:
 def _clean_and_transform_batch(
     df: pl.DataFrame,
     field_types: dict[str, str],
-    polars_schema: dict[str, pl.DataType],
+    polars_schema: Mapping[str, pl.DataType],
 ) -> pl.DataFrame:
     """Runs a multi-stage cleaning and transformation pipeline on a DataFrame."""
     # Step 1: Convert any list-type or object-type columns to strings FIRST.
@@ -362,7 +597,25 @@ def _clean_and_transform_batch(
     if transform_exprs:
         df = df.with_columns(transform_exprs)
 
-    # Step 2: Now that lists are gone, it's safe to clean up 'False' values.
+    # Step 2: Sanitize string data to ensure valid UTF-8 encoding
+    # This prevents binary data or malformed UTF-8 from corrupting the export
+    string_sanitization_exprs = []
+    for col_name in df.columns:
+        if df.schema.get(col_name) == pl.String or df[col_name].dtype == pl.String:
+            # Apply UTF-8 sanitization to string columns
+            string_sanitization_exprs.append(
+                pl.col(col_name)
+                .map_elements(
+                    lambda x: _sanitize_utf8_string(x) if x is not None else x,
+                    return_dtype=pl.String,
+                )
+                .alias(col_name)
+            )
+    if string_sanitization_exprs:
+        df = df.with_columns(string_sanitization_exprs)
+
+    # Step 3: Now that lists are gone and strings are sanitized, it's safe
+    # to clean up 'False' values.
     false_cleaning_exprs = []
     for field_name, field_type in field_types.items():
         if field_name in df.columns and field_type != "boolean":
@@ -375,7 +628,7 @@ def _clean_and_transform_batch(
     if false_cleaning_exprs:
         df = df.with_columns(false_cleaning_exprs)
 
-    # Step 3: Handle boolean string conversions.
+    # Step 4: Handle boolean string conversions.
     bool_cols_to_convert = [
         k
         for k, v in polars_schema.items()
@@ -396,15 +649,15 @@ def _clean_and_transform_batch(
         ]
         df = df.with_columns(conversion_exprs)
 
-    # Step 4: Ensure all schema columns exist before the final cast.
+    # Step 5: Ensure all schema columns exist before the final cast.
     for col_name in polars_schema:
         if col_name not in df.columns:
             df = df.with_columns(
                 pl.lit(None, dtype=polars_schema[col_name]).alias(col_name)
             )
 
-    # Step 5: Final cast to the target schema.
-    casted_df = df.cast(polars_schema, strict=False)  # type: ignore[arg-type]
+    # Step 6: Final cast to the target schema.
+    casted_df = df.cast(polars_schema, strict=False)
     return casted_df.select(list(polars_schema.keys()))
 
 
@@ -462,7 +715,7 @@ def _enrich_main_df_with_xml_ids(
     return df_enriched.with_columns(pl.col("xml_id").alias("id")).drop("xml_id")
 
 
-def _process_export_batches(  # noqa: C901
+def _process_export_batches(
     rpc_thread: "RPCThreadExport",
     total_ids: int,
     model_name: str,
@@ -481,13 +734,15 @@ def _process_export_batches(  # noqa: C901
     otherwise concatenates in memory for best performance.
     """
     field_types = {k: v.get("type", "char") for k, v in fields_info.items()}
-    polars_schema: dict[str, pl.DataType] = {
+    polars_schema: Mapping[str, pl.DataType] = {
         field: ODOO_TO_POLARS_MAP.get(odoo_type, pl.String)()
         for field, odoo_type in field_types.items()
     }
     if polars_schema:
         polars_schema = {
-            k: v() if isinstance(v, type) and issubclass(v, pl.DataType) else v
+            k: v()
+            if v is not None and isinstance(v, type) and issubclass(v, pl.DataType)
+            else v
             for k, v in polars_schema.items()
         }
 
@@ -585,7 +840,10 @@ def _process_export_batches(  # noqa: C901
         if enrich_main_xml_id:
             # The .id column is correctly typed as Int64. The id column, which
             # would also be Int64, needs its type changed to String for the header.
-            polars_schema["id"] = pl.String()
+            # Create a mutable copy of the schema for this modification
+            mutable_schema = dict(polars_schema)
+            mutable_schema["id"] = pl.String()
+            polars_schema = mutable_schema
         empty_df = pl.DataFrame(schema=polars_schema)
         if output:
             if is_resuming:
@@ -658,7 +916,26 @@ def _determine_export_strategy(
     has_technical_fields = any(
         info.get("type") in technical_types for info in fields_info.values()
     )
-    is_hybrid = has_read_specifiers and has_xml_id_specifiers
+
+    # Check specifically for many-to-many fields with XML ID specifiers (/id)
+    # This is important for maintaining compatibility with the old export_data method
+    # which handled these relationships correctly
+    has_many_to_many_xml_id_fields = any(
+        fields_info.get(f.split("/")[0], {}).get("type") in ["one2many", "many2many"]
+        for f in header
+        if "/" in f and f.endswith("/id")
+    )
+
+    # CRITICAL FIX: To maintain compatibility, avoid hybrid mode for many-to-many
+    # fields with /id specifiers, as the old `export_data` method handled these
+    # relationships correctly.
+    # Only use hybrid mode for non-many-to-many XML ID fields
+    is_hybrid = (
+        has_read_specifiers
+        and has_xml_id_specifiers
+        and not has_many_to_many_xml_id_fields
+    )
+
     force_read_method = (
         technical_names or has_read_specifiers or is_hybrid or has_technical_fields
     )
@@ -673,6 +950,8 @@ def _determine_export_strategy(
         )
     elif is_hybrid:
         log.info("Hybrid export mode activated. Using 'read' with XML ID enrichment.")
+        if has_many_to_many_xml_id_fields:
+            log.info("Note: Processing many-to-many fields with hybrid approach.")
     elif has_technical_fields:
         log.info("Read method auto-enabled for 'selection' or 'binary' fields.")
     elif force_read_method:
@@ -845,3 +1124,69 @@ def export_data(
         log.error(f"Export failed. Session data retained in: {session_dir}")
 
     return success, session_id, total_record_count, final_df
+
+
+def _sanitize_utf8_string(text: Any) -> str:
+    """Sanitize text to ensure valid UTF-8.
+
+    This function handles various edge cases:
+    - None values are converted to empty strings
+    - Non-string values are converted to strings
+    - Invalid UTF-8 byte sequences are replaced with placeholder characters
+    - Control characters (except common ones like newlines) are removed or replaced
+
+    Args:
+        text: The text to sanitize
+
+    Returns:
+        A sanitized UTF-8 string
+    """
+    if text is None:
+        return ""
+
+    # Convert to string if not already
+    if not isinstance(text, str):
+        text = str(text)
+
+    # If it's already valid UTF-8, check for problematic control characters
+    try:
+        # Use str.translate with a pre-built mapping for better performance
+        # This avoids the overhead of a Python loop for each character
+        sanitized_text = text.translate(_CONTROL_CHAR_MAP)
+        # Verify the sanitized text is valid UTF-8 and return it.
+        sanitized_text.encode("utf-8")
+        return str(sanitized_text)  # Explicitly convert to str to satisfy MyPy
+    except UnicodeEncodeError:
+        # If translation introduces an error (unlikely), fall through.
+        pass
+
+    # Handle invalid UTF-8 by replacing problematic characters
+    # First, try to decode as latin-1 (which can decode any byte sequence)
+    # then encode as UTF-8, replacing invalid sequences
+    try:
+        # If text contains invalid UTF-8, try to fix it
+        if isinstance(text, str):
+            # Try to encode and decode to fix encoding issues
+            text_bytes = text.encode("utf-8", errors="surrogatepass")
+            # Decode back, replacing invalid sequences
+            result = text_bytes.decode("utf-8", errors="replace")
+            return str(result)  # Explicitly convert to str to satisfy MyPy
+        else:
+            return str(text)
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        # If all else fails, use a very safe approach
+        # Convert to bytes using latin-1 (which never fails)
+        # then decode as UTF-8 with replacement of invalid sequences
+        try:
+            text_bytes = str(text).encode("latin-1")
+            result = text_bytes.decode("utf-8", errors="replace")
+            return str(result)  # Explicitly convert to str to satisfy MyPy
+        except Exception:
+            # Ultimate fallback - strip to ASCII printable chars only
+            # Use str.translate for better performance instead of
+            # character-by-character loop
+            result = str(text).translate(_CONTROL_CHAR_MAP)
+            return str(result)  # Explicitly convert to str to satisfy MyPy
+
+
+# ruff: noqa: C901

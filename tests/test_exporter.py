@@ -199,7 +199,7 @@ def test_export_pre_casting_handles_string_booleans() -> None:
         ]
         cleaned_df = cleaned_df.with_columns(conversion_exprs)
 
-    casted_df = cleaned_df.cast(polars_schema, strict=False)  # type: ignore[arg-type]
+    casted_df = cleaned_df.cast(polars_schema, strict=False)
 
     # 3. Assertion: Verify the final DataFrame has the correct data and type.
     expected = pl.DataFrame(

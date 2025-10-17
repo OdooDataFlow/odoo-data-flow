@@ -128,7 +128,24 @@ show_error_context = true
 # Add this to ignore missing stubs for third-party libraries
 ignore_missing_imports = true
 check_untyped_defs = true
+# Handle src layout for editable installs to avoid duplicate modules
+mypy_path = ["src"]
+# Prevent following imports to avoid duplicate module detection with editable installs
+follow_imports = "skip"
 
+[[tool.mypy.overrides]]
+module = "odoo_data_flow.__main__"
+disable_error_code = ["misc"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disable_error_code = ["misc"]
+follow_imports = "normal"
+
+
+[[tool.mypy.overrides]]
+module = "odoo_data_flow.export_threaded"
+disable_error_code = ["unreachable"]
 
 [[tool.mypy.overrides]]
 module = "odoo"

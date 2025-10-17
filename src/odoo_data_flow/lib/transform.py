@@ -123,9 +123,7 @@ class Processor:
         # This resolves all mypy/typeguard errors downstream.
         if final_schema:
             final_schema = {
-                k: v()
-                if inspect.isclass(v) and issubclass(v, pl.DataType)  # type: ignore[unreachable]
-                else v
+                k: v() if inspect.isclass(v) and issubclass(v, pl.DataType) else v
                 for k, v in final_schema.items()
             }
         # --- END FINAL NORMALIZATION STEP ---
@@ -588,8 +586,10 @@ class Processor:
 
                     return wrapper
 
-                if isinstance(target_dtype, type) and issubclass(
-                    target_dtype, pl.DataType
+                if (
+                    target_dtype is not None
+                    and isinstance(target_dtype, type)
+                    and issubclass(target_dtype, pl.DataType)
                 ):
                     resolved_target_dtype = target_dtype()
                 else:

@@ -196,16 +196,18 @@ def _get_installed_languages(config: Union[str, dict[str, Any]]) -> Optional[set
 def _get_required_languages(filename: str, separator: str) -> Optional[list[str]]:
     """Extracts the list of required languages from the source file."""
     try:
-        return (
+        result = (
             pl.read_csv(filename, separator=separator, truncate_ragged_lines=True)
             .get_column("lang")
             .unique()
             .drop_nulls()
             .to_list()
         )
+        # Explicitly cast to list[str] to satisfy mypy type checking
+        return list(str(item) for item in result) if result is not None else None
     except ColumnNotFoundError:
         log.debug("No 'lang' column found in source file. Skipping language check.")
-        return []
+        return None  # Consistently return None for no data case
     except Exception as e:
         log.warning(
             f"Could not read languages from source file. Skipping check. Error: {e}"
@@ -348,7 +350,9 @@ def _get_csv_header(filename: str, separator: str) -> Optional[list[str]]:
         A list of strings representing the header, or None on failure.
     """
     try:
-        return pl.read_csv(filename, separator=separator, n_rows=0).columns
+        columns = pl.read_csv(filename, separator=separator, n_rows=0).columns
+        # Explicitly convert to list[str] to satisfy mypy type checking
+        return list(columns) if columns is not None else None
     except Exception as e:
         _show_error_panel("File Read Error", f"Could not read CSV header. Error: {e}")
         return None
@@ -577,6 +581,26 @@ def type_correction_check(  # noqa: C901
         return True
 
 
+def _should_skip_deferral(model: str, field_name: str) -> bool:
+    """Check if a field should be skipped for deferral based on special business rules.
+
+    Args:
+        model: The Odoo model name
+        field_name: The field name to check
+
+    Returns:
+        True if the field should be skipped for deferral, False otherwise
+    """
+    # For product.product model, don't defer product_template_attribute_value_ids
+    # as it causes business logic issues during import
+    if (
+        model == "product.product"
+        and field_name == "product_template_attribute_value_ids"
+    ):
+        return True
+    return False
+
+
 def _plan_deferrals_and_strategies(
     header: list[str],
     odoo_fields: dict[str, Any],
@@ -587,8 +611,8 @@ def _plan_deferrals_and_strategies(
     **kwargs: Any,
 ) -> bool:
     """Analyzes fields to plan deferrals and select import strategies."""
-    deferrable_fields = []
-    strategies = {}
+    deferrable_fields: list[str] = []
+    strategies: dict[str, dict[str, Any]] = {}
     df = pl.read_csv(filename, separator=separator, truncate_ragged_lines=True)
 
     for field_name in header:
@@ -597,24 +621,26 @@ def _plan_deferrals_and_strategies(
             field_info = odoo_fields[clean_field_name]
             field_type = field_info.get("type")
 
-            is_m2o_self = (
-                field_type == "many2one" and field_info.get("relation") == model
-            )
-            is_m2m = field_type == "many2many"
-            is_o2m = field_type == "one2many"
-
-            if is_m2o_self:
-                deferrable_fields.append(clean_field_name)
-            elif is_m2m:
-                deferrable_fields.append(clean_field_name)
-                success, strategy_details = _handle_m2m_field(
-                    field_name, clean_field_name, field_info, df
+            # Skip deferral for special cases
+            if _should_skip_deferral(model, clean_field_name):
+                log_msg = (
+                    f"Skipping deferral for {clean_field_name} in {model} "
+                    f"model due to special handling"
                 )
-                if success:
-                    strategies[clean_field_name] = strategy_details
-            elif is_o2m:
-                deferrable_fields.append(clean_field_name)
-                strategies[clean_field_name] = {"strategy": "write_o2m_tuple"}
+                log.debug(log_msg)
+                continue
+
+            # Determine field type and handle deferral accordingly
+            _handle_field_deferral(
+                field_name,
+                clean_field_name,
+                field_type,
+                field_info,
+                model,
+                deferrable_fields,
+                strategies,
+                df,
+            )
 
     if deferrable_fields:
         log.info(f"Detected deferrable fields: {deferrable_fields}")
@@ -634,6 +660,46 @@ def _plan_deferrals_and_strategies(
         import_plan["deferred_fields"] = deferrable_fields
         import_plan["strategies"] = strategies
     return True
+
+
+def _handle_field_deferral(
+    field_name: str,
+    clean_field_name: str,
+    field_type: str,
+    field_info: dict[str, Any],
+    model: str,
+    deferrable_fields: list[str],
+    strategies: dict[str, dict[str, Any]],
+    df: Any,
+) -> None:
+    """Handle the deferral logic for a single field based on its type.
+
+    Args:
+        field_name: Original field name (may include /id suffix)
+        clean_field_name: Field name without /id suffix
+        field_type: Type of the field (e.g., 'many2one', 'many2many', 'one2many')
+        field_info: Full field metadata from Odoo
+        model: The target model name
+        deferrable_fields: List to append deferrable fields to
+        strategies: Dictionary to store import strategies
+        df: Polars DataFrame containing the data
+    """
+    is_m2o_self = field_type == "many2one" and field_info.get("relation") == model
+    is_m2m = field_type == "many2many"
+    is_o2m = field_type == "one2many"
+
+    if is_m2o_self:
+        deferrable_fields.append(clean_field_name)
+    elif is_m2m:
+        deferrable_fields.append(clean_field_name)
+        success, strategy_details = _handle_m2m_field(
+            field_name, clean_field_name, field_info, df
+        )
+        if success:
+            strategies[clean_field_name] = strategy_details
+    elif is_o2m:
+        deferrable_fields.append(clean_field_name)
+        strategies[clean_field_name] = {"strategy": "write_o2m_tuple"}
 
 
 @register_check

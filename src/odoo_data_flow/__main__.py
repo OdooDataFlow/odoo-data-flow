@@ -316,6 +316,10 @@ def import_cmd(connection_file: str, **kwargs: Any) -> None:
     if groupby is not None:
         kwargs["groupby"] = [col.strip() for col in groupby.split(",") if col.strip()]
 
+    ignore = kwargs.get("ignore")
+    if ignore is not None:
+        kwargs["ignore"] = [col.strip() for col in ignore.split(",") if col.strip()]
+
     run_import(**kwargs)
 
 
