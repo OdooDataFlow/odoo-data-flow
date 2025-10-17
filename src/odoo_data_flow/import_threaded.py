@@ -46,38 +46,38 @@ def _sanitize_error_message(error_msg: str) -> str:
     """
     if error_msg is None:
         return ""
-    
+
     error_msg = str(error_msg)
-    
+
     # Replace newlines with a safe alternative to prevent CSV parsing issues
     error_msg = error_msg.replace("\n", " | ").replace("\r", " | ")
-    
+
     # Replace tabs with spaces
     error_msg = error_msg.replace("\t", " ")
-    
+
     # Properly escape quotes for CSV (double the quotes)
     # This is important for CSV format when QUOTE_ALL is used
     error_msg = error_msg.replace('"', '""')
-    
+
     # Remove or replace other potentially problematic characters that might
     # interfere with CSV parsing, especially semicolons that can cause column splitting
     # Note: Even with QUOTE_ALL, some combinations of characters might still cause issues
     # when error messages are combined from multiple sources
     error_msg = error_msg.replace(";", ":")
-    
+
     # Remove other potentially problematic control characters
     # that might interfere with CSV parsing
-    for char in ['\x00', '\x01', '\x02', '\x03', '\x04', '\x05', '\x06', '\x07', 
-                 '\x08', '\x0B', '\x0C', '\x0E', '\x0F', '\x10', '\x11', '\x12', 
-                 '\x13', '\x14', '\x15', '\x16', '\x17', '\x18', '\x19', '\x1A', 
+    for char in ['\x00', '\x01', '\x02', '\x03', '\x04', '\x05', '\x06', '\x07',
+                 '\x08', '\x0B', '\x0C', '\x0E', '\x0F', '\x10', '\x11', '\x12',
+                 '\x13', '\x14', '\x15', '\x16', '\x17', '\x18', '\x19', '\x1A',
                  '\x1B', '\x1C', '\x1D', '\x1E', '\x1F', '\x7F']:
         error_msg = error_msg.replace(char, " ")
-    
+
     # Additional protection against malformed concatenated error messages
-    # that might contain phrases like "second cell" which might be typos from 
+    # that might contain phrases like "second cell" which might be typos from
     # "second cell" in JSON parsing errors
     error_msg = error_msg.replace("sencond", "second")
-    
+
     return error_msg
 
 
@@ -630,7 +630,7 @@ def _safe_convert_field_value(  # noqa: C901
             # Handle international decimal notation (comma as decimal separator)
             # Handle cases like "1.234,56" -> "1234.56" (European thousands separator with decimal comma)
             normalized_value = str_value
-            
+
             # Handle European decimal notation (comma as decimal separator)
             if "," in str_value and "." in str_value:
                 # Has both comma and period - likely European format with thousands separator
@@ -641,7 +641,7 @@ def _safe_convert_field_value(  # noqa: C901
                 # Only comma - likely European decimal separator
                 # e.g., "123,45" should become "123.45"
                 normalized_value = str_value.replace(",", ".")
-            
+
             # Check if it's a valid float after normalization
             # Allow digits, one decimal point, plus/minus signs
             test_value = normalized_value.replace(".", "").replace("-", "").replace("+", "")
@@ -665,10 +665,10 @@ def _safe_convert_field_value(  # noqa: C901
     # Special handling for res_partner fields that commonly cause tuple index errors
     # These fields often contain text values where numeric IDs are expected
     partner_numeric_fields = {
-        "parent_id", "company_id", "country_id", "state_id", 
+        "parent_id", "company_id", "country_id", "state_id",
         "title", "category_id", "user_id", "industry_id"
     }
-    
+
     if field_name in partner_numeric_fields and field_type in ("many2one", "many2many"):
         # For res_partner fields that should be numeric but contain text values,
         # return 0 to prevent tuple index errors when text is sent to numeric fields
@@ -717,13 +717,13 @@ def _safe_convert_field_value(  # noqa: C901
         if not field_name.endswith('/id'):
             sanitized_value = sanitized_value.replace(';', ':')
         # Remove control characters that might interfere with CSV processing
-        for char in ['\x00', '\x01', '\x02', '\x03', '\x04', '\x05', '\x06', '\x07', 
-                     '\x08', '\x0B', '\x0C', '\x0E', '\x0F', '\x10', '\x11', '\x12', 
-                     '\x13', '\x14', '\x15', '\x16', '\x17', '\x18', '\x19', '\x1A', 
+        for char in ['\x00', '\x01', '\x02', '\x03', '\x04', '\x05', '\x06', '\x07',
+                     '\x08', '\x0B', '\x0C', '\x0E', '\x0F', '\x10', '\x11', '\x12',
+                     '\x13', '\x14', '\x15', '\x16', '\x17', '\x18', '\x19', '\x1A',
                      '\x1B', '\x1C', '\x1D', '\x1E', '\x1F', '\x7F']:
             sanitized_value = sanitized_value.replace(char, ' ')
         return sanitized_value
-        
+
     # For all other field types, return original value
     return field_value
 
@@ -900,7 +900,7 @@ def _create_batch_individually(  # noqa: C901
             # 1. EARLY PROBLEM DETECTION: Check if this record contains known problematic patterns
             # that will cause server-side tuple index errors, before any processing
             line_content = ' '.join(str(x) for x in line if x is not None).lower()
-            
+
             # If this record contains the known problematic external ID, skip it entirely
             # to prevent any server-side processing that could trigger the error
             if 'product_template.63657' in line_content or '63657' in line_content:
@@ -921,11 +921,11 @@ def _create_batch_individually(  # noqa: C901
             # 2. PREPARE FOR CREATE - Check if this record contains known problematic external ID references
             # that will likely cause server-side tuple index errors during individual processing
             vals = dict(zip(batch_header, line))
-            
+
             # Check if this record contains external ID references that are known to be problematic
             has_known_problems = False
             problematic_external_ids = []
-            
+
             for field_name, field_value in vals.items():
                 if field_name.endswith('/id'):
                     field_str = str(field_value).upper()
@@ -938,7 +938,7 @@ def _create_batch_individually(  # noqa: C901
                     elif field_value and str(field_value).upper().startswith('PRODUCT_TEMPLATE.'):
                         # If it's a product template reference with a number that might not exist
                         problematic_external_ids.append(field_value)
-            
+
             if has_known_problems:
                 # Skip this record entirely since it's known to cause server-side errors
                 error_message = f"Skipping record {source_id} due to known problematic external ID references: {problematic_external_ids}"
@@ -955,10 +955,10 @@ def _create_batch_individually(  # noqa: C901
                     # External ID fields like 'partner_id/id' should map to 'partner_id' in the database
                     # Process them normally unless they are self-referencing
                     base_field_name = field_name[:-3]  # Remove '/id' suffix to get base field name like 'partner_id'
-                    
+
                     # Check if this is a self-referencing field by examining the external ID value
                     field_str = str(field_value).lower() if field_value else ""
-                    
+
                     # For non-self-referencing external ID fields, process them normally
                     # Only skip if they contain known problematic values
                     if field_value and str(field_value).upper() not in ["PRODUCT_TEMPLATE.63657", "63657"]:
@@ -996,10 +996,10 @@ def _create_batch_individually(  # noqa: C901
             # 3. CREATE
             # Process all fields normally, including external ID fields
             # Only skip records with known problematic external ID values
-            
+
             vals_for_create = {}
             skip_record = False
-            
+
             for field_name, field_value in clean_vals.items():
                 # For external ID fields, check if they contain known problematic values
                 if field_name.endswith('/id'):
@@ -1032,7 +1032,7 @@ def _create_batch_individually(  # noqa: C901
                             # Convert other types to string to prevent RPC serialization issues
                             vals_for_create[field_name] = str(field_value)
                     # Skip None values to prevent potential server issues
-            
+
             # If we need to skip this record, continue to the next one
             if skip_record:
                 continue
@@ -1056,7 +1056,7 @@ def _create_batch_individually(  # noqa: C901
                             else:
                                 # Convert complex types to strings to prevent RPC issues
                                 clean_context[k] = str(v)
-                    
+
                     # Call create with extremely clean data to avoid server-side argument unpacking errors
                     # Use the safest possible call format to prevent server-side tuple index errors
                     # The error in odoo/api.py:525 suggests issues with argument unpacking format
@@ -1095,41 +1095,41 @@ def _create_batch_individually(  # noqa: C901
             # Enhanced detection for external ID related errors that might cause tuple index errors
             # Check the content of the line for external ID patterns that caused original load failure
             line_str_full = ' '.join(str(x) for x in line if x is not None).lower()
-            
+
             # Look for external ID patterns in the error or the line content
             external_id_in_error = any(pattern in error_str_lower for pattern in [
-                "external id", "reference", "does not exist", "no matching record", 
+                "external id", "reference", "does not exist", "no matching record",
                 "res_id not found", "xml id", "invalid reference", "unknown external id",
                 "missing record", "referenced record", "not found", "lookup failed"
             ])
-            
+
             # More comprehensive check for external ID patterns in the data
             external_id_in_line = any(pattern in line_str_full for pattern in [
                 "product_template.63657", "product_template", "res_partner.", "account_account.",
                 "product_product.", "product_category.", "63657", "63658", "63659"  # Common problematic IDs
             ])
-            
+
             # Check for field names that are external ID fields
             has_external_id_fields = any(field_name.endswith('/id') for field_name in batch_header)
-            
+
             # Check if this is exactly the problematic scenario we know about
             known_problematic_scenario = (
                 "63657" in line_str_full and has_external_id_fields
             )
-            
+
             is_external_id_related = (
-                external_id_in_error or 
-                external_id_in_line or 
+                external_id_in_error or
+                external_id_in_line or
                 known_problematic_scenario
             )
 
             # Check if the error is a tuple index error that's NOT related to external IDs
             is_pure_tuple_error = (
-                "tuple index out of range" in error_str_lower 
+                "tuple index out of range" in error_str_lower
                 and not is_external_id_related
                 and not ("violates" in error_str_lower and "constraint" in error_str_lower)
                 and not ("null value in column" in error_str_lower and "violates not-null" in error_str_lower)
-                and not ("duplicate key value violates unique constraint" in error_str_lower)
+                and "duplicate key value violates unique constraint" not in error_str_lower
             )
 
             if is_pure_tuple_error:
@@ -1159,12 +1159,12 @@ def _create_batch_individually(  # noqa: C901
             # Check if this is specifically an external ID error FIRST (takes precedence)
             # Common external ID error patterns in Odoo, including partial matches
             external_id_patterns = [
-                "external id", "reference", "does not exist", "no matching record", 
+                "external id", "reference", "does not exist", "no matching record",
                 "res_id not found", "xml id", "invalid reference", "unknown external id",
                 "missing record", "referenced record", "not found", "lookup failed",
                 "product_template.", "res_partner.", "account_account.",  # Common module prefixes
             ]
-            
+
             is_external_id_error = any(pattern in error_str_lower for pattern in external_id_patterns)
 
             # Also check if this specifically mentions the problematic external ID from the load failure
@@ -1181,11 +1181,11 @@ def _create_batch_individually(  # noqa: C901
             # Special handling for tuple index out of range errors
             # These can occur when sending wrong types to Odoo fields
             # But check if this is related to external ID issues first (takes priority)
-            
+
             # Check if this error is related to external ID issues that caused the original load failure
             line_str_full = ' '.join(str(x) for x in line if x is not None).lower()
             external_id_in_error = any(pattern in error_str_lower for pattern in [
-                "external id", "reference", "does not exist", "no matching record", 
+                "external id", "reference", "does not exist", "no matching record",
                 "res_id not found", "xml id", "invalid reference", "unknown external id",
                 "missing record", "referenced record", "not found", "lookup failed",
                 "product_template.63657", "product_template", "res_partner.", "account_account."
@@ -1193,9 +1193,9 @@ def _create_batch_individually(  # noqa: C901
             external_id_in_line = any(pattern in line_str_full for pattern in [
                 "product_template.63657", "63657", "product_template", "res_partner."
             ])
-            
+
             is_external_id_related = external_id_in_error or external_id_in_line
-            
+
             # Handle tuple index errors that are NOT related to external IDs
             if (
                 ("tuple index out of range" in error_str_lower) and not is_external_id_related
@@ -1439,17 +1439,17 @@ def _execute_load_batch(  # noqa: C901
             # Only sanitize critical fields to prevent XML ID constraint violations
             for row in load_lines:
                 # Only sanitize unique ID field values to prevent
-                # XML ID constraint violations - this is the minimal processing 
+                # XML ID constraint violations - this is the minimal processing
                 # needed for the load method, similar to predecessor
                 if uid_index < len(row) and row[uid_index] is not None:
                     row[uid_index] = to_xmlid(str(row[uid_index]))
-                
+
                 # For other fields, avoid complex type conversions that could
                 # cause issues with the load method - let Odoo handle them
                 # The load method is designed to handle raw data properly
         try:
             log.debug(f"Attempting `load` for chunk of batch {batch_number}...")
-            
+
             # Defensive check: ensure all load_lines have same length as load_header
             # This is essential for Odoo's load method to work properly
             if load_lines and load_header:
@@ -1466,7 +1466,7 @@ def _execute_load_batch(  # noqa: C901
                             f"Header: {load_header[:10]}{'...' if len(load_header) > 10 else ''}"
                         )
 
-            # Additional validation: Check for potentially problematic data that might 
+            # Additional validation: Check for potentially problematic data that might
             # cause internal Odoo server errors during load processing
             if load_lines and load_header:
                 validated_load_lines = []
@@ -1892,7 +1892,7 @@ def _execute_write_batch(
         # Similar to predecessor approach: avoid complex value processing that might cause issues
         sanitized_vals = {}
         for key, value in vals.items():
-            # For external ID fields (e.g., fields ending with '/id'), 
+            # For external ID fields (e.g., fields ending with '/id'),
             # process them normally to avoid not-null constraint violations
             # Convert external ID field names like 'partner_id/id' to 'partner_id'
             if key.endswith('/id'):
@@ -1908,7 +1908,7 @@ def _execute_write_batch(
                     continue
                 else:
                     sanitized_vals[key] = value
-        
+
         # The core of the fix: use model.write(ids, sanitized_vals) for batch updates.
         model.write(ids, sanitized_vals, context=context)
         return {

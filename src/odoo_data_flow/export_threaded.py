@@ -515,7 +515,7 @@ def _initialize_export(
             connection = conf_lib.get_connection_from_dict(config)
         else:
             connection = conf_lib.get_connection_from_config(config)
-        
+
         # Test the connection before proceeding
         try:
             connection.check_login()
@@ -523,7 +523,7 @@ def _initialize_export(
         except Exception as conn_error:
             log.error(f"Failed to verify Odoo connection: {conn_error}")
             return None, None, None
-            
+
         model_obj = connection.get_model(model_name)
         fields_for_metadata = sorted(
             list(
